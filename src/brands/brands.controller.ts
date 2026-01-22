@@ -17,18 +17,12 @@ export class BrandsController {
 	}
 
 	@Get('getBrand/:id')
-	async getBrand(
-		@Param('id') id: string,
-		@CurrentUser() user: User,
-	): Promise<Brand> {
+	async getBrand(@Param('id') id: string, @CurrentUser() user: User): Promise<Brand> {
 		return this.brandsService.findOne(id, user.id);
 	}
 
 	@Post('createBrand')
-	async createBrand(
-		@CurrentUser() user: User,
-		@Body() createBrandDto: CreateBrandDto,
-	): Promise<Brand> {
+	async createBrand(@CurrentUser() user: User, @Body() createBrandDto: CreateBrandDto): Promise<Brand> {
 		return this.brandsService.create(user.id, createBrandDto);
 	}
 
@@ -42,10 +36,7 @@ export class BrandsController {
 	}
 
 	@Post('deleteBrand/:id')
-	async deleteBrand(
-		@Param('id') id: string,
-		@CurrentUser() user: User,
-	): Promise<{ message: string }> {
+	async deleteBrand(@Param('id') id: string, @CurrentUser() user: User): Promise<{ message: string }> {
 		return this.brandsService.remove(id, user.id);
 	}
 }
