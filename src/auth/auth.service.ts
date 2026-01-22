@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from '../database/entities/user.entity';
 import { RegisterDto, LoginDto, AuthResponseDto } from '../libs/dto';
+import { AuthMessage } from '../libs/enums';
 
 @Injectable()
 export class AuthService {
@@ -23,7 +24,7 @@ export class AuthService {
 		});
 
 		if (existingUser) {
-			throw new ConflictException('User with this email already exists');
+			throw new ConflictException(AuthMessage.USER_ALREADY_EXISTS);
 		}
 
 		// Hash password
@@ -62,14 +63,14 @@ export class AuthService {
 		});
 
 		if (!user) {
-			throw new UnauthorizedException('Invalid email or password');
+			throw new UnauthorizedException(AuthMessage.INVALID_EMAIL_OR_PASSWORD);
 		}
 
 		// Verify password
 		const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
 		if (!isPasswordValid) {
-			throw new UnauthorizedException('Invalid email or password');
+			throw new UnauthorizedException(AuthMessage.INVALID_EMAIL_OR_PASSWORD);
 		}
 
 		// Generate JWT token
