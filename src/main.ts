@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { LoggingInterceptor } from './libs/interceptor/Logging.interceptor';
 
 async function bootstrap() {
 	const logger = new Logger('Bootstrap');
@@ -19,6 +20,9 @@ async function bootstrap() {
 				transform: true, // Transform payloads to DTO instances
 			}),
 		);
+
+		// Global logging interceptor
+		app.useGlobalInterceptors(new LoggingInterceptor());
 
 		// API prefix
 		app.setGlobalPrefix('api');
