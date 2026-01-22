@@ -15,3 +15,8 @@ export * from './fixed-elements.dto';
 export * from './create-collection.dto';
 export * from './update-collection.dto';
 export * from './update-prompt-templates.dto';
+
+// Products DTOs
+export * from './create-product.dto';
+export * from './update-product.dto';
+export * from './upload-product.dto';

@@ -12,6 +12,7 @@ import { UsersModule } from './users/users.module';
 import { BrandsModule } from './brands/brands.module';
 import { CollectionsModule } from './collections/collections.module';
 import { FilesModule } from './files/files.module';
+import { ProductsModule } from './products/products.module';
 
 @Module({
 	imports: [
@@ -26,6 +27,7 @@ import { FilesModule } from './files/files.module';
 		BrandsModule,
 		CollectionsModule,
 		FilesModule,
+		ProductsModule,
 	],
 	controllers: [],
 	providers: [],
