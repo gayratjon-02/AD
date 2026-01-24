@@ -71,7 +71,7 @@ export class GenerationProcessor {
 					await this.generationsRepository.save(generation);
 					
 					// Emit processing event immediately
-					this.generationsService.emitVisualProcessing(generationId, i, visuals[i].type);
+					this.generationsService.emitVisualProcessing(generationId, generation.user_id, i, visuals[i].type);
 				}
 
 				try {
@@ -98,7 +98,7 @@ export class GenerationProcessor {
 					await this.generationsRepository.save(generation);
 					
 					// Emit completion event immediately
-					this.generationsService.emitVisualCompleted(generationId, i, visuals[i]);
+					this.generationsService.emitVisualCompleted(generationId, generation.user_id, i, visuals[i]);
 					
 					this.logger.log(`Completed image ${i + 1}/${prompts.length} for generation ${generationId}`);
 				} catch (error: any) {
@@ -115,7 +115,7 @@ export class GenerationProcessor {
 					await this.generationsRepository.save(generation);
 					
 					// Emit failure event immediately
-					this.generationsService.emitVisualFailed(generationId, i, error?.message || 'Unknown error');
+					this.generationsService.emitVisualFailed(generationId, generation.user_id, i, error?.message || 'Unknown error');
 				}
 			}
 
@@ -129,11 +129,13 @@ export class GenerationProcessor {
 				this.logger.log(`Generation ${generationId} completed successfully`);
 				
 				// Emit final completion event
-				const completedCount = visuals.filter(v => v.status === 'completed').length;
-				this.generationsService.emitGenerationCompleted(generationId, completedCount, visuals.length);
+				this.generationsService.emitGenerationCompleted(generationId, generation.user_id, GenerationStatus.COMPLETED);
 			} else if (anyFailed) {
 				generation.status = GenerationStatus.FAILED;
 				this.logger.error(`Generation ${generationId} failed - some visuals failed`);
+				
+				// Emit final failure event
+				this.generationsService.emitGenerationCompleted(generationId, generation.user_id, GenerationStatus.FAILED);
 			}
 
 			await this.generationsRepository.save(generation);

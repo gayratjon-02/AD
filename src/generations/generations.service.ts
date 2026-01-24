@@ -11,6 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
+import { Subject } from 'rxjs';
 import * as archiver from 'archiver';
 
 import { Generation } from '../database/entities/generation.entity';
@@ -34,8 +35,8 @@ type GenerationFilters = {
 export class GenerationsService {
 	private readonly logger = new Logger(GenerationsService.name);
 	
-	// SSE subscribers for real-time updates
-	private sseSubscribers: Map<string, Array<(event: any) => void>> = new Map();;
+	// SSE Subject for real-time updates
+	private readonly generationEvents = new Subject<any>();
 
 	constructor(
 		@InjectRepository(Generation)
@@ -479,62 +480,35 @@ export class GenerationsService {
 		}
 	}
 
-	/**
-	 * Subscribe to real-time generation updates via SSE
-	 */
-	subscribeToGenerationUpdates(generationId: string, callback: (event: any) => void): () => void {
-		if (!this.sseSubscribers.has(generationId)) {
-			this.sseSubscribers.set(generationId, []);
-		}
-		
-		const subscribers = this.sseSubscribers.get(generationId)!;
-		subscribers.push(callback);
-		
-		this.logger.log(`New SSE subscriber for generation ${generationId}. Total: ${subscribers.length}`);
-		
-		// Return cleanup function
-		return () => {
-			const index = subscribers.indexOf(callback);
-			if (index > -1) {
-				subscribers.splice(index, 1);
-				this.logger.log(`SSE subscriber removed for generation ${generationId}. Remaining: ${subscribers.length}`);
-				
-				// Clean up empty subscriber lists
-				if (subscribers.length === 0) {
-					this.sseSubscribers.delete(generationId);
-				}
-			}
-		};
-	}
 
 	/**
 	 * Emit event to all SSE subscribers for a generation
 	 */
+	/**
+	 * Get the generation event stream for SSE
+	 */
+	getGenerationEventStream(): Subject<any> {
+		return this.generationEvents;
+	}
+
 	emitGenerationUpdate(generationId: string, event: any): void {
-		const subscribers = this.sseSubscribers.get(generationId);
-		if (subscribers && subscribers.length > 0) {
-			this.logger.log(`Emitting SSE event to ${subscribers.length} subscribers for generation ${generationId}: ${event.type}`);
-			
-			subscribers.forEach(callback => {
-				try {
-					callback({
-						...event,
-						generationId,
-						timestamp: new Date().toISOString()
-					});
-				} catch (error) {
-					this.logger.error(`Failed to emit SSE event: ${error.message}`);
-				}
-			});
-		}
+		const eventData = {
+			...event,
+			generationId,
+			timestamp: new Date().toISOString()
+		};
+		
+		this.logger.log(`Emitting SSE event for generation ${generationId}: ${event.type}`);
+		this.generationEvents.next(eventData);
 	}
 
 	/**
 	 * Emit visual completion event
 	 */
-	emitVisualCompleted(generationId: string, visualIndex: number, visual: any): void {
+	emitVisualCompleted(generationId: string, userId: string, visualIndex: number, visual: any): void {
 		this.emitGenerationUpdate(generationId, {
 			type: 'visual_completed',
+			userId,
 			visualIndex,
 			visual: {
 				type: visual.type,
@@ -549,20 +523,25 @@ export class GenerationsService {
 	/**
 	 * Emit visual processing event
 	 */
-	emitVisualProcessing(generationId: string, visualIndex: number, visualType: string): void {
+	emitVisualProcessing(generationId: string, userId: string, visualIndex: number, visualType: string): void {
 		this.emitGenerationUpdate(generationId, {
 			type: 'visual_processing',
+			userId,
 			visualIndex,
-			visualType
+			visual: {
+				type: visualType,
+				status: 'processing'
+			}
 		});
 	}
 
 	/**
 	 * Emit visual failed event
 	 */
-	emitVisualFailed(generationId: string, visualIndex: number, error: string): void {
+	emitVisualFailed(generationId: string, userId: string, visualIndex: number, error: string): void {
 		this.emitGenerationUpdate(generationId, {
 			type: 'visual_failed',
+			userId,
 			visualIndex,
 			error
 		});
@@ -571,11 +550,11 @@ export class GenerationsService {
 	/**
 	 * Emit generation completed event
 	 */
-	emitGenerationCompleted(generationId: string, completedCount: number, totalCount: number): void {
+	emitGenerationCompleted(generationId: string, userId: string, status: string): void {
 		this.emitGenerationUpdate(generationId, {
 			type: 'generation_completed',
-			completedCount,
-			totalCount
+			userId,
+			status
 		});
 	}
 }

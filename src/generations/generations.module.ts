@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GenerationsService } from './generations.service';
 import { GenerationsController } from './generations.controller';
 import { GenerationEventsController } from './generation-events.controller';
@@ -13,6 +15,14 @@ import { GenerationQueueModule } from './generation.queue';
 @Module({
 	imports: [
 		TypeOrmModule.forFeature([Generation, Product, Collection]),
+		JwtModule.registerAsync({
+			imports: [ConfigModule],
+			useFactory: async (configService: ConfigService) => ({
+				secret: configService.get<string>('JWT_SECRET'),
+				signOptions: { expiresIn: '24h' },
+			}),
+			inject: [ConfigService],
+		}),
 		AiModule,
 		GenerationQueueModule,
 	],
