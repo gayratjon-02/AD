@@ -1,12 +1,11 @@
-import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bull';
-import { Logger, Inject, forwardRef } from '@nestjs/common';
+import { Processor, Process, OnQueueEvent, OnQueueActive, OnQueueCompleted, OnQueueFailed } from '@nestjs/bull';
+import { Logger } from '@nestjs/common';
 import { Job } from 'bull';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Generation } from '../database/entities/generation.entity';
 import { GeminiService } from '../ai/gemini.service';
 import { GenerationStatus } from '../libs/enums';
-import { GenerationsGateway } from './generations.gateway';
 
 export interface GenerationJobData {
 	generationId: string;
@@ -15,20 +14,17 @@ export interface GenerationJobData {
 }
 
 @Processor('generation')
-export class GenerationProcessor extends WorkerHost {
+export class GenerationProcessor {
 	private readonly logger = new Logger(GenerationProcessor.name);
 
 	constructor(
 		@InjectRepository(Generation)
 		private readonly generationsRepository: Repository<Generation>,
 		private readonly geminiService: GeminiService,
-		@Inject(forwardRef(() => GenerationsGateway))
-		private readonly gateway: GenerationsGateway,
-	) {
-		super();
-	}
+	) {}
 
-	async process(job: Job<GenerationJobData>): Promise<void> {
+	@Process()
+	async processGeneration(job: Job<GenerationJobData>): Promise<void> {
 		const { generationId, prompts, model } = job.data;
 
 		this.logger.log(`Processing generation ${generationId} with ${prompts.length} prompts`);
@@ -95,17 +91,6 @@ export class GenerationProcessor extends WorkerHost {
 					generation.visuals = visuals;
 					await this.generationsRepository.save(generation);
 					
-					// Broadcast update via WebSocket
-					await this.gateway.broadcastUpdate(generationId, {
-						status: generation.status,
-						progress: Math.round(((i + 1) / prompts.length) * 100),
-						completed: i + 1,
-						total: prompts.length,
-						visual: {
-							index: i,
-							status: 'completed',
-						},
-					});
 					
 					this.logger.log(`Completed image ${i + 1}/${prompts.length} for generation ${generationId}`);
 				} catch (error: any) {
@@ -137,14 +122,6 @@ export class GenerationProcessor extends WorkerHost {
 			}
 
 			await this.generationsRepository.save(generation);
-
-			// Broadcast final status
-			await this.gateway.broadcastUpdate(generationId, {
-				status: generation.status,
-				progress: allCompleted ? 100 : this.calculateProgress(visuals),
-				completed: visuals.filter((v: any) => v.status === 'completed').length,
-				total: visuals.length,
-			});
 		} catch (error) {
 			this.logger.error(`Generation ${generationId} failed: ${error.message}`, error.stack);
 			
@@ -162,12 +139,17 @@ export class GenerationProcessor extends WorkerHost {
 		}
 	}
 
-	@OnWorkerEvent('completed')
+	@OnQueueActive()
+	onActive(job: Job) {
+		this.logger.log(`Processing job ${job.id} of type ${job.name}`);
+	}
+
+	@OnQueueCompleted()
 	onCompleted(job: Job) {
 		this.logger.log(`Job ${job.id} completed`);
 	}
 
-	@OnWorkerEvent('failed')
+	@OnQueueFailed()
 	onFailed(job: Job, error: Error) {
 		this.logger.error(`Job ${job.id} failed: ${error.message}`, error.stack);
 	}

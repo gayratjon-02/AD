@@ -6,6 +6,8 @@ import {
 	UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Express } from 'express';
+import 'multer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { FilesService } from './files.service';
 

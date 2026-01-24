@@ -1,5 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Express } from 'express';
+import 'multer';
 import { FileMessage } from '../libs/enums';
 
 @Injectable()

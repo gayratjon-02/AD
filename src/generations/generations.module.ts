@@ -7,7 +7,6 @@ import { Product } from '../database/entities/product.entity';
 import { Collection } from '../database/entities/collection.entity';
 import { AiModule } from '../ai/ai.module';
 import { GenerationQueueModule } from './generation.queue';
-import { GenerationsGateway } from './generations.gateway';
 
 @Module({
 	imports: [
@@ -16,7 +15,7 @@ import { GenerationsGateway } from './generations.gateway';
 		GenerationQueueModule,
 	],
 	controllers: [GenerationsController],
-	providers: [GenerationsService, GenerationsGateway],
-	exports: [GenerationsService, GenerationsGateway],
+	providers: [GenerationsService],
+	exports: [GenerationsService],
 })
 export class GenerationsModule {}
