@@ -20,6 +20,7 @@ export * from './update-prompt-templates.dto';
 export * from './create-product.dto';
 export * from './update-product.dto';
 export * from './upload-product.dto';
+export * from './analyze-images.dto';
 
 // Generations DTOs
 export * from './create-generation.dto';

@@ -13,7 +13,7 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { ProductsService } from './products.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { CreateProductDto, UpdateProductDto, UploadProductDto } from '../libs/dto';
+import { CreateProductDto, UpdateProductDto, UploadProductDto, AnalyzeImagesDto } from '../libs/dto';
 import { User } from '../database/entities/user.entity';
 import { Product } from '../database/entities/product.entity';
 import { FilesService } from '../files/files.service';
@@ -102,6 +102,18 @@ export class ProductsController {
 		@CurrentUser() user: User,
 	): Promise<{ message: string }> {
 		return this.productsService.remove(id, user.id);
+	}
+
+	@Post('analyze-images')
+	async analyzeImages(
+		@CurrentUser() user: User,
+		@Body() analyzeImagesDto: AnalyzeImagesDto,
+	): Promise<{ prompt: string; extracted_variables: Record<string, any> }> {
+		return this.productsService.analyzeImages(
+			analyzeImagesDto.images,
+			analyzeImagesDto.productName,
+			analyzeImagesDto.brandBrief,
+		);
 	}
 
 	@Post(':id/analyze')

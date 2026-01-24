@@ -154,6 +154,34 @@ export class ProductsService {
 		return { message: 'Product deleted successfully' };
 	}
 
+	async analyzeImages(
+		images: string[],
+		productName?: string,
+		brandBrief?: string,
+	): Promise<{ prompt: string; extracted_variables: Record<string, any> }> {
+		if (!images.length) {
+			throw new BadRequestException(FileMessage.FILE_NOT_FOUND);
+		}
+
+		const extractedVariables = await this.claudeService.analyzeProduct({
+			images,
+			productName,
+			brandBrief,
+		});
+
+		const prompts = await this.claudeService.generatePrompts({
+			productName,
+			brandBrief,
+			extractedVariables,
+			count: 1,
+		});
+
+		return {
+			prompt: prompts[0] || '',
+			extracted_variables: extractedVariables,
+		};
+	}
+
 	async analyzeProduct(
 		id: string,
 		userId: string,
