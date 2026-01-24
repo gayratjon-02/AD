@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+  romimi-backend:
+    container_name: romimi-backend
+    build: .
+    restart: always
+    ports:
+      - "5031:5032"               # HOST : CONTAINER
+    environment:
+      NODE_ENV: production
+      PORT_API: 5032
+
+      DATABASE_URL: ${DATABASE_URL}
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_DB: 0
+
+      # AI Keys
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+
+      # Auth
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 7d
+      SECRET_TOKEN: ${JWT_SECRET}
+
+      # CORS
+      FRONTEND_URL: http://209.97.168.255:5030
+
+      # File Uploads
+      FILE_STORAGE_PROVIDER: local
+      UPLOAD_LOCAL_PATH: uploads
+      UPLOAD_BASE_URL: http://209.97.168.255:5031
+      UPLOAD_MAX_FILE_SIZE: 5242880
+      UPLOAD_ALLOWED_MIME_TYPES: image/jpeg,image/png,image/webp
+
+    volumes:
+      - ./uploads:/usr/src/app/uploads
+
+    depends_on:
+      - redis
+    networks:
+      - backend-network
+
+  redis:
+    container_name: romimi-redis
+    image: redis:7-alpine
+    restart: always
+    command: >
+      sh -c "redis-server --appendonly yes
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}"
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend-network
+
+volumes:
+  redis_data:
+
+networks:
+  backend-network:
+    driver: bridge
