@@ -1,15 +1,38 @@
-FROM node:18-alpine
+#!/bin/bash
 
-WORKDIR /usr/src/app
+set -e
 
-COPY package*.json ./
-RUN npm ci   # <-- bu yerda --only=production ni olib tashladik
+echo "🚀 ROMIMI Backend Docker deployment boshlandi..."
 
-COPY . .
-RUN npm run build
+cd "$(dirname "$0")"
 
-RUN mkdir -p uploads
+if [ ! -f ".env.production" ]; then
+    echo "❌ .env.production fayli topilmadi!"
+    echo "Iltimos .env.production faylini yarating va barcha o'zgaruvchilarni to'ldiring"
+    exit 1
+fi
 
-EXPOSE 5032
+echo "🧹 Eski container'larni to'xtatish..."
+docker compose down
 
-CMD ["npm", "run", "start:prod"]
+echo "🔨 Docker image'ni build qilish..."
+docker compose build
+
+echo "▶️  Container'larni ishga tushirish..."
+docker compose up -d
+
+echo "⏳ Backend'ni kutish..."
+sleep 10
+
+echo "📊 Container'lar holati:"
+docker compose ps
+
+echo "✅ Backend deployment yakunlandi!"
+echo "🌐 Backend http://localhost:5031 da ishlamoqda"
+echo ""
+echo "📝 Foydali buyruqlar:"
+echo "   docker compose logs -f romimi-backend  - Backend log'larini ko'rish"
+echo "   docker compose logs -f redis           - Redis log'larini ko'rish"
+echo "   docker compose logs -f postgres        - PostgreSQL log'larini ko'rish"
+echo "   docker compose ps                      - Container'lar holatini ko'rish"
+echo "   docker compose down                    - Barcha container'larni to'xtatish"
