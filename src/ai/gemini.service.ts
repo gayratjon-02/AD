@@ -14,9 +14,9 @@ export class GeminiService {
 	private client: GoogleGenerativeAI | null = null;
 	private readonly logger = new Logger(GeminiService.name);
 
-	private readonly defaultModel = 'gemini-2.0-flash-exp';
+	private readonly defaultModel = 'gemini-3-pro-image-preview';
 
-	constructor(private readonly configService: ConfigService) {}
+	constructor(private readonly configService: ConfigService) { }
 
 	async generateImage(prompt: string, modelName?: string): Promise<GeminiImageResult> {
 		try {
