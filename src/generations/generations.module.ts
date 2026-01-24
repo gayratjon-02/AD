@@ -8,7 +8,10 @@ import { Collection } from '../database/entities/collection.entity';
 import { AiModule } from '../ai/ai.module';
 
 @Module({
-	imports: [TypeOrmModule.forFeature([Generation, Product, Collection]), AiModule],
+	imports: [
+		TypeOrmModule.forFeature([Generation, Product, Collection]),
+		AiModule,
+	],
 	controllers: [GenerationsController],
 	providers: [GenerationsService],
 	exports: [GenerationsService],

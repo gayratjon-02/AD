@@ -70,7 +70,6 @@ export class LoggingInterceptor implements NestInterceptor {
 		);
 	}
 
-	// Sanitize body (parol va sensitive ma'lumotlarni yashirish)
 	private sanitizeBody(body: any): any {
 		if (!body || typeof body !== 'object') {
 			return body;
@@ -88,7 +87,6 @@ export class LoggingInterceptor implements NestInterceptor {
 		return sanitized;
 	}
 
-	// Response size ni hisoblash
 	private getResponseSize(data: any): string {
 		if (!data) return '0 B';
 		const size = JSON.stringify(data).length;

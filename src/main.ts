@@ -27,14 +27,12 @@ async function bootstrap() {
 		// Global logging interceptor
 		app.useGlobalInterceptors(new LoggingInterceptor());
 
-		// Global JWT guard (barcha route'lar protected, @Public() bilan public qilinadi)
 		const reflector = app.get(Reflector);
 		app.useGlobalGuards(new JwtAuthGuard(reflector));
 
 		// API prefix
 		app.setGlobalPrefix('api');
 
-		// CORS setup (frontend uchun)
 		app.enableCors({
 			origin: process.env.FRONTEND_URL || '*',
 			credentials: true,

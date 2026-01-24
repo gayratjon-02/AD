@@ -1,14 +1,4 @@
-import {
-	Body,
-	Controller,
-	Get,
-	Param,
-	Post,
-	Query,
-	Res,
-	StreamableFile,
-	UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { GenerationsService } from './generations.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -23,10 +13,7 @@ export class GenerationsController {
 	constructor(private readonly generationsService: GenerationsService) {}
 
 	@Post('createGeneration')
-	async createGeneration(
-		@CurrentUser() user: User,
-		@Body() dto: CreateGenerationDto,
-	): Promise<Generation> {
+	async createGeneration(@CurrentUser() user: User, @Body() dto: CreateGenerationDto): Promise<Generation> {
 		return this.generationsService.create(user.id, dto);
 	}
 
@@ -51,18 +38,12 @@ export class GenerationsController {
 	}
 
 	@Get('getGeneration/:id')
-	async getGeneration(
-		@Param('id') id: string,
-		@CurrentUser() user: User,
-	): Promise<Generation> {
+	async getGeneration(@Param('id') id: string, @CurrentUser() user: User): Promise<Generation> {
 		return this.generationsService.findOne(id, user.id);
 	}
 
 	@Get('getPrompts/:id')
-	async getPrompts(
-		@Param('id') id: string,
-		@CurrentUser() user: User,
-	): Promise<{ prompts: string[] }> {
+	async getPrompts(@Param('id') id: string, @CurrentUser() user: User): Promise<{ prompts: string[] }> {
 		return this.generationsService.previewPrompts(id, user.id);
 	}
 
@@ -76,11 +57,7 @@ export class GenerationsController {
 	}
 
 	@Post('generate/:id')
-	async generate(
-		@Param('id') id: string,
-		@CurrentUser() user: User,
-		@Body() dto: GenerateDto,
-	): Promise<Generation> {
+	async generate(@Param('id') id: string, @CurrentUser() user: User, @Body() dto: GenerateDto): Promise<Generation> {
 		return this.generationsService.generate(id, user.id, dto);
 	}
 
@@ -90,10 +67,7 @@ export class GenerationsController {
 		@CurrentUser() user: User,
 		@Res({ passthrough: true }) res: Response,
 	): Promise<StreamableFile> {
-		const { archive, filename } = await this.generationsService.createDownloadArchive(
-			id,
-			user.id,
-		);
+		const { archive, filename } = await this.generationsService.createDownloadArchive(id, user.id);
 
 		res.set({
 			'Content-Type': 'application/zip',

@@ -8,28 +8,36 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import archiver from 'archiver';
+
 import { Generation } from '../database/entities/generation.entity';
 import { Product } from '../database/entities/product.entity';
 import { Collection } from '../database/entities/collection.entity';
 import { GeminiService } from '../ai/gemini.service';
+
 import { CreateGenerationDto, GenerateDto, UpdateGenerationDto } from '../libs/dto';
-import {
-	ErrorMessage,
-	GenerationMessage,
-	GenerationStatus,
-	NotFoundMessage,
-	PermissionMessage,
-} from '../libs/enums';
+import { ErrorMessage, GenerationMessage, GenerationStatus, NotFoundMessage, PermissionMessage } from '../libs/enums';
+
+type GenerationFilters = {
+	product_id?: string;
+	collection_id?: string;
+	generation_type?: string;
+	status?: string;
+	page?: number;
+	limit?: number;
+};
 
 @Injectable()
 export class GenerationsService {
 	constructor(
 		@InjectRepository(Generation)
-		private generationsRepository: Repository<Generation>,
+		private readonly generationsRepository: Repository<Generation>,
+
 		@InjectRepository(Product)
-		private productsRepository: Repository<Product>,
+		private readonly productsRepository: Repository<Product>,
+
 		@InjectRepository(Collection)
-		private collectionsRepository: Repository<Collection>,
+		private readonly collectionsRepository: Repository<Collection>,
+
 		private readonly geminiService: GeminiService,
 	) {}
 
@@ -73,14 +81,7 @@ export class GenerationsService {
 
 	async findAll(
 		userId: string,
-		filters: {
-			product_id?: string;
-			collection_id?: string;
-			generation_type?: string;
-			status?: string;
-			page?: number;
-			limit?: number;
-		},
+		filters: GenerationFilters,
 	): Promise<{ items: Generation[]; total: number; page: number; limit: number }> {
 		const page = filters.page && filters.page > 0 ? filters.page : 1;
 		const limit = filters.limit && filters.limit > 0 ? filters.limit : 20;
@@ -139,11 +140,7 @@ export class GenerationsService {
 		return { prompts };
 	}
 
-	async updatePrompts(
-		id: string,
-		userId: string,
-		dto: UpdateGenerationDto,
-	): Promise<Generation> {
+	async updatePrompts(id: string, userId: string, dto: UpdateGenerationDto): Promise<Generation> {
 		const generation = await this.findOne(id, userId);
 
 		if (!dto.prompts || dto.prompts.length === 0) {
@@ -157,20 +154,14 @@ export class GenerationsService {
 		return this.generationsRepository.save(generation);
 	}
 
-	async generate(
-		id: string,
-		userId: string,
-		dto: GenerateDto,
-	): Promise<Generation> {
+	async generate(id: string, userId: string, dto: GenerateDto): Promise<Generation> {
 		const generation = await this.findOne(id, userId);
 
 		if (generation.status === GenerationStatus.PROCESSING) {
 			throw new BadRequestException(GenerationMessage.GENERATION_IN_PROGRESS);
 		}
 
-		const prompts = dto.prompts?.length
-			? dto.prompts
-			: this.extractPrompts(generation.visuals || []);
+		const prompts = dto.prompts?.length ? dto.prompts : this.extractPrompts(generation.visuals || []);
 
 		if (!prompts.length) {
 			throw new BadRequestException(GenerationMessage.NO_VISUALS_FOUND);
@@ -181,10 +172,15 @@ export class GenerationsService {
 
 		try {
 			const results = await this.geminiService.generateBatch(prompts, dto.model);
+
 			generation.visuals = results.map((result, index) => ({
 				prompt: prompts[index],
-				...result,
+				mimeType: result.mimeType,
+				data: result.data,
+				text: result.text,
+				generated_at: new Date().toISOString(),
 			}));
+
 			generation.status = GenerationStatus.COMPLETED;
 			generation.completed_at = new Date();
 
@@ -192,14 +188,12 @@ export class GenerationsService {
 		} catch (error) {
 			generation.status = GenerationStatus.FAILED;
 			await this.generationsRepository.save(generation);
+
 			throw new InternalServerErrorException(GenerationMessage.GENERATION_FAILED);
 		}
 	}
 
-	async createDownloadArchive(
-		id: string,
-		userId: string,
-	): Promise<{ archive: archiver.Archiver; filename: string }> {
+	async createDownloadArchive(id: string, userId: string): Promise<{ archive: archiver.Archiver; filename: string }> {
 		const generation = await this.findOne(id, userId);
 		const items = this.extractGeneratedImages(generation.visuals || []);
 
@@ -208,14 +202,20 @@ export class GenerationsService {
 		}
 
 		const archive = archiver('zip', { zlib: { level: 9 } });
+
 		items.forEach((item, index) => {
 			const ext = this.extensionFromMime(item.mimeType);
 			const buffer = Buffer.from(item.data, 'base64');
+
 			archive.append(buffer, { name: `image-${index + 1}.${ext}` });
 		});
 
 		archive.finalize();
-		return { archive, filename: `generation-${generation.id}.zip` };
+
+		return {
+			archive,
+			filename: `generation-${generation.id}.zip`,
+		};
 	}
 
 	private extractPrompts(visuals: any[]): string[] {
@@ -224,17 +224,17 @@ export class GenerationsService {
 				if (typeof item === 'string') {
 					return item;
 				}
+
 				if (item && typeof item === 'object') {
 					return item.prompt || item.text || item.description || null;
 				}
+
 				return null;
 			})
 			.filter(Boolean) as string[];
 	}
 
-	private extractGeneratedImages(
-		visuals: any[],
-	): Array<{ data: string; mimeType: string }> {
+	private extractGeneratedImages(visuals: any[]): Array<{ data: string; mimeType: string }> {
 		return visuals
 			.map((item) => {
 				if (item && typeof item === 'object' && item.data && item.mimeType) {
