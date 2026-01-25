@@ -58,6 +58,7 @@ export class ClaudeService {
 			...(await this.buildImageBlocks(input.images)),
 		];
 
+		
 		const response = await this.createMessage({
 			content,
 			max_tokens: 1200,
