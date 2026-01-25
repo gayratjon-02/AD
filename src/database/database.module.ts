@@ -22,23 +22,25 @@ import { AdRecreation } from './entities/ad-recreation.entity';
                     const url = dbConfig.url as string;
                     const maskedUrl = url.replace(/:[^:@]+@/, ':****@');
                     logger.log(`Connecting to database via URL: ${maskedUrl}`);
+                    logger.log(`Database pool settings: max=${dbConfig.extra?.max || 'default'}, keepAlive=${dbConfig.extra?.keepAlive || false}`);
                 } else {
                     logger.warn('No database URL found in config.');
                 }
 
                 return {
                     ...dbConfig,
-					entities: [User, Brand, Collection, Product, Generation, AdRecreation],
+                    entities: [User, Brand, Collection, Product, Generation, AdRecreation],
                     autoLoadEntities: false,
-                    maxQueryExecutionTime: 10000,
+                    maxQueryExecutionTime: 30000, // Increased from 10s to 30s
+                    // Merge extra settings from config
                     extra: {
-                        connectTimeoutMS: dbConfig?.connectTimeoutMS || 10000,
+                        ...dbConfig?.extra,
                     },
                 };
             },
         }),
 
-		TypeOrmModule.forFeature([User, Brand, Collection, Product, Generation, AdRecreation]),
+        TypeOrmModule.forFeature([User, Brand, Collection, Product, Generation, AdRecreation]),
     ],
     exports: [TypeOrmModule],
 })
