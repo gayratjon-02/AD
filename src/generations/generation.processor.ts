@@ -103,7 +103,6 @@ export class GenerationProcessor {
 						hasData: !!result.data,
 						dataLength: result.data ? result.data.length : 0,
 						mimeType: result.mimeType,
-						hasText: !!result.text,
 					});
 					
 					// Save base64 image as file and get URL
@@ -122,7 +121,7 @@ export class GenerationProcessor {
 						}
 					} else {
 						this.logger.error(`❌ Image ${i + 1} generation failed: No image data returned from Gemini`);
-						this.logger.error(`Result:`, { mimeType: result.mimeType, text: result.text?.substring(0, 200) });
+						this.logger.error(`Result:`, { mimeType: result.mimeType });
 					}
 					
 					// Update this specific visual with result
@@ -131,7 +130,6 @@ export class GenerationProcessor {
 						prompt,
 						mimeType: result.mimeType,
 						data: result.data, // Keep base64 data in DB for backup
-						text: result.text,
 						status: 'completed',
 						image_url: imageUrl,
 						generated_at: new Date().toISOString(),

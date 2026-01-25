@@ -754,7 +754,6 @@ export class GenerationsService {
 				prompt,
 				mimeType: result.mimeType,
 				data: result.data, // Keep base64 for backup
-				text: result.text,
 				status: 'completed',
 				image_url: imageUrl,
 				generated_at: new Date().toISOString(),
