@@ -46,11 +46,10 @@ export class FilesService {
 
 		// Local storage fallback
 		const uploadConfig = this.configService.get<any>('upload');
-		const baseUrl = uploadConfig.baseUrl as string;
 		const localPath = uploadConfig.localPath as string;
-		const url = baseUrl
-			? `${baseUrl.replace(/\/$/, '')}/${localPath}/${file.filename}`
-			: `/${localPath}/${file.filename}`;
+		// 🚀 CRITICAL: Always use relative path for local storage
+		// Frontend will prepend API base URL to avoid mixed content issues
+		const url = `/${localPath}/${file.filename}`;
 
 		return {
 			filename: file.filename,
@@ -102,18 +101,10 @@ export class FilesService {
 		const filePath = path.join(absolutePath, filename);
 		fs.writeFileSync(filePath, buffer);
 		
-		// 🚀 CRITICAL: Generate URL that works with frontend
-		// If baseUrl is set, use it; otherwise use relative path (frontend will prepend API base URL)
-		const baseUrl = uploadConfig.baseUrl as string;
-		
-		// Generate URL - use baseUrl if provided, otherwise use relative path
-		let url: string;
-		if (baseUrl) {
-			url = `${baseUrl.replace(/\/$/, '')}/${localPath}/${filename}`;
-		} else {
-			// Use relative path - frontend will prepend API base URL
-			url = `/${localPath}/${filename}`;
-		}
+		// 🚀 CRITICAL: Always use relative path for local storage
+		// Frontend will prepend API base URL to avoid mixed content issues
+		// This ensures compatibility with both HTTP and HTTPS frontends
+		const url = `/${localPath}/${filename}`;
 
 		this.logger.log(`📸 Generated image URL for local storage: ${url}`);
 
