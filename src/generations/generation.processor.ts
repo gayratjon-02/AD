@@ -88,11 +88,12 @@ export class GenerationProcessor {
 				}
 
 				try {
-					// 🚀 CRITICAL: Use Imagen 4.0 Fast for real image generation via Gemini API
-					this.logger.log(`🎨 Generating image ${i + 1} using Imagen 4.0 Fast...`);
+					// 🚀 CRITICAL: QATIYAN faqat gemini-3-pro-image-preview modelidan foydalanish
+					const geminiModel = model || process.env.GEMINI_MODEL || 'gemini-3-pro-image-preview';
+					this.logger.log(`🎨 Generating image ${i + 1} using Gemini model: ${geminiModel}...`);
 					const result = await this.geminiService.generateImage(
 						prompt, 
-						model || 'imagen-4.0-fast-generate-001',
+						geminiModel,
 						generation.aspect_ratio,
 						generation.resolution
 					);

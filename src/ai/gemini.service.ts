@@ -26,8 +26,8 @@ export class GeminiService {
 		
 		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
-				// 🚀 CRITICAL: Use Gemini 2.5 Flash Image Preview for image generation
-				const modelId = modelName || this.defaultModel;
+				// 🚀 CRITICAL: QATIYAN faqat gemini-3-pro-image-preview modelidan foydalanish
+				const modelId = modelName || this.defaultModel || 'gemini-3-pro-image-preview';
 				const model = this.getModel(modelId);
 
 				if (attempt === 0) {
