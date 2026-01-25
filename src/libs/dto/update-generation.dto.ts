@@ -18,4 +18,9 @@ export class UpdateGenerationDto {
 	@IsString({ each: true, message: ValidationMessage.FIELD_INVALID })
 	@IsOptional()
 	prompts?: string[];
+
+	@IsArray({ message: ValidationMessage.FIELD_INVALID })
+	@IsString({ each: true, message: ValidationMessage.FIELD_INVALID })
+	@IsOptional()
+	visualTypes?: string[];
 }

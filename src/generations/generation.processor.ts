@@ -12,6 +12,7 @@ import { FilesService } from '../files/files.service';
 export interface GenerationJobData {
 	generationId: string;
 	prompts: string[];
+	visualTypes?: string[]; // Optional: if provided, use these types instead of index-based
 	model?: string;
 }
 
@@ -29,10 +30,13 @@ export class GenerationProcessor {
 
 	@Process()
 	async processGeneration(job: Job<GenerationJobData>): Promise<void> {
-		const { generationId, prompts, model } = job.data;
+		const { generationId, prompts, visualTypes, model } = job.data;
 
 		this.logger.log(`🚀 [PROCESSOR] Starting job ${job.id} for generation ${generationId}`);
 		this.logger.log(`🚀 [PROCESSOR] Processing generation ${generationId} with ${prompts.length} prompts`);
+		if (visualTypes) {
+			this.logger.log(`🚀 [PROCESSOR] Visual types provided: ${visualTypes.join(', ')}`);
+		}
 
 		try {
 			// Update status to processing
@@ -48,8 +52,9 @@ export class GenerationProcessor {
 			await this.generationsRepository.save(generation);
 
 			// Initialize visuals array with structure
+			// Use provided visualTypes if available, otherwise fall back to index-based
 			const visuals: any[] = prompts.map((prompt, index) => ({
-				type: this.getVisualType(index),
+				type: visualTypes && visualTypes[index] ? visualTypes[index] : this.getVisualType(index),
 				prompt,
 				status: 'pending',
 				index,

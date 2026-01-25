@@ -164,11 +164,41 @@ export class GenerationsService {
 			throw new BadRequestException(GenerationMessage.NO_VISUALS_FOUND);
 		}
 
-		generation.visuals = dto.prompts;
+		// If visualTypes are provided, use them; otherwise use index-based or existing types
+		const visualTypes = dto.visualTypes && dto.visualTypes.length === dto.prompts.length 
+			? dto.visualTypes 
+			: null;
+
+		// If prompts are provided, update visuals with prompts and preserve types if they exist
+		// Otherwise, create new visuals array from prompts
+		if (generation.visuals && Array.isArray(generation.visuals) && generation.visuals.length > 0) {
+			// Update existing visuals with new prompts, using provided types or preserving existing types
+			generation.visuals = generation.visuals.map((visual: any, index: number) => ({
+				...visual,
+				type: visualTypes ? (visualTypes[index] || visual.type) : visual.type,
+				prompt: dto.prompts[index] || visual.prompt,
+				status: 'pending',
+				index,
+			}));
+		} else {
+			// Create new visuals array from prompts
+			generation.visuals = dto.prompts.map((prompt: string, index: number) => ({
+				type: visualTypes ? visualTypes[index] : this.getVisualTypeFromIndex(index),
+				prompt,
+				status: 'pending',
+				index,
+			}));
+		}
+
 		generation.status = GenerationStatus.PENDING;
 		generation.completed_at = null;
 
 		return this.generationsRepository.save(generation);
+	}
+
+	private getVisualTypeFromIndex(index: number): string {
+		const types = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'];
+		return types[index] || `visual_${index + 1}`;
 	}
 
 	async generate(id: string, userId: string, dto: GenerateDto): Promise<Generation> {
@@ -205,11 +235,15 @@ export class GenerationsService {
 			throw new BadRequestException(GenerationMessage.NO_VISUALS_FOUND);
 		}
 
+		// Extract visual types from generation.visuals if available
+		const visualTypes = generation.visuals?.map((v: any) => v.type).filter(Boolean);
+
 		// Add job to queue instead of processing synchronously
 		const job = await this.generationQueue.add(
 			{
 				generationId: id,
 				prompts,
+				visualTypes: visualTypes && visualTypes.length === prompts.length ? visualTypes : undefined,
 				model: dto.model,
 			},
 			{
