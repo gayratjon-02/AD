@@ -15,11 +15,44 @@ export class GeminiService {
 
 	constructor(private readonly configService: ConfigService) { }
 
-	async generateImage(prompt: string, modelName?: string): Promise<GeminiImageResult> {
+	async generateImage(
+		prompt: string, 
+		modelName?: string,
+		aspectRatio?: string,
+		resolution?: string
+	): Promise<GeminiImageResult> {
 		try {
 			const model = this.getModel(modelName);
 
 			this.logger.log(`Starting image generation for prompt: ${prompt.substring(0, 100)}...`);
+			if (aspectRatio) {
+				this.logger.log(`Aspect ratio: ${aspectRatio}`);
+			}
+			if (resolution) {
+				this.logger.log(`Resolution: ${resolution}`);
+			}
+
+			// Build enhanced prompt with aspect ratio and resolution instructions
+			let enhancedPrompt = `Generate a high-quality, professional image: ${prompt}`;
+			
+			if (aspectRatio) {
+				// Add aspect ratio instruction to prompt
+				const aspectRatioMap: Record<string, string> = {
+					'4:5': 'portrait orientation, 4:5 aspect ratio (vertical, taller than wide)',
+					'1:1': 'square format, 1:1 aspect ratio (equal width and height)',
+					'9:16': 'vertical/portrait format, 9:16 aspect ratio (very tall, mobile/Instagram story format)',
+				};
+				enhancedPrompt += `. Image format: ${aspectRatioMap[aspectRatio] || `aspect ratio ${aspectRatio}`}`;
+			}
+
+			if (resolution) {
+				// Add resolution instruction to prompt
+				const resolutionMap: Record<string, string> = {
+					'2K': '2K resolution (2048x1152 or equivalent high quality)',
+					'4K': '4K resolution (3840x2160 or equivalent ultra high quality, maximum detail)',
+				};
+				enhancedPrompt += `. ${resolutionMap[resolution] || `Resolution: ${resolution}`}`;
+			}
 
 			const result = await model.generateContent({
 				contents: [
@@ -27,7 +60,7 @@ export class GeminiService {
 						role: 'user',
 						parts: [
 							{
-								text: `Generate a high-quality, professional image: ${prompt}`,
+								text: enhancedPrompt,
 							},
 						],
 					},

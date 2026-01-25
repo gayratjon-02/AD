@@ -88,8 +88,13 @@ export class GenerationProcessor {
 				}
 
 				try {
-					// Generate this image independently
-					const result = await this.geminiService.generateImage(prompt, model);
+					// Generate this image independently with aspect ratio and resolution
+					const result = await this.geminiService.generateImage(
+						prompt, 
+						model,
+						generation.aspect_ratio,
+						generation.resolution
+					);
 					
 					// Save base64 image as file and get URL
 					let imageUrl: string | null = null;
