@@ -175,9 +175,10 @@ export class ClaudeService {
 	}
 
 	private getDisplayName(type: string): string {
+		// 🚀 CRITICAL: Use product-focused names to avoid PII triggers in Gemini
 		const names: Record<string, string> = {
-			duo: 'DUO (Father + Son)',
-			solo: 'SOLO (Man alone)',
+			duo: 'DUO (Two Models)',
+			solo: 'SOLO (Single Model)',
 			flatlay_front: 'FLAT LAY FRONT',
 			flatlay_back: 'FLAT LAY BACK',
 			closeup_front: 'CLOSE UP FRONT',
@@ -188,15 +189,27 @@ export class ClaudeService {
 
 	private buildStructuredVisualsPrompt(input: GeneratePromptsInput, visualTypes: string[]): string {
 		const lines = [
-			'Generate exactly 6 structured visual prompts for product photography.',
+			'Generate exactly 6 structured visual prompts for e-commerce product photography.',
+			'',
+			'🚨 CRITICAL RULES FOR PROMPTS:',
+			'1. NEVER describe specific people (no "young man", "confident woman", "father and son")',
+			'2. ALWAYS focus on THE PRODUCT, not the people wearing it',
+			'3. Use generic terms like "professional mannequin", "display form", or "product display"',
+			'4. For lifestyle shots, describe the SCENE and LIGHTING, not the model',
+			'5. Emphasize product features: texture, color, material, fit, design details',
+			'',
+			'EXAMPLE GOOD PROMPT: "Professional e-commerce photography of a navy blue cotton sweatshirt displayed on a mannequin, medium shot, studio lighting, white background, showing ribbed cuffs and collar details"',
+			'',
+			'EXAMPLE BAD PROMPT: "A confident young man wearing a navy sweatshirt" (NEVER use this format)',
+			'',
 			'Return JSON with this exact structure:',
 			'{',
 			'  "visuals": [',
 			'    {',
 			'      "type": "duo",',
-			'      "display_name": "DUO (Father + Son)",',
-			'      "prompt": "detailed prompt text",',
-			'      "negative_prompt": "what to avoid",',
+			'      "display_name": "DUO (Two Models)",',
+			'      "prompt": "Product-focused prompt with mannequins or generic display",',
+			'      "negative_prompt": "blurry, low quality, distorted, watermark",',
 			'      "camera": "camera settings and angle",',
 			'      "background": "background description",',
 			'      "garment_details": "specific garment details",',
@@ -208,7 +221,12 @@ export class ClaudeService {
 			'}',
 			'',
 			'Visual types required (in order):',
-			visualTypes.map((t, i) => `${i + 1}. ${t}`).join('\n'),
+			'1. duo - Two mannequins displaying the product side by side, full body shot',
+			'2. solo - Single mannequin displaying the product, full body shot',
+			'3. flatlay_front - Product laid flat, front view, overhead shot',
+			'4. flatlay_back - Product laid flat, back view, overhead shot',
+			'5. closeup_front - Close-up detail shot of front design/logo',
+			'6. closeup_back - Close-up detail shot of back design/label',
 			'',
 			'Return ONLY valid JSON, no markdown, no code blocks.',
 		];
