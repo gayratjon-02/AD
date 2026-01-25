@@ -2,11 +2,7 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenAI } from '@google/genai';
 import { AIMessage } from '../libs/enums';
-
-export type GeminiImageResult = {
-	mimeType: string;
-	data: string; // base64
-};
+import { GEMINI_MODEL, GeminiImageResult } from '../libs/config';
 
 @Injectable()
 export class GeminiService {
@@ -14,7 +10,7 @@ export class GeminiService {
 	private readonly logger = new Logger(GeminiService.name);
 	
 	// QATIYAN: Faqat gemini-3-pro-image-preview modelidan foydalanish
-	private readonly MODEL = 'gemini-3-pro-image-preview';
+	private readonly MODEL = GEMINI_MODEL;
 
 	constructor(private readonly configService: ConfigService) {}
 
