@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   romimi-backend:
     container_name: romimi-backend
