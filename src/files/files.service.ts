@@ -102,11 +102,20 @@ export class FilesService {
 		const filePath = path.join(absolutePath, filename);
 		fs.writeFileSync(filePath, buffer);
 		
-		// Generate URL
+		// 🚀 CRITICAL: Generate URL that works with frontend
+		// If baseUrl is set, use it; otherwise use relative path (frontend will prepend API base URL)
 		const baseUrl = uploadConfig.baseUrl as string;
-		const url = baseUrl
-			? `${baseUrl.replace(/\/$/, '')}/${localPath}/${filename}`
-			: `/${localPath}/${filename}`;
+		
+		// Generate URL - use baseUrl if provided, otherwise use relative path
+		let url: string;
+		if (baseUrl) {
+			url = `${baseUrl.replace(/\/$/, '')}/${localPath}/${filename}`;
+		} else {
+			// Use relative path - frontend will prepend API base URL
+			url = `/${localPath}/${filename}`;
+		}
+
+		this.logger.log(`📸 Generated image URL for local storage: ${url}`);
 
 		return {
 			filename,
