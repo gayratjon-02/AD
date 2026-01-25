@@ -74,9 +74,15 @@ export class S3Service {
 			} else {
 				// Check for custom endpoint (R2, MinIO, etc.)
 				const endpointConfig = this.s3Client.config.endpoint;
-				if (endpointConfig && typeof endpointConfig === 'object' && endpointConfig !== null && 'url' in endpointConfig) {
-					const endpoint = (endpointConfig as any).url as string;
-					url = `${endpoint.replace(/\/$/, '')}/${this.bucket}/${cleanPath}`;
+				if (endpointConfig !== null && endpointConfig !== undefined && typeof endpointConfig === 'object') {
+					const endpointObj = endpointConfig as any;
+					if ('url' in endpointObj && typeof endpointObj.url === 'string') {
+						url = `${endpointObj.url.replace(/\/$/, '')}/${this.bucket}/${cleanPath}`;
+					} else {
+						// Standard AWS S3 URL
+						const region = this.s3Client.config.region || 'us-east-1';
+						url = `https://${this.bucket}.s3.${region}.amazonaws.com/${cleanPath}`;
+					}
 				} else {
 					// Standard AWS S3 URL
 					const region = this.s3Client.config.region || 'us-east-1';
@@ -126,9 +132,11 @@ export class S3Service {
 			return `${this.baseUrl.replace(/\/$/, '')}/${cleanPath}`;
 		} else if (this.s3Client?.config.endpoint) {
 			const endpointConfig = this.s3Client.config.endpoint;
-			if (endpointConfig && typeof endpointConfig === 'object' && endpointConfig !== null && 'url' in endpointConfig) {
-				const endpoint = (endpointConfig as any).url as string;
-				return `${endpoint.replace(/\/$/, '')}/${this.bucket}/${cleanPath}`;
+			if (endpointConfig !== null && endpointConfig !== undefined && typeof endpointConfig === 'object') {
+				const endpointObj = endpointConfig as any;
+				if ('url' in endpointObj && typeof endpointObj.url === 'string') {
+					return `${endpointObj.url.replace(/\/$/, '')}/${this.bucket}/${cleanPath}`;
+				}
 			}
 		}
 		
