@@ -34,22 +34,40 @@ export class GenerationEventsController {
   ) {}
 
   @Sse(':id/stream')
-  @Public() // Make this endpoint public for testing
+  @Public() // Public endpoint but we validate token manually
   async streamGenerationProgress(
     @Param('id') generationId: string,
     @Query('token') token: string,
   ): Promise<Observable<any>> {
     console.log(`🔗 SSE Connection attempt for generation: ${generationId}`);
     
-    // For testing, use a fixed test user ID
-    const testUserId = 'test-user-123';
-    console.log(`✅ SSE: Using test user ${testUserId} for generation ${generationId}`);
+    // Validate token and extract user ID
+    let userId: string | null = null;
+    try {
+      if (token) {
+        const payload = this.jwtService.verify(token);
+        userId = payload.sub || payload.userId || payload.id;
+        console.log(`✅ SSE: Authenticated user ${userId} for generation ${generationId}`);
+      } else {
+        console.warn(`⚠️ SSE: No token provided for generation ${generationId}`);
+      }
+    } catch (error) {
+      console.error(`❌ SSE: Invalid token for generation ${generationId}:`, error);
+      // Don't throw - allow connection but filter events by generationId only
+    }
 
     return this.generationsService.getGenerationEventStream().pipe(
       filter((event) => {
-        const match = event.generationId === generationId && event.userId === testUserId;
+        // Match by generationId and userId (if authenticated)
+        const match = event.generationId === generationId && 
+          (!userId || event.userId === userId);
         if (match) {
-          console.log(`📨 SSE: Sending event to client:`, event.type);
+          console.log(`📨 SSE: Sending event to client:`, {
+            type: event.type,
+            visualIndex: event.visualIndex,
+            hasImageUrl: !!event.visual?.image_url,
+            imageUrlPreview: event.visual?.image_url ? event.visual.image_url.substring(0, 50) + '...' : 'none'
+          });
         }
         return match;
       }),

@@ -128,13 +128,24 @@ export class GenerationProcessor {
 					
 					// 🎯 Emit completion event immediately when THIS image is ready
 					console.log(`🎉 IMAGE ${i + 1} COMPLETED! Emitting SSE event for visual ${i} (${visuals[i].type})`);
-					console.log('📸 Image URL:', imageUrl ? `${imageUrl.substring(0, 50)}...` : 'NO IMAGE');
+					console.log('📸 Image URL:', imageUrl ? `${imageUrl.substring(0, 80)}...` : 'NO IMAGE');
+					console.log('📸 Full Image URL:', imageUrl);
 					
-					// Emit with only URL (not base64 data)
-					this.generationsService.emitVisualCompleted(generationId, generation.user_id, i, {
+					// 🚀 CRITICAL: Ensure image_url is properly set and emit with complete visual data
+					const completedVisual = {
 						...visuals[i],
-						image_url: imageUrl, // Only URL, not base64
-					});
+						type: visuals[i].type,
+						status: 'completed',
+						image_url: imageUrl, // Full URL (S3 or local)
+						prompt: prompt,
+						generated_at: new Date().toISOString(),
+						mimeType: result.mimeType,
+					};
+					
+					// Emit with complete visual data including image_url
+					this.generationsService.emitVisualCompleted(generationId, generation.user_id, i, completedVisual);
+					
+					this.logger.log(`✅ SSE Event emitted for visual ${i} with image_url: ${imageUrl ? 'YES' : 'NO'}`);
 					
 					this.logger.log(`✅ Completed image ${i + 1}/${prompts.length} (${visuals[i].type}) for generation ${generationId}`);
 					
