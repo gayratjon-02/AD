@@ -478,6 +478,26 @@ export class GenerationsService {
 			let buffer: Buffer;
 			let ext: string;
 
+			// FAST PATH: Try to read from local file system first (if image_filename exists)
+			if (visual.image_filename) {
+				try {
+					const uploadDir = process.env.UPLOAD_DIR || './uploads';
+					const localPath = `${uploadDir}/${visual.image_filename}`;
+					const fs = await import('fs/promises');
+					buffer = await fs.readFile(localPath);
+					ext = visual.image_filename.split('.').pop() || 'jpg';
+					
+					const visualType = visual.type || `visual_${index + 1}`;
+					const fileName = visualTypeMap[visualType] || `visual_${index + 1}`;
+					const filePath = `ROMIMI/${sanitizedCollectionName}/${sanitizedProductName}/${fileName}.${ext}`;
+					
+					return { buffer, filePath };
+				} catch (err) {
+					// File not found locally, fall back to URL fetch
+					this.logger.warn(`Local file not found: ${visual.image_filename}, falling back to URL`);
+				}
+			}
+
 			// Handle different data formats
 			if (visual.data) {
 				// Base64 data
