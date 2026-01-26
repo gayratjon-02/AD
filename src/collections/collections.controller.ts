@@ -1,4 +1,7 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Express } from 'express';
+import 'multer';
 import { CollectionsService } from './collections.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -211,13 +214,16 @@ export class CollectionsController {
 	/**
 	 * STEP 2: Analyze DA Reference (STEP 2)
 	 * POST /api/collections/:id/analyze-da
+	 * Accepts optional 'image' file via FormData
 	 */
 	@Post(':id/analyze-da')
+	@UseInterceptors(FileInterceptor('image'))
 	async analyzeDA(
 		@Param('id') id: string,
 		@CurrentUser() user: User,
+		@UploadedFile() imageFile?: Express.Multer.File,
 	): Promise<{ collection_id: string; analyzed_da_json: AnalyzedDAJSON; fixed_elements: FixedElements; status: string; analyzed_at: string }> {
-		const analyzedDAJSON = await this.collectionsService.analyzeDA(id, user.id);
+		const analyzedDAJSON = await this.collectionsService.analyzeDA(id, user.id, imageFile);
 		const collection = await this.collectionsService.findOne(id, user.id);
 		return {
 			collection_id: id,

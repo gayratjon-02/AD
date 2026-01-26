@@ -17,7 +17,10 @@ import {
 import { NotFoundMessage, PermissionMessage, FileMessage } from '../libs/enums';
 import { ClaudeService } from '../ai/claude.service';
 import { AnalyzedDAJSON, FixedElements } from '../common/interfaces/da-json.interface';
+import { FilesService } from '../files/files.service';
 import slugify from 'slugify';
+import type { Express } from 'express';
+import 'multer';
 
 @Injectable()
 export class CollectionsService {
@@ -27,6 +30,7 @@ export class CollectionsService {
 		@InjectRepository(Brand)
 		private brandsRepository: Repository<Brand>,
 		private readonly claudeService: ClaudeService,
+		private readonly filesService: FilesService,
 	) {}
 
 	async create(
@@ -149,6 +153,10 @@ export class CollectionsService {
 			collection.name = updateCollectionDto.name;
 		}
 
+		if (updateCollectionDto.da_reference_image_url !== undefined) {
+			collection.da_reference_image_url = updateCollectionDto.da_reference_image_url;
+		}
+
 		if (updateCollectionDto.fixed_elements !== undefined) {
 			collection.fixed_elements = updateCollectionDto.fixed_elements;
 		}
@@ -189,12 +197,15 @@ export class CollectionsService {
 	/**
 	 * STEP 2: Analyze DA reference image with Claude
 	 */
-	async analyzeDA(collectionId: string, userId: string, imageFile?: File): Promise<AnalyzedDAJSON> {
+	async analyzeDA(collectionId: string, userId: string, imageFile?: Express.Multer.File): Promise<AnalyzedDAJSON> {
 		const collection = await this.findOne(collectionId, userId);
 
-		// If image file provided, update da_reference_image_url first
-		// (This would typically be handled by file upload service)
-		// For now, we assume da_reference_image_url is already set
+		// If image file provided, upload it and update da_reference_image_url first
+		if (imageFile) {
+			const uploadResult = await this.filesService.storeImage(imageFile);
+			collection.da_reference_image_url = uploadResult.url;
+			await this.collectionsRepository.save(collection);
+		}
 
 		if (!collection.da_reference_image_url) {
 			throw new BadRequestException('DA reference image URL is required');

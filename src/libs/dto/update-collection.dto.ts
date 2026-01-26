@@ -4,6 +4,7 @@ import {
 	IsUUID,
 	IsObject,
 	ValidateNested,
+	IsUrl,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ValidationMessage } from '../enums';
@@ -17,6 +18,10 @@ export class UpdateCollectionDto {
 	@IsUUID('4', { message: ValidationMessage.FIELD_INVALID })
 	@IsOptional()
 	brand_id?: string;
+
+	@IsString({ message: ValidationMessage.FIELD_INVALID })
+	@IsOptional()
+	da_reference_image_url?: string;
 
 	@ValidateNested()
 	@Type(() => FixedElementsDto)
