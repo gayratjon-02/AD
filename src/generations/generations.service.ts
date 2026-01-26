@@ -166,11 +166,12 @@ export class GenerationsService {
 
 		// Save to generation
 		generation.merged_prompts = mergedPrompts;
-		generation.status = GenerationStatus.PROCESSING;
-		generation.current_step = 'merging';
+		generation.status = GenerationStatus.PENDING; // Set to PENDING so generate() can be called
+		generation.current_step = 'merged';
 		await this.generationsRepository.save(generation);
 
-		this.logger.log(`✅ Merged prompts for generation ${generationId}`);
+		this.logger.log(`✅ Merged prompts for generation ${generationId} - Status set to PENDING`);
+		this.logger.debug(`Merged prompts content: ${JSON.stringify(mergedPrompts).substring(0, 200)}...`);
 
 		return mergedPrompts;
 	}
@@ -367,6 +368,9 @@ export class GenerationsService {
 			visualTypes = generation.visuals.map((v: any) => v.type).filter(Boolean);
 			this.logger.log(`📋 Using visual types from generation.visuals: ${visualTypes.join(', ')}`);
 		}
+
+		this.logger.log(`🚀 Starting generation job for ${id} with ${prompts.length} prompts`);
+		this.logger.debug(`Visual types: ${visualTypes?.join(', ') || 'index-based'}`);
 
 		// Add job to queue instead of processing synchronously
 		const job = await this.generationQueue.add(
