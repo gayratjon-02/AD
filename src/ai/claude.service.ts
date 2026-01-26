@@ -154,18 +154,32 @@ Generate the 6 merged prompts now. Return ONLY valid JSON object with the struct
 		});
 
 		const text = this.extractText(response.content);
-		const parsed = this.parseJson(text);
+		let parsed = this.parseJson(text);
 
 		if (!parsed) {
 			this.logger.error('Failed to parse merged prompts JSON', { text });
 			throw new InternalServerErrorException('Failed to parse merged prompts');
 		}
 
+		// Handle array response (convert to object)
+		if (Array.isArray(parsed)) {
+			this.logger.warn('Claude returned array instead of object, converting...');
+			const converted: Record<string, any> = {};
+			const types = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'];
+			parsed.forEach((item, index) => {
+				const type = item.type || types[index];
+				if (type) {
+					converted[type] = item;
+				}
+			});
+			parsed = converted;
+		}
+
 		// Validate structure
 		const requiredTypes = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'];
 		for (const type of requiredTypes) {
 			if (!parsed[type]) {
-				this.logger.error(`Missing prompt type: ${type}`, { parsed });
+				this.logger.error(`Missing prompt type: ${type}`, { parsed: Object.keys(parsed) });
 				throw new InternalServerErrorException(`Missing prompt type: ${type}`);
 			}
 		}

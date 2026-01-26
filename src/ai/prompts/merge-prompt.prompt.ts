@@ -3,7 +3,6 @@ export const MERGE_PROMPT_TEMPLATE = `You are an expert creative director for fa
 You will receive:
 1. Product JSON (extracted product details)
 2. DA JSON (Direction Artistique visual style)
-3. Prompt Templates (6 templates with {{variables}})
 
 Your task: Generate 6 complete, detailed prompts by MERGING product details INTO the DA visual style.
 
@@ -14,40 +13,95 @@ CRITICAL RULES:
 - Use the exact hex codes from both Product and DA JSONs
 - Maintain the DA's composition, lighting, and mood
 - Be extremely detailed and specific
+- Focus prompts on THE PRODUCT, not on describing people
 
-Return ONLY valid JSON array with 6 objects:
-[
-  {
+Return ONLY valid JSON OBJECT (not array!) with these 6 keys:
+{
+  "duo": {
     "type": "duo",
-    "display_name": "DUO (Father + Son)",
-    "prompt": "[FULL DETAILED PROMPT WITH PRODUCT + DA MERGED]",
-    "negative_prompt": "[...]",
+    "display_name": "DUO",
+    "prompt": "[FULL DETAILED PROMPT - Two professional mannequins displaying the product]",
+    "negative_prompt": "blurry, low quality, distorted, watermark, text",
     "camera": {
       "focal_length_mm": 85,
       "aperture": 2.8,
-      "focus": "string",
-      "angle": "string"
+      "focus": "product details",
+      "angle": "eye level"
     },
     "background": {
-      "wall": "string",
-      "floor": "string"
+      "wall": "[DA background]",
+      "floor": "[DA floor]"
     },
     "product_details": {
-      "type": "string",
-      "color": "string",
-      "piping": "string",
-      "zip": "string",
-      "logos": "string"
+      "type": "[product type]",
+      "color": "[color name and hex]",
+      "material": "[material]",
+      "logos": "[logo descriptions]"
     },
     "da_elements": {
-      "background": "string",
-      "props": "string",
-      "mood": "string",
-      "composition": "string"
+      "background": "[DA background description]",
+      "props": "[DA props]",
+      "mood": "[DA mood]",
+      "composition": "[DA composition]"
     }
   },
-  // ... 5 more (solo, flatlay_front, flatlay_back, closeup_front, closeup_back)
-]
+  "solo": {
+    "type": "solo",
+    "display_name": "SOLO",
+    "prompt": "[FULL DETAILED PROMPT - Single mannequin displaying the product]",
+    "negative_prompt": "blurry, low quality, distorted, watermark, text",
+    "camera": { ... },
+    "background": { ... },
+    "product_details": { ... },
+    "da_elements": { ... }
+  },
+  "flatlay_front": {
+    "type": "flatlay_front",
+    "display_name": "FLAT LAY FRONT",
+    "prompt": "[FULL DETAILED PROMPT - Product laid flat, front view, overhead shot]",
+    "negative_prompt": "blurry, low quality, distorted, watermark, text",
+    "camera": { "focal_length_mm": 50, "aperture": 5.6, "focus": "entire product", "angle": "overhead 90°" },
+    "background": { ... },
+    "product_details": { ... },
+    "da_elements": { ... }
+  },
+  "flatlay_back": {
+    "type": "flatlay_back",
+    "display_name": "FLAT LAY BACK",
+    "prompt": "[FULL DETAILED PROMPT - Product laid flat, back view, overhead shot]",
+    "negative_prompt": "blurry, low quality, distorted, watermark, text",
+    "camera": { ... },
+    "background": { ... },
+    "product_details": { ... },
+    "da_elements": { ... }
+  },
+  "closeup_front": {
+    "type": "closeup_front",
+    "display_name": "CLOSE UP FRONT",
+    "prompt": "[FULL DETAILED PROMPT - Close-up of front logo/detail]",
+    "negative_prompt": "blurry, low quality, distorted, watermark, text",
+    "camera": { "focal_length_mm": 100, "aperture": 2.0, "focus": "macro on logo", "angle": "slight angle" },
+    "background": { ... },
+    "product_details": { ... },
+    "da_elements": { ... }
+  },
+  "closeup_back": {
+    "type": "closeup_back",
+    "display_name": "CLOSE UP BACK",
+    "prompt": "[FULL DETAILED PROMPT - Close-up of back logo/detail]",
+    "negative_prompt": "blurry, low quality, distorted, watermark, text",
+    "camera": { ... },
+    "background": { ... },
+    "product_details": { ... },
+    "da_elements": { ... }
+  }
+}
 
-Example merged prompt structure:
-"Photo éditoriale haute couture [DA_MOOD] pour Romimi [COLLECTION_NAME]. [COMPOSITION_FROM_DA]. [SUBJECTS] portant [PRODUCT_TYPE] en [MATERIAL] [COLOR_NAME] (#[COLOR_HEX]) avec [PRODUCT_DETAILS]. Logo '[LOGO_FRONT_TYPE]' [LOGO_FRONT_COLOR] sur [LOGO_FRONT_POSITION]. STYLING : [DA_STYLING]. DÉCOR : fond [DA_BACKGROUND] (#[DA_BG_HEX]) avec [DA_PROPS]. [DA_LIGHTING]. Qualité [DA_QUALITY]."`;
+IMPORTANT: 
+- Return a JSON OBJECT with keys: duo, solo, flatlay_front, flatlay_back, closeup_front, closeup_back
+- NOT an array!
+- Each prompt must be detailed and focus on the PRODUCT, not on people wearing it
+- Include all product details (color, material, logos) and DA elements (background, props, mood)
+
+Example merged prompt style:
+"Professional e-commerce product photography. [PRODUCT_TYPE] in [MATERIAL] [COLOR_NAME] (#[COLOR_HEX]) displayed on mannequin. [PRODUCT_DETAILS]. [LOGO_INFO]. Scene: [DA_BACKGROUND] (#[DA_BG_HEX]) with [DA_PROPS]. [DA_LIGHTING]. [DA_MOOD] atmosphere. High-resolution studio quality."`;
