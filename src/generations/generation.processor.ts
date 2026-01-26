@@ -204,6 +204,13 @@ export class GenerationProcessor {
 					this.logger.warn(`⚠️ Failed to save generated images to product: ${err.message}`);
 				}
 			}
+
+			// Pre-generate ZIP archive when all images are completed (background, non-blocking)
+			if (allCompleted && completedCount > 0) {
+				this.generationsService.preGenerateZipArchive(generationId).catch((err) => {
+					this.logger.warn(`⚠️ Failed to pre-generate ZIP: ${err.message}`);
+				});
+			}
 		} catch (error) {
 			this.logger.error(`Generation ${generationId} failed: ${error.message}`, error.stack);
 			

@@ -125,6 +125,19 @@ export class GenerationsController {
 		@CurrentUser() user: User,
 		@Res({ passthrough: true }) res: Response,
 	): Promise<StreamableFile> {
+		// Check if pre-generated ZIP exists
+		const preGeneratedZip = await this.generationsService.getPreGeneratedZip(id, user.id);
+		
+		if (preGeneratedZip) {
+			// Use pre-generated ZIP for instant download
+			res.set({
+				'Content-Type': 'application/zip',
+				'Content-Disposition': `attachment; filename="${preGeneratedZip.filename}"`,
+			});
+			return new StreamableFile(preGeneratedZip.fileStream);
+		}
+
+		// Fallback: generate on-demand (slower)
 		const { archive, filename } = await this.generationsService.createDownloadArchive(id, user.id);
 
 		res.set({

@@ -39,6 +39,9 @@ export class GenerationsService {
 	
 	// SSE Subject for real-time updates
 	private readonly generationEvents = new Subject<any>();
+	
+	// ZIP cache: generationId -> { filePath, createdAt, timeout }
+	private readonly zipCache = new Map<string, { filePath: string; createdAt: Date; timeout: NodeJS.Timeout }>();
 
 	constructor(
 		@InjectRepository(Generation)
@@ -432,6 +435,222 @@ export class GenerationsService {
 				error: v.error,
 			})),
 		};
+	}
+
+	/**
+	 * Pre-generate ZIP archive when images are ready (background process)
+	 */
+	async preGenerateZipArchive(generationId: string): Promise<void> {
+		try {
+			const generation = await this.generationsRepository.findOne({
+				where: { id: generationId },
+				relations: ['product', 'product.collection'],
+			});
+
+			if (!generation || !generation.visuals || generation.visuals.length === 0) {
+				return;
+			}
+
+			// Check if all visuals are completed
+			const allCompleted = generation.visuals.every((v: any) => v.status === 'completed');
+			if (!allCompleted) {
+				return; // Wait for all images
+			}
+
+			// Check if ZIP already exists
+			if (this.zipCache.has(generationId)) {
+				return; // Already generating or generated
+			}
+
+			this.logger.log(`📦 Pre-generating ZIP for generation ${generationId}...`);
+
+			// Create ZIP in background (non-blocking)
+			this.createZipFile(generationId, generation).catch((error) => {
+				this.logger.error(`Failed to pre-generate ZIP for ${generationId}:`, error);
+			});
+		} catch (error) {
+			this.logger.error(`Error in preGenerateZipArchive for ${generationId}:`, error);
+		}
+	}
+
+	/**
+	 * Create ZIP file and save to temp directory
+	 */
+	private async createZipFile(generationId: string, generation: Generation): Promise<void> {
+		const fs = await import('fs/promises');
+		const path = await import('path');
+		const os = await import('os');
+
+		const tempDir = path.join(os.tmpdir(), 'romimi-zips');
+		await fs.mkdir(tempDir, { recursive: true });
+
+		const zipFilePath = path.join(tempDir, `${generationId}.zip`);
+		const output = require('fs').createWriteStream(zipFilePath);
+		const archive = archiver('zip', { zlib: { level: 1 } });
+
+		return new Promise((resolve, reject) => {
+			output.on('close', async () => {
+				this.logger.log(`✅ ZIP pre-generated: ${zipFilePath}`);
+
+				// Save to cache with 1 hour timeout
+				const timeout = setTimeout(() => {
+					this.cleanupZip(generationId);
+				}, 3600000); // 1 hour
+
+				this.zipCache.set(generationId, {
+					filePath: zipFilePath,
+					createdAt: new Date(),
+					timeout,
+				});
+
+				resolve();
+			});
+
+			archive.on('error', (err) => {
+				this.logger.error(`ZIP creation error for ${generationId}:`, err);
+				reject(err);
+			});
+
+			archive.pipe(output);
+
+			// Add images to archive (same logic as createDownloadArchive)
+			const visuals = generation.visuals || [];
+			const product = generation.product;
+			const collection = product?.collection;
+
+			const collectionName = collection?.name || 'Unknown';
+			const productName = product?.name || 'Unknown';
+			const sanitizedCollectionName = this.sanitizeFileName(collectionName);
+			const sanitizedProductName = this.sanitizeFileName(productName);
+
+			const visualTypeMap: Record<string, string> = {
+				duo: 'duo',
+				solo: 'solo',
+				flatlay_front: 'flatlay_front',
+				flatlay_back: 'flatlay_back',
+				closeup_front: 'closeup_front',
+				closeup_back: 'closeup_back',
+			};
+
+			// Process visuals in parallel
+			Promise.all(
+				visuals.map(async (visual: any, index: number) => {
+					if (!visual || visual.status !== 'completed') return null;
+
+					let buffer: Buffer;
+					let ext: string;
+
+					if (visual.image_filename) {
+						try {
+							const uploadDir = process.env.UPLOAD_DIR || './uploads';
+							const localPath = `${uploadDir}/${visual.image_filename}`;
+							buffer = await fs.readFile(localPath);
+							ext = visual.image_filename.split('.').pop() || 'jpg';
+						} catch (err) {
+							return null;
+						}
+					} else if (visual.image_url) {
+						const dataUrlMatch = visual.image_url.match(/^data:([^;]+);base64,(.+)$/);
+						if (dataUrlMatch) {
+							buffer = Buffer.from(dataUrlMatch[2], 'base64');
+							ext = this.extensionFromMime(dataUrlMatch[1]);
+						} else if (visual.image_url.startsWith('http://') || visual.image_url.startsWith('https://')) {
+							try {
+								const response = await fetch(visual.image_url);
+								if (response.ok) {
+									const arrayBuffer = await response.arrayBuffer();
+									buffer = Buffer.from(arrayBuffer);
+									const contentType = response.headers.get('content-type') || 'image/jpeg';
+									ext = this.extensionFromMime(contentType);
+								} else {
+									return null;
+								}
+							} catch (error) {
+								return null;
+							}
+						} else {
+							return null;
+						}
+					} else {
+						return null;
+					}
+
+					const visualType = visual.type || `visual_${index + 1}`;
+					const fileName = visualTypeMap[visualType] || `visual_${index + 1}`;
+					const filePath = `ROMIMI/${sanitizedCollectionName}/${sanitizedProductName}/${fileName}.${ext}`;
+
+					archive.append(buffer, { name: filePath });
+				})
+			).then(() => {
+				archive.finalize();
+			});
+		});
+	}
+
+	/**
+	 * Get pre-generated ZIP if available
+	 */
+	async getPreGeneratedZip(generationId: string, userId: string): Promise<{ fileStream: any; filename: string } | null> {
+		const cached = this.zipCache.get(generationId);
+		if (!cached) {
+			return null;
+		}
+
+		// Verify user has access
+		const generation = await this.findOne(generationId, userId);
+
+		const fs = require('fs');
+		if (!fs.existsSync(cached.filePath)) {
+			this.zipCache.delete(generationId);
+			return null;
+		}
+
+		// Get product and collection for filename
+		const product = await this.productsRepository.findOne({
+			where: { id: generation.product_id },
+			relations: ['collection'],
+		});
+
+		const collection = product?.collection;
+		const collectionName = collection?.name || 'Unknown';
+		const productName = product?.name || 'Unknown';
+		const sanitizedCollectionName = this.sanitizeFileName(collectionName);
+		const sanitizedProductName = this.sanitizeFileName(productName);
+		const filename = `ROMIMI_${sanitizedCollectionName}_${sanitizedProductName}_${generationId.slice(0, 8)}.zip`;
+
+		const fileStream = fs.createReadStream(cached.filePath);
+
+		// Clear timeout and delete from cache after download
+		clearTimeout(cached.timeout);
+		this.zipCache.delete(generationId);
+
+		// Delete file after streaming
+		fileStream.on('end', () => {
+			setTimeout(() => {
+				if (fs.existsSync(cached.filePath)) {
+					fs.unlinkSync(cached.filePath);
+				}
+			}, 1000);
+		});
+
+		this.logger.log(`⚡ Using pre-generated ZIP for instant download: ${generationId}`);
+		return { fileStream, filename };
+	}
+
+	/**
+	 * Cleanup ZIP file from cache and filesystem
+	 */
+	private cleanupZip(generationId: string): void {
+		const cached = this.zipCache.get(generationId);
+		if (cached) {
+			clearTimeout(cached.timeout);
+			const fs = require('fs');
+			if (fs.existsSync(cached.filePath)) {
+				fs.unlinkSync(cached.filePath);
+				this.logger.log(`🗑️ Cleaned up ZIP: ${cached.filePath}`);
+			}
+			this.zipCache.delete(generationId);
+		}
 	}
 
 	async createDownloadArchive(id: string, userId: string): Promise<{ archive: archiver.Archiver; filename: string }> {
