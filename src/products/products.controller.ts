@@ -156,17 +156,7 @@ export class ProductsController {
 	async getProductWithJSONs(
 		@Param('id') id: string,
 		@CurrentUser() user: User,
-	): Promise<Product & {
-		analyzed_product_json?: AnalyzedProductJSON;
-		manual_product_overrides?: Partial<AnalyzedProductJSON>;
-		final_product_json?: AnalyzedProductJSON;
-		collection?: {
-			id: string;
-			name: string;
-			analyzed_da_json?: any;
-			fixed_elements?: any;
-		};
-	}> {
+	): Promise<Product> {
 		return this.productsService.findOne(id, user.id);
 	}
 }

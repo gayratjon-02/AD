@@ -25,6 +25,8 @@ import { GeminiService } from '../ai/gemini.service';
 import { ClaudeService } from '../ai/claude.service';
 import { FilesService } from '../files/files.service';
 import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
+import { AnalyzedProductJSON } from '../common/interfaces/product-json.interface';
+import { AnalyzedDAJSON } from '../common/interfaces/da-json.interface';
 
 type GenerationFilters = {
 	product_id?: string;
@@ -157,8 +159,8 @@ export class GenerationsService {
 
 		// Merge with Claude
 		const mergedPrompts = await this.claudeService.mergeProductAndDA(
-			productJSON,
-			daJSON,
+			productJSON as AnalyzedProductJSON,
+			daJSON as AnalyzedDAJSON,
 			generation.collection.name
 		);
 
@@ -295,7 +297,7 @@ export class GenerationsService {
 		return { prompts };
 	}
 
-	async updatePrompts(id: string, userId: string, dto: UpdateGenerationDto): Promise<Generation> {
+	async updateLegacyPrompts(id: string, userId: string, dto: UpdateGenerationDto): Promise<Generation> {
 		const generation = await this.findOne(id, userId);
 
 		if (!dto.prompts || dto.prompts.length === 0) {
