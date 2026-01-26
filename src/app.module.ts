@@ -20,6 +20,8 @@ import { GenerationsModule } from './generations/generations.module';
 import { AdRecreationModule } from './ad-recreation/ad-recreation.module';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
 
 @Module({
 	imports: [
@@ -49,8 +51,9 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 		GenerationsModule,
 		AdRecreationModule,
 	],
-	controllers: [],
+	controllers: [AppController],
 	providers: [
+		AppService,
 		{
 			provide: APP_GUARD,
 			useClass: JwtAuthGuard,

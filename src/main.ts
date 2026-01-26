@@ -101,7 +101,8 @@ async function bootstrap() {
 					'http://localhost:3000',
 					'http://localhost:3001',
 					'http://localhost:5030',
-					'http://209.97.168.255:5030', // Production frontend
+					'http://167.172.90.235:5030', // Production frontend (Droplet)
+					'http://209.97.168.255:5030', // Production frontend (alt)
 				].filter(Boolean);
 				
 				if (allowedOrigins.includes(origin)) {
@@ -136,10 +137,11 @@ async function bootstrap() {
 			logger.log(`📁 Serving static files from: ${uploadsPath} at /${uploadConfig.localPath}/`);
 		}
 		const port = configService.get<number>('app.port') || parseInt(process.env.PORT_API || '3000', 10);
+		const host = process.env.LISTEN_HOST || '0.0.0.0';
 
-		await app.listen(port);
+		await app.listen(port, host);
 
-		logger.log(`🚀 Application is running on: http://localhost:${port}`);
+		logger.log(`🚀 Application is running on: http://${host}:${port}`);
 		logger.log(`📝 API endpoints available at: http://localhost:${port}/api`);
 		logger.log(`📚 API documentation available at: http://localhost:${port}/api/docs`);
 	} catch (error) {
