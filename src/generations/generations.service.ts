@@ -351,20 +351,42 @@ export class GenerationsService {
 
 		// Daily generation limit removed - no restrictions
 
-		const prompts = dto.prompts?.length ? dto.prompts : this.extractPrompts(generation.visuals || []);
+
+		// Extract prompts: prefer dto.prompts, then extract from merged_prompts based on visualTypes, then visuals
+		let prompts: string[] = [];
+		let visualTypes: string[] | undefined;
+
+		if (dto.prompts?.length) {
+			prompts = dto.prompts;
+		} else if (dto.visualTypes?.length && generation.merged_prompts) {
+			// Extract prompts from merged_prompts based on requested visual types
+			this.logger.log(`🔍 Extracting prompts from merged_prompts for types: ${dto.visualTypes.join(', ')}`);
+			
+			const validItems = dto.visualTypes.map(type => {
+				const promptData = (generation.merged_prompts as any)[type];
+				if (!promptData || !promptData.prompt) {
+					this.logger.warn(`⚠️ No prompt found for visual type: ${type}`);
+					return null;
+				}
+				return { type, prompt: promptData.prompt };
+			}).filter(item => item !== null) as { type: string, prompt: string }[];
+
+			prompts = validItems.map(item => item.prompt);
+			visualTypes = validItems.map(item => item.type);
+			
+			this.logger.log(`📋 Using filtered visual types: ${visualTypes.join(', ')}`);
+		} else {
+			prompts = this.extractPrompts(generation.visuals || []);
+			// visualTypes will be undefined or derived from generation.visuals later if needed
+		}
 
 		if (!prompts.length) {
+			this.logger.error(`❌ No prompts found. visuals=${generation.visuals?.length}, merged_prompts=${!!generation.merged_prompts}, visualTypes=${dto.visualTypes?.length}`);
 			throw new BadRequestException(GenerationMessage.NO_VISUALS_FOUND);
 		}
 
-		// Extract visual types: prefer dto.visualTypes, then generation.visuals, then undefined
-		let visualTypes: string[] | undefined;
-		if (dto.visualTypes && dto.visualTypes.length === prompts.length) {
-			// Use visual types from DTO (from frontend)
-			visualTypes = dto.visualTypes;
-			this.logger.log(`📋 Using visual types from DTO: ${visualTypes.join(', ')}`);
-		} else if (generation.visuals && Array.isArray(generation.visuals) && generation.visuals.length === prompts.length) {
-			// Fallback to visual types from generation.visuals
+		// Use visual types from generation.visuals as fallback if not set above
+		if (!visualTypes && generation.visuals && Array.isArray(generation.visuals) && generation.visuals.length === prompts.length) {
 			visualTypes = generation.visuals.map((v: any) => v.type).filter(Boolean);
 			this.logger.log(`📋 Using visual types from generation.visuals: ${visualTypes.join(', ')}`);
 		}
