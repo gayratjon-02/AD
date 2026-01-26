@@ -15,7 +15,8 @@ import 'multer';
 import { ProductsService } from './products.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { CreateProductDto, UpdateProductDto, UploadProductDto, AnalyzeImagesDto } from '../libs/dto';
+import { CreateProductDto, UpdateProductDto, UploadProductDto, AnalyzeImagesDto, UpdateProductJsonDto } from '../libs/dto';
+import { AnalyzedProductJSON } from '../common/interfaces/product-json.interface';
 import { User } from '../database/entities/user.entity';
 import { Product } from '../database/entities/product.entity';
 import { FilesService } from '../files/files.service';
@@ -81,14 +82,6 @@ export class ProductsController {
 		});
 	}
 
-	@Get('getProduct/:id')
-	async getProduct(
-		@Param('id') id: string,
-		@CurrentUser() user: User,
-	): Promise<Product> {
-		return this.productsService.findOne(id, user.id);
-	}
-
 	@Post('updateProduct/:id')
 	async updateProduct(
 		@Param('id') id: string,
@@ -118,11 +111,62 @@ export class ProductsController {
 		);
 	}
 
+	/**
+	 * STEP 1: Analyze Product (STEP 1)
+	 * POST /api/products/:id/analyze
+	 */
 	@Post(':id/analyze')
 	async analyzeProduct(
 		@Param('id') id: string,
 		@CurrentUser() user: User,
-	): Promise<{ extracted_variables: Record<string, any>; visuals: any[] }> {
-		return this.productsService.analyzeProduct(id, user.id);
+	): Promise<{ product_id: string; analyzed_product_json: AnalyzedProductJSON; status: string; analyzed_at: string }> {
+		const analyzedProductJSON = await this.productsService.analyzeProduct(id, user.id);
+		return {
+			product_id: id,
+			analyzed_product_json: analyzedProductJSON,
+			status: 'analyzed',
+			analyzed_at: analyzedProductJSON.analyzed_at || new Date().toISOString(),
+		};
+	}
+
+	/**
+	 * STEP 2: Update Product JSON (User Edits)
+	 * PUT /api/products/:id/product-json
+	 */
+	@Post('updateProductJson/:id')
+	async updateProductJSON(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+		@Body() updateProductJsonDto: UpdateProductJsonDto,
+	): Promise<{ analyzed_product_json: AnalyzedProductJSON; final_product_json: AnalyzedProductJSON; updated_at: string }> {
+		const product = await this.productsService.findOne(id, user.id);
+		const finalProductJSON = await this.productsService.updateProductJSON(id, user.id, updateProductJsonDto.manual_overrides);
+		return {
+			analyzed_product_json: product.analyzed_product_json as AnalyzedProductJSON,
+			final_product_json: finalProductJSON,
+			updated_at: new Date().toISOString(),
+		};
+	}
+
+	/**
+	 * Get Product with JSONs
+	 * GET /api/products/:id (enhanced response)
+	 */
+	@Get('getProduct/:id')
+	async getProductWithJSONs(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+	): Promise<Product & {
+		analyzed_product_json?: AnalyzedProductJSON;
+		manual_product_overrides?: Partial<AnalyzedProductJSON>;
+		final_product_json?: AnalyzedProductJSON;
+		collection?: {
+			id: string;
+			name: string;
+			analyzed_da_json?: any;
+			fixed_elements?: any;
+		};
+	}> {
+		return this.productsService.findOne(id, user.id);
 	}
 }

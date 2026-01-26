@@ -4,9 +4,10 @@ import { GenerationsService } from './generations.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
-import { CreateGenerationDto, GenerateDto, UpdateGenerationDto } from '../libs/dto';
+import { CreateGenerationDto, GenerateDto, UpdateGenerationDto, MergePromptsDto, UpdateMergedPromptsDto } from '../libs/dto';
 import { User } from '../database/entities/user.entity';
 import { Generation } from '../database/entities/generation.entity';
+import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
 
 @Controller('generations')
 @UseGuards(JwtAuthGuard)
@@ -40,21 +41,68 @@ export class GenerationsController {
 
 	@Get('getGeneration/:id')
 	async getGeneration(@Param('id') id: string, @CurrentUser() user: User): Promise<Generation> {
-		return this.generationsService.findOne(id, user.id);
+		return this.generationsService.getWithDetails(id, user.id);
 	}
 
-	@Get('getPrompts/:id')
-	async getPrompts(@Param('id') id: string, @CurrentUser() user: User): Promise<{ prompts: string[] }> {
-		return this.generationsService.previewPrompts(id, user.id);
-	}
-
-	@Post('updatePrompts/:id')
-	async updatePrompts(
+	/**
+	 * STEP 3: Merge Product + DA (STEP 3)
+	 * POST /api/generations/:id/merge
+	 */
+	@Post(':id/merge')
+	async mergePrompts(
 		@Param('id') id: string,
 		@CurrentUser() user: User,
-		@Body() dto: UpdateGenerationDto,
-	): Promise<Generation> {
-		return this.generationsService.updatePrompts(id, user.id, dto);
+		@Body() mergePromptsDto?: MergePromptsDto,
+	): Promise<{ generation_id: string; merged_prompts: MergedPrompts; status: string; merged_at: string }> {
+		const mergedPrompts = await this.generationsService.mergePrompts(id, user.id);
+		return {
+			generation_id: id,
+			merged_prompts: mergedPrompts,
+			status: 'merged',
+			merged_at: new Date().toISOString(),
+		};
+	}
+
+	/**
+	 * STEP 6: Update Merged Prompts (User Edits)
+	 * PUT /api/generations/:id/prompts
+	 */
+	@Post('updateMergedPrompts/:id')
+	async updateMergedPrompts(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+		@Body() updateMergedPromptsDto: UpdateMergedPromptsDto,
+	): Promise<{ merged_prompts: MergedPrompts; updated_at: string }> {
+		const mergedPrompts = await this.generationsService.updatePrompts(id, user.id, updateMergedPromptsDto.prompts);
+		return {
+			merged_prompts: mergedPrompts,
+			updated_at: new Date().toISOString(),
+		};
+	}
+
+	/**
+	 * STEP 6: Preview Merged Prompts (Before Generation)
+	 * GET /api/generations/:id/prompts
+	 */
+	@Get('getPrompts/:id')
+	async getPrompts(@Param('id') id: string, @CurrentUser() user: User): Promise<{
+		generation_id: string;
+		merged_prompts: MergedPrompts;
+		product_json: any;
+		da_json: any;
+		can_edit: boolean;
+	}> {
+		const generation = await this.generationsService.getWithDetails(id, user.id);
+		if (!generation.merged_prompts) {
+			throw new BadRequestException('Prompts must be merged first');
+		}
+		return {
+			generation_id: id,
+			merged_prompts: generation.merged_prompts as MergedPrompts,
+			product_json: generation.product.final_product_json || generation.product.analyzed_product_json,
+			da_json: generation.collection.analyzed_da_json,
+			can_edit: true,
+		};
 	}
 
 	@Post(':id/generate')

@@ -33,4 +33,17 @@ export class UpdateProductDto {
 	@IsObject({ message: ValidationMessage.FIELD_INVALID })
 	@IsOptional()
 	generated_images?: Record<string, string>;
+
+	// New fields for 3-step workflow
+	@IsObject({ message: ValidationMessage.FIELD_INVALID })
+	@IsOptional()
+	analyzed_product_json?: Record<string, any>;
+
+	@IsObject({ message: ValidationMessage.FIELD_INVALID })
+	@IsOptional()
+	manual_product_overrides?: Record<string, any>;
+
+	@IsObject({ message: ValidationMessage.FIELD_INVALID })
+	@IsOptional()
+	final_product_json?: Record<string, any>;
 }

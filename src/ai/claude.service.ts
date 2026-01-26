@@ -6,6 +6,12 @@ import { existsSync } from 'fs';
 import { readFile } from 'fs/promises';
 import * as path from 'path';
 import { AIMessage, FileMessage } from '../libs/enums';
+import { PRODUCT_ANALYSIS_PROMPT } from './prompts/product-analysis.prompt';
+import { DA_ANALYSIS_PROMPT } from './prompts/da-analysis.prompt';
+import { MERGE_PROMPT_TEMPLATE } from './prompts/merge-prompt.prompt';
+import { AnalyzedProductJSON } from '../common/interfaces/product-json.interface';
+import { AnalyzedDAJSON } from '../common/interfaces/da-json.interface';
+import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
 
 type AnalyzeProductInput = {
 	images: string[];
@@ -48,26 +54,133 @@ export class ClaudeService {
 
 	constructor(private readonly configService: ConfigService) {}
 
-	async analyzeProduct(input: AnalyzeProductInput): Promise<Record<string, any>> {
+	async analyzeProduct(input: AnalyzeProductInput): Promise<AnalyzedProductJSON> {
 		if (!input.images?.length) {
 			throw new BadRequestException(FileMessage.FILE_NOT_FOUND);
 		}
 
+		let promptText = PRODUCT_ANALYSIS_PROMPT;
+		if (input.productName) {
+			promptText += `\n\nProduct name: ${input.productName}`;
+		}
+
 		const content: ClaudeContentBlock[] = [
-			{ type: 'text', text: this.buildProductAnalysisPrompt(input) },
+			{ type: 'text', text: promptText },
 			...(await this.buildImageBlocks(input.images)),
 		];
 
-		
 		const response = await this.createMessage({
 			content,
-			max_tokens: 1200,
+			max_tokens: 2000,
 		});
 
 		const text = this.extractText(response.content);
 		const parsed = this.parseJson(text);
 
-		return parsed || { raw: text };
+		if (!parsed) {
+			this.logger.error('Failed to parse product analysis JSON', { text });
+			throw new InternalServerErrorException('Failed to parse product analysis');
+		}
+
+		// Add analyzed_at timestamp
+		const result: AnalyzedProductJSON = {
+			...parsed,
+			analyzed_at: new Date().toISOString(),
+		};
+
+		return result;
+	}
+
+	async analyzeDAReference(imageUrl: string): Promise<AnalyzedDAJSON> {
+		if (!imageUrl) {
+			throw new BadRequestException(FileMessage.FILE_NOT_FOUND);
+		}
+
+		const content: ClaudeContentBlock[] = [
+			{ type: 'text', text: DA_ANALYSIS_PROMPT },
+			...(await this.buildImageBlocks([imageUrl])),
+		];
+
+		const response = await this.createMessage({
+			content,
+			max_tokens: 2000,
+		});
+
+		const text = this.extractText(response.content);
+		const parsed = this.parseJson(text);
+
+		if (!parsed) {
+			this.logger.error('Failed to parse DA analysis JSON', { text });
+			throw new InternalServerErrorException('Failed to parse DA analysis');
+		}
+
+		// Add analyzed_at timestamp
+		const result: AnalyzedDAJSON = {
+			...parsed,
+			analyzed_at: new Date().toISOString(),
+		};
+
+		return result;
+	}
+
+	async mergeProductAndDA(
+		productJSON: AnalyzedProductJSON,
+		daJSON: AnalyzedDAJSON,
+		collectionName: string
+	): Promise<MergedPrompts> {
+		if (!productJSON || !daJSON) {
+			throw new BadRequestException('Product JSON and DA JSON are required');
+		}
+
+		const promptText = `${MERGE_PROMPT_TEMPLATE}
+
+Product JSON:
+${JSON.stringify(productJSON, null, 2)}
+
+DA JSON:
+${JSON.stringify(daJSON, null, 2)}
+
+Collection Name: ${collectionName}
+
+Generate the 6 merged prompts now. Return ONLY valid JSON object with the structure specified above.`;
+
+		const content: ClaudeContentBlock[] = [
+			{ type: 'text', text: promptText },
+		];
+
+		const response = await this.createMessage({
+			content,
+			max_tokens: 4000,
+		});
+
+		const text = this.extractText(response.content);
+		const parsed = this.parseJson(text);
+
+		if (!parsed) {
+			this.logger.error('Failed to parse merged prompts JSON', { text });
+			throw new InternalServerErrorException('Failed to parse merged prompts');
+		}
+
+		// Validate structure
+		const requiredTypes = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'];
+		for (const type of requiredTypes) {
+			if (!parsed[type]) {
+				this.logger.error(`Missing prompt type: ${type}`, { parsed });
+				throw new InternalServerErrorException(`Missing prompt type: ${type}`);
+			}
+		}
+
+		// Add editable flag and last_edited_at
+		const result: MergedPrompts = {
+			duo: { ...parsed.duo, editable: true, last_edited_at: null },
+			solo: { ...parsed.solo, editable: true, last_edited_at: null },
+			flatlay_front: { ...parsed.flatlay_front, editable: true, last_edited_at: null },
+			flatlay_back: { ...parsed.flatlay_back, editable: true, last_edited_at: null },
+			closeup_front: { ...parsed.closeup_front, editable: true, last_edited_at: null },
+			closeup_back: { ...parsed.closeup_back, editable: true, last_edited_at: null },
+		};
+
+		return result;
 	}
 
 	async generatePrompts(input: GeneratePromptsInput): Promise<string[]> {

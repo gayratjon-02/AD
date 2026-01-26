@@ -18,6 +18,7 @@ import {
 	GenerationType,
 	GenerationStatus,
 } from '../libs/enums';
+import { AnalyzedProductJSON } from '../common/interfaces/product-json.interface';
 
 @Injectable()
 export class ProductsService {
@@ -48,6 +49,7 @@ export class ProductsService {
 		const product = this.productsRepository.create({
 			name: createProductDto.name,
 			collection_id: createProductDto.collection_id,
+			brand_id: collection.brand.id,
 			user_id: userId,
 			front_image_url: createProductDto.front_image_url || null,
 			back_image_url: createProductDto.back_image_url || null,
@@ -157,7 +159,136 @@ export class ProductsService {
 			product.generated_images = updateProductDto.generated_images;
 		}
 
+		// Handle new JSON fields
+		if (updateProductDto.analyzed_product_json !== undefined) {
+			product.analyzed_product_json = updateProductDto.analyzed_product_json;
+		}
+
+		if (updateProductDto.manual_product_overrides !== undefined) {
+			product.manual_product_overrides = updateProductDto.manual_product_overrides;
+			// Auto-merge to final_product_json
+			product.final_product_json = this.mergeProductJSON(
+				product.analyzed_product_json,
+				updateProductDto.manual_product_overrides
+			);
+		}
+
+		if (updateProductDto.final_product_json !== undefined) {
+			product.final_product_json = updateProductDto.final_product_json;
+		}
+
 		return this.productsRepository.save(product);
+	}
+
+	/**
+	 * STEP 1: Analyze product images with Claude
+	 */
+	async analyzeProduct(id: string, userId: string): Promise<AnalyzedProductJSON> {
+		const product = await this.findOne(id, userId);
+
+		const images = [
+			product.front_image_url,
+			product.back_image_url,
+			...(product.reference_images || []),
+		].filter(Boolean) as string[];
+
+		if (!images.length) {
+			throw new BadRequestException(FileMessage.FILE_NOT_FOUND);
+		}
+
+		// Analyze with Claude
+		const analyzedProductJSON = await this.claudeService.analyzeProduct({
+			images,
+			productName: product.name,
+		});
+
+		// Save to product
+		product.analyzed_product_json = analyzedProductJSON;
+		// Initialize final_product_json with analyzed data
+		product.final_product_json = analyzedProductJSON;
+		await this.productsRepository.save(product);
+
+		return analyzedProductJSON;
+	}
+
+	/**
+	 * STEP 2: Update Product JSON with user overrides
+	 */
+	async updateProductJSON(
+		id: string,
+		userId: string,
+		overrides: Partial<AnalyzedProductJSON>
+	): Promise<AnalyzedProductJSON> {
+		const product = await this.findOne(id, userId);
+
+		if (!product.analyzed_product_json) {
+			throw new BadRequestException('Product must be analyzed first');
+		}
+
+		// Merge analyzed + overrides
+		product.manual_product_overrides = overrides;
+		product.final_product_json = this.mergeProductJSON(
+			product.analyzed_product_json,
+			overrides
+		);
+
+		await this.productsRepository.save(product);
+
+		return product.final_product_json as AnalyzedProductJSON;
+	}
+
+	/**
+	 * Get final product JSON (analyzed + overrides merged)
+	 */
+	async getFinalProductJSON(id: string, userId: string): Promise<AnalyzedProductJSON> {
+		const product = await this.findOne(id, userId);
+
+		if (product.final_product_json) {
+			return product.final_product_json as AnalyzedProductJSON;
+		}
+
+		if (product.analyzed_product_json) {
+			return product.analyzed_product_json as AnalyzedProductJSON;
+		}
+
+		throw new BadRequestException('Product has not been analyzed yet');
+	}
+
+	/**
+	 * Merge analyzed product JSON with user overrides
+	 */
+	private mergeProductJSON(
+		analyzed: Record<string, any> | null,
+		overrides: Partial<AnalyzedProductJSON>
+	): AnalyzedProductJSON {
+		if (!analyzed) {
+			throw new BadRequestException('Analyzed product JSON is required');
+		}
+
+		// Deep merge
+		const merged = { ...analyzed };
+
+		// Merge top-level fields
+		if (overrides.product_type) merged.product_type = overrides.product_type;
+		if (overrides.product_name) merged.product_name = overrides.product_name;
+		if (overrides.color_name) merged.color_name = overrides.color_name;
+		if (overrides.color_hex) merged.color_hex = overrides.color_hex;
+		if (overrides.material) merged.material = overrides.material;
+		if (overrides.texture_description) merged.texture_description = overrides.texture_description;
+		if (overrides.additional_details) merged.additional_details = overrides.additional_details;
+
+		// Merge nested objects
+		if (overrides.details) {
+			merged.details = { ...(merged.details || {}), ...overrides.details };
+		}
+		if (overrides.logo_front) {
+			merged.logo_front = { ...(merged.logo_front || {}), ...overrides.logo_front };
+		}
+		if (overrides.logo_back) {
+			merged.logo_back = { ...(merged.logo_back || {}), ...overrides.logo_back };
+		}
+
+		return merged as AnalyzedProductJSON;
 	}
 
 	async remove(id: string, userId: string): Promise<{ message: string }> {

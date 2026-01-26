@@ -3,9 +3,10 @@ import { CollectionsService } from './collections.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
-import { CreateCollectionDto, UpdateCollectionDto, FixedElementsDto, UpdatePromptTemplatesDto } from '../libs/dto';
+import { CreateCollectionDto, UpdateCollectionDto, FixedElementsDto, UpdatePromptTemplatesDto, UpdateDAJsonDto } from '../libs/dto';
 import { User } from '../database/entities/user.entity';
 import { Collection } from '../database/entities/collection.entity';
+import { AnalyzedDAJSON, FixedElements } from '../common/interfaces/da-json.interface';
 
 // Predefined DA (Direction Artistique) Templates - Decorators for visual generation
 export interface DATemplate {
@@ -167,11 +168,6 @@ export class CollectionsController {
 		return this.collectionsService.findAll(user.id);
 	}
 
-	@Get('getCollection/:id')
-	async getCollection(@Param('id') id: string, @CurrentUser() user: User): Promise<Collection> {
-		return this.collectionsService.findOne(id, user.id);
-	}
-
 	@Post('createCollection')
 	async createCollection(
 		@CurrentUser() user: User,
@@ -210,5 +206,56 @@ export class CollectionsController {
 	@Post('deleteCollection/:id')
 	async deleteCollection(@Param('id') id: string, @CurrentUser() user: User): Promise<{ message: string }> {
 		return this.collectionsService.remove(id, user.id);
+	}
+
+	/**
+	 * STEP 2: Analyze DA Reference (STEP 2)
+	 * POST /api/collections/:id/analyze-da
+	 */
+	@Post(':id/analyze-da')
+	async analyzeDA(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+	): Promise<{ collection_id: string; analyzed_da_json: AnalyzedDAJSON; fixed_elements: FixedElements; status: string; analyzed_at: string }> {
+		const analyzedDAJSON = await this.collectionsService.analyzeDA(id, user.id);
+		const collection = await this.collectionsService.findOne(id, user.id);
+		return {
+			collection_id: id,
+			analyzed_da_json: analyzedDAJSON,
+			fixed_elements: collection.fixed_elements as FixedElements,
+			status: 'analyzed',
+			analyzed_at: analyzedDAJSON.analyzed_at || new Date().toISOString(),
+		};
+	}
+
+	/**
+	 * STEP 4: Update DA JSON (User Edits)
+	 * PUT /api/collections/:id/da-json
+	 */
+	@Post('updateDAJson/:id')
+	async updateDAJSON(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+		@Body() updateDAJsonDto: UpdateDAJsonDto,
+	): Promise<{ analyzed_da_json: AnalyzedDAJSON; fixed_elements: FixedElements; updated_at: string }> {
+		const result = await this.collectionsService.updateDAJSON(
+			id,
+			user.id,
+			updateDAJsonDto.analyzed_da_json,
+			updateDAJsonDto.fixed_elements
+		);
+		return {
+			...result,
+			updated_at: new Date().toISOString(),
+		};
+	}
+
+	/**
+	 * Get Collection with Full DA Data
+	 * GET /api/collections/:id (enhanced response)
+	 */
+	@Get('getCollection/:id')
+	async getCollectionWithDA(@Param('id') id: string, @CurrentUser() user: User): Promise<Collection> {
+		return this.collectionsService.getWithDA(id, user.id);
 	}
 }

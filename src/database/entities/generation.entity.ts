@@ -38,6 +38,10 @@ export class Generation {
   })
   generation_type: GenerationType;
 
+  // STEP 3: Merged Prompts (Product + DA combined)
+  @Column({ type: 'jsonb', nullable: true })
+  merged_prompts: Record<string, any>;
+
   @Column({ type: 'varchar', length: 10, default: '4:5' })
   aspect_ratio: string;
 
@@ -54,6 +58,17 @@ export class Generation {
   })
   status: GenerationStatus;
 
+  // Current workflow step
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  current_step: string; // 'product_analysis', 'da_analysis', 'merging', 'image_generation'
+
+  // Progress tracking
+  @Column({ type: 'integer', default: 0 })
+  progress_percent: number;
+
+  @Column({ type: 'integer', default: 0 })
+  completed_visuals_count: number;
+
   @Column({ type: 'varchar', length: 500, nullable: true })
   competitor_ad_url: string;
 
@@ -62,6 +77,9 @@ export class Generation {
 
   @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   created_at: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  started_at: Date;
 
   @Column({ type: 'timestamp', nullable: true })
   completed_at: Date;

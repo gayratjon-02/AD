@@ -22,7 +22,9 @@ import { CreateGenerationDto, GenerateDto, UpdateGenerationDto } from '../libs/d
 import { ErrorMessage, GenerationMessage, GenerationStatus, NotFoundMessage, PermissionMessage } from '../libs/enums';
 import { GenerationJobData } from './generation.processor';
 import { GeminiService } from '../ai/gemini.service';
+import { ClaudeService } from '../ai/claude.service';
 import { FilesService } from '../files/files.service';
+import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
 
 type GenerationFilters = {
 	product_id?: string;
@@ -58,6 +60,7 @@ export class GenerationsService {
 
 		private readonly configService: ConfigService,
 		private readonly geminiService: GeminiService,
+		private readonly claudeService: ClaudeService,
 		private readonly filesService: FilesService,
 	) {}
 
@@ -119,6 +122,116 @@ export class GenerationsService {
 		this.logger.log(`✅ Generation created successfully: ${savedGeneration.id}`);
 
 		return enrichedGeneration || savedGeneration;
+	}
+
+	/**
+	 * STEP 3: Merge Product + DA → 6 prompts
+	 */
+	async mergePrompts(generationId: string, userId: string): Promise<MergedPrompts> {
+		const generation = await this.generationsRepository.findOne({
+			where: { id: generationId },
+			relations: ['product', 'collection'],
+		});
+
+		if (!generation) {
+			throw new NotFoundException(NotFoundMessage.GENERATION_NOT_FOUND);
+		}
+
+		if (generation.user_id !== userId) {
+			throw new ForbiddenException(PermissionMessage.NOT_OWNER);
+		}
+
+		// Fetch final product JSON
+		if (!generation.product.final_product_json && !generation.product.analyzed_product_json) {
+			throw new BadRequestException('Product must be analyzed first');
+		}
+
+		const productJSON = generation.product.final_product_json || generation.product.analyzed_product_json;
+
+		// Fetch DA JSON
+		if (!generation.collection.analyzed_da_json) {
+			throw new BadRequestException('Collection DA must be analyzed first');
+		}
+
+		const daJSON = generation.collection.analyzed_da_json;
+
+		// Merge with Claude
+		const mergedPrompts = await this.claudeService.mergeProductAndDA(
+			productJSON,
+			daJSON,
+			generation.collection.name
+		);
+
+		// Save to generation
+		generation.merged_prompts = mergedPrompts;
+		generation.status = GenerationStatus.PROCESSING;
+		generation.current_step = 'merging';
+		await this.generationsRepository.save(generation);
+
+		this.logger.log(`✅ Merged prompts for generation ${generationId}`);
+
+		return mergedPrompts;
+	}
+
+	/**
+	 * Update merged prompts (user edits)
+	 */
+	async updatePrompts(
+		generationId: string,
+		userId: string,
+		prompts: Partial<MergedPrompts>
+	): Promise<MergedPrompts> {
+		const generation = await this.generationsRepository.findOne({
+			where: { id: generationId },
+		});
+
+		if (!generation) {
+			throw new NotFoundException(NotFoundMessage.GENERATION_NOT_FOUND);
+		}
+
+		if (generation.user_id !== userId) {
+			throw new ForbiddenException(PermissionMessage.NOT_OWNER);
+		}
+
+		if (!generation.merged_prompts) {
+			throw new BadRequestException('Prompts must be merged first');
+		}
+
+		// Merge updates
+		const currentPrompts = generation.merged_prompts as MergedPrompts;
+		const updatedPrompts: MergedPrompts = {
+			duo: prompts.duo ? { ...currentPrompts.duo, ...prompts.duo, last_edited_at: new Date().toISOString() } : currentPrompts.duo,
+			solo: prompts.solo ? { ...currentPrompts.solo, ...prompts.solo, last_edited_at: new Date().toISOString() } : currentPrompts.solo,
+			flatlay_front: prompts.flatlay_front ? { ...currentPrompts.flatlay_front, ...prompts.flatlay_front, last_edited_at: new Date().toISOString() } : currentPrompts.flatlay_front,
+			flatlay_back: prompts.flatlay_back ? { ...currentPrompts.flatlay_back, ...prompts.flatlay_back, last_edited_at: new Date().toISOString() } : currentPrompts.flatlay_back,
+			closeup_front: prompts.closeup_front ? { ...currentPrompts.closeup_front, ...prompts.closeup_front, last_edited_at: new Date().toISOString() } : currentPrompts.closeup_front,
+			closeup_back: prompts.closeup_back ? { ...currentPrompts.closeup_back, ...prompts.closeup_back, last_edited_at: new Date().toISOString() } : currentPrompts.closeup_back,
+		};
+
+		generation.merged_prompts = updatedPrompts;
+		await this.generationsRepository.save(generation);
+
+		return updatedPrompts;
+	}
+
+	/**
+	 * Get generation with all data
+	 */
+	async getWithDetails(generationId: string, userId: string): Promise<Generation> {
+		const generation = await this.generationsRepository.findOne({
+			where: { id: generationId },
+			relations: ['product', 'collection', 'collection.brand'],
+		});
+
+		if (!generation) {
+			throw new NotFoundException(NotFoundMessage.GENERATION_NOT_FOUND);
+		}
+
+		if (generation.user_id !== userId) {
+			throw new ForbiddenException(PermissionMessage.NOT_OWNER);
+		}
+
+		return generation;
 	}
 
 	async findAll(
