@@ -19,6 +19,10 @@ export class CreateCollectionDto {
 	@IsNotEmpty({ message: ValidationMessage.FIELD_REQUIRED })
 	brand_id: string;
 
+	@IsString()
+	@IsOptional()
+	code?: string;
+
 	@ValidateNested()
 	@Type(() => FixedElementsDto)
 	@IsOptional()

@@ -17,6 +17,7 @@ import {
 import { NotFoundMessage, PermissionMessage, FileMessage } from '../libs/enums';
 import { ClaudeService } from '../ai/claude.service';
 import { AnalyzedDAJSON, FixedElements } from '../common/interfaces/da-json.interface';
+import slugify from 'slugify';
 
 @Injectable()
 export class CollectionsService {
@@ -44,8 +45,47 @@ export class CollectionsService {
 			throw new ForbiddenException(PermissionMessage.NOT_OWNER);
 		}
 
+		// Handle Code Generation
+		let code = createCollectionDto.code;
+
+		if (!code) {
+			// Generate slug from name
+			code = slugify(createCollectionDto.name, {
+				lower: true,
+				strict: true,
+				trim: true,
+			});
+		}
+
+		// Ensure uniqueness
+		let uniqueCode = code;
+		let counter = 1;
+		
+		while (true) {
+			const existingCollection = await this.collectionsRepository.findOne({
+				where: { code: uniqueCode },
+			});
+
+			if (!existingCollection) {
+				break; // Unique found
+			}
+
+			// Append random string or simple counter to make unique
+			// Using random string is safer for concurrency than just counter
+			const uniqueSuffix = Math.random().toString(36).substring(2, 6);
+			uniqueCode = `${code}-${uniqueSuffix}`;
+			counter++;
+			
+			// Safety break to prevent infinite loops (though unlikely with random)
+			if (counter > 10) {
+				uniqueCode = `${code}-${Date.now()}`;
+				break;
+			}
+		}
+
 		const collection = this.collectionsRepository.create({
 			name: createCollectionDto.name,
+			code: uniqueCode,
 			brand_id: createCollectionDto.brand_id,
 			fixed_elements: createCollectionDto.fixed_elements || null,
 			prompt_templates: createCollectionDto.prompt_templates || null,
