@@ -352,7 +352,11 @@ export class GenerationsService {
 		// Daily generation limit removed - no restrictions
 
 
+
 		// Extract prompts: prefer dto.prompts, then extract from merged_prompts based on visualTypes, then visuals
+		this.logger.log(`📥 Generate request for ${id}: dto=${JSON.stringify(dto)}`);
+		this.logger.log(`🔍 Generation state: status=${generation.status}, hasMergedPrompts=${!!generation.merged_prompts}`);
+
 		let prompts: string[] = [];
 		let visualTypes: string[] | undefined;
 
