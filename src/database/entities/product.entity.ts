@@ -16,10 +16,10 @@ export class Product {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', nullable: true })
   collection_id: string;
 
-  @ManyToOne(() => Collection, (collection) => collection.products)
+  @ManyToOne(() => Collection, (collection) => collection.products, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'collection_id' })
   collection: Collection;
 
