@@ -6,6 +6,7 @@ import { GenerationsService } from './generations.service';
 import { GenerationsController } from './generations.controller';
 import { GenerationEventsController } from './generation-events.controller';
 import { GenerationProcessor } from './generation.processor';
+import { GenerationGateway } from './generation.gateway';
 import { Generation } from '../database/entities/generation.entity';
 import { Product } from '../database/entities/product.entity';
 import { Collection } from '../database/entities/collection.entity';
@@ -29,7 +30,7 @@ import { FilesModule } from '../files/files.module';
 		FilesModule,
 	],
 	controllers: [GenerationsController, GenerationEventsController],
-	providers: [GenerationsService, GenerationProcessor],
-	exports: [GenerationsService],
+	providers: [GenerationsService, GenerationProcessor, GenerationGateway],
+	exports: [GenerationsService, GenerationGateway],
 })
 export class GenerationsModule {}

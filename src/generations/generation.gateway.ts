@@ -1,0 +1,95 @@
+import {
+	WebSocketGateway,
+	WebSocketServer,
+	SubscribeMessage,
+	OnGatewayConnection,
+	OnGatewayDisconnect,
+} from '@nestjs/websockets';
+import { Logger } from '@nestjs/common';
+import { Server } from 'socket.io';
+
+const ROOM_PREFIX = 'gen:';
+
+@WebSocketGateway(0, {
+	cors: { origin: '*' },
+	namespace: '/generations',
+})
+export class GenerationGateway implements OnGatewayConnection, OnGatewayDisconnect {
+	@WebSocketServer()
+	server!: Server;
+
+	private readonly logger = new Logger(GenerationGateway.name);
+
+	handleConnection(client: any) {
+		this.logger.debug(`Client connected: ${client.id}`);
+	}
+
+	handleDisconnect(client: any) {
+		this.logger.debug(`Client disconnected: ${client.id}`);
+	}
+
+	@SubscribeMessage('subscribe')
+	handleSubscribe(client: any, payload: { generationId: string }) {
+		const { generationId } = payload || {};
+		if (!generationId) return;
+		const room = ROOM_PREFIX + generationId;
+		client.join(room);
+		this.logger.debug(`Client ${client.id} joined room ${room}`);
+	}
+
+	@SubscribeMessage('unsubscribe')
+	handleUnsubscribe(client: any, payload: { generationId: string }) {
+		const { generationId } = payload || {};
+		if (!generationId) return;
+		client.leave(ROOM_PREFIX + generationId);
+	}
+
+	/** Emit to all clients watching this generation. Call from processor. */
+	emitToGeneration(generationId: string, event: string, data: any) {
+		const room = ROOM_PREFIX + generationId;
+		this.server.to(room).emit(event, data);
+	}
+
+	/** Visual completed – real-time card update */
+	emitVisualCompleted(
+		generationId: string,
+		payload: {
+			type: string;
+			index: number;
+			image_url: string;
+			generated_at: string;
+			prompt?: string;
+			status: 'completed' | 'failed';
+			error?: string;
+		},
+	) {
+		this.emitToGeneration(generationId, 'visual_completed', payload);
+	}
+
+	/** Progress update – elapsed, remaining, percent, counts */
+	emitProgress(
+		generationId: string,
+		payload: {
+			progress_percent: number;
+			completed: number;
+			total: number;
+			elapsed_seconds: number;
+			estimated_remaining_seconds?: number;
+		},
+	) {
+		this.emitToGeneration(generationId, 'generation_progress', payload);
+	}
+
+	/** Generation finished */
+	emitComplete(
+		generationId: string,
+		payload: {
+			status: 'completed' | 'failed';
+			completed: number;
+			total: number;
+			visuals: any[];
+		},
+	) {
+		this.emitToGeneration(generationId, 'generation_complete', payload);
+	}
+}

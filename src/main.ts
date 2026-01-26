@@ -8,6 +8,7 @@ import { HttpExceptionFilter } from './common/filters';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 
 async function bootstrap() {
 	const logger = new Logger('Bootstrap');
@@ -89,6 +90,9 @@ async function bootstrap() {
 				persistAuthorization: true,
 			},
 		});
+
+		// Socket.IO adapter for real-time generation progress
+		app.useWebSocketAdapter(new IoAdapter(app));
 
 		// 🔧 Enhanced CORS for SSE support
 		app.enableCors({
