@@ -631,6 +631,8 @@ export class GenerationsService {
 				index: v.index ?? index,
 				status: v.status || 'pending',
 				error: v.error,
+				image_url: v.image_url,
+				type: v.type,
 			})),
 		};
 	}
