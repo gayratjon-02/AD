@@ -21,20 +21,23 @@ export class GenerationGateway implements OnGatewayConnection, OnGatewayDisconne
 	private readonly logger = new Logger(GenerationGateway.name);
 
 	handleConnection(client: any) {
-		this.logger.debug(`Client connected: ${client.id}`);
+		this.logger.log(`🔌 [Socket] Client connected: ${client.id}`);
 	}
 
 	handleDisconnect(client: any) {
-		this.logger.debug(`Client disconnected: ${client.id}`);
+		this.logger.log(`🔌 [Socket] Client disconnected: ${client.id}`);
 	}
 
 	@SubscribeMessage('subscribe')
 	handleSubscribe(client: any, payload: { generationId: string }) {
 		const { generationId } = payload || {};
-		if (!generationId) return;
+		if (!generationId) {
+			this.logger.warn(`⚠️ [Socket] Subscribe without generationId from ${client.id}`);
+			return;
+		}
 		const room = ROOM_PREFIX + generationId;
 		client.join(room);
-		this.logger.debug(`Client ${client.id} joined room ${room}`);
+		this.logger.log(`✅ [Socket] Client ${client.id} joined room ${room}`);
 	}
 
 	@SubscribeMessage('unsubscribe')
@@ -47,6 +50,9 @@ export class GenerationGateway implements OnGatewayConnection, OnGatewayDisconne
 	/** Emit to all clients watching this generation. Call from processor. */
 	emitToGeneration(generationId: string, event: string, data: any) {
 		const room = ROOM_PREFIX + generationId;
+		const clients = this.server.sockets.adapter.rooms.get(room);
+		const clientCount = clients ? clients.size : 0;
+		this.logger.log(`📡 [Socket] Emitting '${event}' to room ${room} (${clientCount} clients)`);
 		this.server.to(room).emit(event, data);
 	}
 
