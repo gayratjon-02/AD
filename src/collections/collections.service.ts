@@ -287,7 +287,7 @@ export class CollectionsService {
 
 			// Auto-generate fixed_elements if not provided
 			if (!fixedElements) {
-				collection.fixed_elements = this.generateFixedElementsFromDA(collection.analyzed_da_json);
+				collection.fixed_elements = this.generateFixedElementsFromDA(collection.analyzed_da_json as AnalyzedDAJSON);
 			}
 		} else if (updates) {
 			// Merge updates into existing analyzed_da_json
