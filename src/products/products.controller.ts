@@ -31,11 +31,16 @@ export class ProductsController {
 
 	@Post()
 	@UseInterceptors(
-		FileFieldsInterceptor([
-			{ name: 'front_image', maxCount: 1 },
-			{ name: 'back_image', maxCount: 1 },
-			{ name: 'reference_images', maxCount: 10 },
-		]),
+		FileFieldsInterceptor(
+			[
+				{ name: 'front_image', maxCount: 1 },
+				{ name: 'back_image', maxCount: 1 },
+				{ name: 'reference_images', maxCount: 10 },
+			],
+			{
+				limits: { fileSize: 30 * 1024 * 1024 }, // 30MB per file
+			},
+		),
 	)
 	async create(
 		@CurrentUser() user: User,

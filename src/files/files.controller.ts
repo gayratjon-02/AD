@@ -17,7 +17,9 @@ export class FilesController {
 	constructor(private readonly filesService: FilesService) {}
 
 	@Post('uploadImage')
-	@UseInterceptors(FileInterceptor('file'))
+	@UseInterceptors(FileInterceptor('file', {
+		limits: { fileSize: 30 * 1024 * 1024 }, // 30MB
+	}))
 	async uploadImage(@UploadedFile() file: Express.Multer.File) {
 		return this.filesService.storeImage(file);
 	}

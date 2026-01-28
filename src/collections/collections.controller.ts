@@ -225,7 +225,9 @@ export class CollectionsController {
 	 * Accepts optional 'image' file via FormData
 	 */
 	@Post(':id/analyze-da')
-	@UseInterceptors(FileInterceptor('image'))
+	@UseInterceptors(FileInterceptor('image', {
+		limits: { fileSize: 30 * 1024 * 1024 }, // 30MB
+	}))
 	async analyzeDA(
 		@Param('id') id: string,
 		@CurrentUser() user: User,
