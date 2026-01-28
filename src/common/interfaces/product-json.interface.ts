@@ -2,9 +2,11 @@ export interface ProductDetails {
   piping?: string;
   zip?: string;
   collar?: string;
+  closure?: string;
   pockets?: string;
   fit?: string;
   sleeves?: string;
+  accents?: string;
 }
 
 export interface LogoInfo {

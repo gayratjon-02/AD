@@ -54,15 +54,17 @@ You MUST include the following missing fields in your JSON analysis:
 📋 REQUIRED JSON OUTPUT
 ═══════════════════════════════════════════════════════════
 
-Return ONLY valid JSON with this EXACT structure:
+Return ONLY valid JSON with this EXACT structure.
+⚠️ "color_hex" and "texture_description" are the TWO MOST CRITICAL FIELDS for realistic image generation.
+If you omit or half-ass these, the generation will fail. Be precise.
 
 {
   "product_type": "String (e.g., Quilted Puffer Jacket, Velour Tracksuit Set)",
   "product_name": "String (creative descriptive name)",
   "color_name": "String (e.g., Matte Black, Forest Green, Charcoal Gray)",
-  "color_hex": "String (e.g., #1F1F1F - estimate from visual analysis)",
+  "color_hex": "#HEXCODE (MANDATORY: Exact dominant hex from image, e.g. #1F1F1F. Analyze RGB pixel values. NEVER return empty or 'unknown'.)",
   "material": "String (e.g., Nylon Shell with Down Fill, Cotton Velour)",
-  "texture_description": "String (CRITICAL: Describe finish, sheen, weight, how light interacts - e.g. 'Semi-glossy quilted nylon with soft light reflection and matte down-filled chambers')",
+  "texture_description": "String (MANDATORY: Describe finish, sheen, weight, how light interacts. SEPARATE from material. e.g. 'Heavyweight fleece with matte finish and soft nap texture' or 'Semi-glossy quilted nylon with soft light reflection and matte down-filled chambers')",
   "details": {
     "collar": "String (e.g., Funnel neck with storm flap)",
     "closure": "String (e.g., Full-length black zipper with matte puller)",

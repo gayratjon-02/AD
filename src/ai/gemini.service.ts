@@ -338,6 +338,32 @@ Aspect ratio: ${ratioText}. Resolution: ${resolutionText}.`;
 	 * This is essential for generating product images with models
 	 */
 	private sanitizePromptForImageGeneration(prompt: string): string {
+		const lowerPrompt = prompt.toLowerCase();
+
+		// If the prompt contains photorealistic human markers (injected by PromptBuilder
+		// for duo/solo shots), SKIP aggressive sanitization to preserve human descriptions.
+		// These prompts intentionally describe real humans, not mannequins.
+		const isPhotorealisticHumanShot =
+			lowerPrompt.includes('photorealistic') &&
+			(lowerPrompt.includes('real human skin') || lowerPrompt.includes('editorial fashion photography'));
+
+		if (isPhotorealisticHumanShot) {
+			// Only strip specific demographics for PII compliance, keep everything else
+			let sanitized = prompt;
+
+			// Remove demographic descriptors only
+			const demographicPatterns = [
+				/\b(asian|african|european|american|caucasian|hispanic)\s+(man|woman|person|model)\b/gi,
+			];
+			for (const pattern of demographicPatterns) {
+				sanitized = sanitized.replace(pattern, 'model');
+			}
+
+			this.logger.log('Photorealistic human shot detected — skipping mannequin sanitization');
+			return sanitized;
+		}
+
+		// Standard sanitization for non-human shots (flatlay, closeup, etc.)
 		let sanitized = prompt;
 
 		// Remove specific person descriptions that trigger PII
@@ -365,7 +391,7 @@ Aspect ratio: ${ratioText}. Resolution: ${resolutionText}.`;
 			sanitized = sanitized.replace(pattern, 'professional model');
 		}
 
-		// General replacements
+		// General replacements for non-human shots
 		sanitized = sanitized
 			.replace(/\bperson\b/gi, 'mannequin')
 			.replace(/\bpeople\b/gi, 'mannequins')

@@ -9,6 +9,7 @@ import { GeminiService } from '../ai/gemini.service';
 import { GenerationStatus } from '../libs/enums';
 import { GenerationsService } from './generations.service';
 import { FilesService } from '../files/files.service';
+import { PromptBuilder } from '../common/utils/prompt-builder.util';
 
 export interface GenerationJobData {
 	generationId: string;
@@ -86,10 +87,16 @@ export class GenerationProcessor {
 			const imagePromises = prompts.map(async (prompt, i) => {
 				const visualType = visuals[i]?.type || `visual_${i}`;
 				this.logger.log(`🎨 [${i + 1}/${prompts.length}] Starting ${visualType}...`);
-				
+
+				// Enhance prompt based on shot type (duo/solo get photorealistic human injection)
+				const enhancedPrompt = PromptBuilder.enhanceForShotType(prompt, visualType);
+				if (enhancedPrompt !== prompt) {
+					this.logger.log(`🔧 [${i + 1}] Enhanced prompt for ${visualType} (human model shot)`);
+				}
+
 				try {
 					const result = await this.geminiService.generateImage(
-						prompt, 
+						enhancedPrompt,
 						geminiModel,
 						generation.aspect_ratio,
 						generation.resolution

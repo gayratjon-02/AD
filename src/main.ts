@@ -15,7 +15,14 @@ async function bootstrap() {
 	try {
 		const app = await NestFactory.create<NestExpressApplication>(AppModule, {
 			logger: ['error', 'warn', 'log', 'debug', 'verbose'],
+			bodyParser: false, // Disable default body parser to set custom limits
 		});
+
+		// Body parser limits (50MB safe buffer for 30MB uploads)
+		const bodyParser = require('body-parser');
+		app.use(bodyParser.json({ limit: '50mb' }));
+		app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+		app.use(bodyParser.raw({ limit: '50mb', type: 'application/octet-stream' }));
 
 		// Global exception filter
 		app.useGlobalFilters(new HttpExceptionFilter());
