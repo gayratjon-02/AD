@@ -8,6 +8,7 @@ import {
 	UseInterceptors,
 	UploadedFiles,
 	Query,
+	BadRequestException,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import type { Express } from 'express';
@@ -29,13 +30,19 @@ export class ProductsController {
 		private readonly filesService: FilesService,
 	) {}
 
+	/**
+	 * Create Product (client workflow step 3)
+	 * POST /api/products
+	 * FormData: name, collection_id, front_image (required), back_image (optional), reference_images[] (optional, up to 12).
+	 * No analysis at create — use POST /api/products/:id/analyze after.
+	 */
 	@Post()
 	@UseInterceptors(
 		FileFieldsInterceptor(
 			[
 				{ name: 'front_image', maxCount: 1 },
 				{ name: 'back_image', maxCount: 1 },
-				{ name: 'reference_images', maxCount: 10 },
+				{ name: 'reference_images', maxCount: 12 },
 			],
 			{
 				limits: { fileSize: 30 * 1024 * 1024 }, // 30MB per file
@@ -56,7 +63,11 @@ export class ProductsController {
 		const backImage = files?.back_image?.[0];
 		const referenceImages = files?.reference_images || [];
 
-		const storedFront = frontImage ? await this.filesService.storeImage(frontImage) : null;
+		if (!frontImage) {
+			throw new BadRequestException('Front image is required. Upload front packshot (product front view).');
+		}
+
+		const storedFront = await this.filesService.storeImage(frontImage);
 		const storedBack = backImage ? await this.filesService.storeImage(backImage) : null;
 		const storedRefs = referenceImages.length
 			? await Promise.all(referenceImages.map((file) => this.filesService.storeImage(file)))
@@ -65,9 +76,9 @@ export class ProductsController {
 		const createProductDto: CreateProductDto = {
 			name: uploadProductDto.name,
 			collection_id: uploadProductDto.collection_id,
-			front_image_url: storedFront?.url || null,
-			back_image_url: storedBack?.url || null,
-			reference_images: storedRefs.map((item) => item.url),
+			front_image_url: storedFront.url,
+			back_image_url: storedBack?.url ?? null,
+			reference_images: storedRefs.length ? storedRefs.map((r) => r.url) : null,
 		};
 
 		return this.productsService.create(user.id, createProductDto);

@@ -32,6 +32,11 @@ export class ProductsService {
 		private readonly claudeService: ClaudeService,
 	) {}
 
+	/**
+	 * Create Product (client workflow: CREATE step).
+	 * Stores name + front/back/reference image URLs only. No analysis.
+	 * Use POST /api/products/:id/analyze after create to get Product JSON.
+	 */
 	async create(userId: string, createProductDto: CreateProductDto): Promise<Product> {
 		const collection = await this.collectionsRepository.findOne({
 			where: { id: createProductDto.collection_id },
@@ -51,9 +56,11 @@ export class ProductsService {
 			collection_id: createProductDto.collection_id,
 			brand_id: collection.brand.id,
 			user_id: userId,
-			front_image_url: createProductDto.front_image_url || null,
-			back_image_url: createProductDto.back_image_url || null,
-			reference_images: createProductDto.reference_images || null,
+			front_image_url: createProductDto.front_image_url ?? null,
+			back_image_url: createProductDto.back_image_url ?? null,
+			reference_images: createProductDto.reference_images?.length
+				? createProductDto.reference_images
+				: null,
 		});
 
 		return this.productsRepository.save(product);
