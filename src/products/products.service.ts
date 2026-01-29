@@ -274,6 +274,24 @@ export class ProductsService {
 	}
 
 	/**
+	 * Reset Product JSON to Original Analysis
+	 * Clears manual overrides and resets final_product_json to analyzed_product_json
+	 */
+	async resetProductJson(id: string, userId: string): Promise<Product> {
+		const product = await this.findOne(id, userId);
+
+		if (!product.analyzed_product_json) {
+			throw new BadRequestException('Product has not been analyzed yet');
+		}
+
+		// Clear manual overrides and reset final to analyzed
+		product.manual_product_overrides = null;
+		product.final_product_json = product.analyzed_product_json;
+
+		return this.productsRepository.save(product);
+	}
+
+	/**
 	 * Merge analyzed product JSON with user overrides
 	 */
 	private mergeProductJSON(
