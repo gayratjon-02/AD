@@ -11,9 +11,18 @@ import { AIMessage, FileMessage } from '../libs/enums';
 import { PRODUCT_ANALYSIS_PROMPT } from './prompts/product-analysis.prompt';
 import { DA_ANALYSIS_PROMPT } from './prompts/da-analysis.prompt';
 import { MERGE_PROMPT_TEMPLATE } from './prompts/merge-prompt.prompt';
+import { PRODUCT_ANALYSIS_DIRECT_PROMPT } from './prompts/product-analysis-direct.prompt';
 import { AnalyzedProductJSON } from '../common/interfaces/product-json.interface';
 import { AnalyzedDAJSON } from '../common/interfaces/da-json.interface';
 import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
+import { AnalyzeProductDirectResponse } from '../libs/dto/analyze-product-direct.dto';
+
+type AnalyzeProductDirectInput = {
+	frontImages: string[];
+	backImages?: string[];
+	referenceImages?: string[];
+	productName?: string;
+};
 
 type AnalyzeProductInput = {
 	images: string[];
@@ -88,6 +97,74 @@ export class ClaudeService {
 		const result: AnalyzedProductJSON = {
 			...parsed,
 			analyzed_at: new Date().toISOString(),
+		};
+
+		return result;
+	}
+
+	/**
+	 * Direct product analysis from uploaded images
+	 * Used by POST /api/products/analyze endpoint
+	 * Returns simplified JSON structure for frontend
+	 */
+	async analyzeProductDirect(input: AnalyzeProductDirectInput): Promise<AnalyzeProductDirectResponse> {
+		if (!input.frontImages?.length) {
+			throw new BadRequestException('At least one front image is required');
+		}
+
+		// Combine all images for analysis
+		const allImages: string[] = [
+			...input.frontImages,
+			...(input.backImages || []),
+			...(input.referenceImages || []),
+		];
+
+		let promptText = PRODUCT_ANALYSIS_DIRECT_PROMPT;
+
+		// Add image context to help Claude understand which images are which
+		promptText += '\n\n--- IMAGE CONTEXT ---';
+		promptText += `\nFront images: ${input.frontImages.length} image(s)`;
+		if (input.backImages?.length) {
+			promptText += `\nBack images: ${input.backImages.length} image(s)`;
+		}
+		if (input.referenceImages?.length) {
+			promptText += `\nReference images: ${input.referenceImages.length} image(s)`;
+		}
+
+		if (input.productName) {
+			promptText += `\n\nProduct name hint: ${input.productName}`;
+		}
+
+		const content: ClaudeContentBlock[] = [
+			{ type: 'text', text: promptText },
+			...(await this.buildImageBlocks(allImages)),
+		];
+
+		const response = await this.createMessage({
+			content,
+			max_tokens: 2000,
+		});
+
+		const text = this.extractText(response.content);
+		const parsed = this.parseJson(text);
+
+		if (!parsed) {
+			this.logger.error('Failed to parse direct product analysis JSON', { text });
+			throw new InternalServerErrorException('Failed to parse product analysis');
+		}
+
+		// Validate and ensure all required fields exist
+		const result: AnalyzeProductDirectResponse = {
+			product_type: parsed.product_type || 'unknown garment',
+			primary_color: parsed.primary_color || '#000000',
+			material: parsed.material || 'mixed fabric',
+			fit: parsed.fit || 'regular',
+			garment_details: Array.isArray(parsed.garment_details) ? parsed.garment_details : [],
+			logos: {
+				front: parsed.logos?.front || 'none',
+				back: parsed.logos?.back || 'none',
+			},
+			visual_priorities: Array.isArray(parsed.visual_priorities) ? parsed.visual_priorities : [],
 		};
 
 		return result;

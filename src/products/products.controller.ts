@@ -16,7 +16,7 @@ import 'multer';
 import { ProductsService } from './products.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { CreateProductDto, UpdateProductDto, UploadProductDto, AnalyzeImagesDto, UpdateProductJsonDto } from '../libs/dto';
+import { CreateProductDto, UpdateProductDto, UploadProductDto, AnalyzeImagesDto, UpdateProductJsonDto, AnalyzeProductDirectDto, AnalyzeProductDirectResponse } from '../libs/dto';
 import { AnalyzedProductJSON } from '../common/interfaces/product-json.interface';
 import { User } from '../database/entities/user.entity';
 import { Product } from '../database/entities/product.entity';
@@ -82,6 +82,63 @@ export class ProductsController {
 		};
 
 		return this.productsService.create(user.id, createProductDto);
+	}
+
+	/**
+	 * STEP 1: Analyze Product Images Directly
+	 * POST /api/products/analyze
+	 * FormData: front_images[] (required), back_images[] (optional), reference_images[] (optional, max 10)
+	 * Returns analyzed product JSON without creating a product record
+	 */
+	@Post('analyze')
+	@UseInterceptors(
+		FileFieldsInterceptor(
+			[
+				{ name: 'front_images', maxCount: 5 },
+				{ name: 'back_images', maxCount: 5 },
+				{ name: 'reference_images', maxCount: 10 },
+			],
+			{
+				limits: { fileSize: 30 * 1024 * 1024 }, // 30MB per file
+			},
+		),
+	)
+	async analyzeProductDirect(
+		@CurrentUser() user: User,
+		@Body() analyzeProductDirectDto: AnalyzeProductDirectDto,
+		@UploadedFiles()
+		files: {
+			front_images?: Express.Multer.File[];
+			back_images?: Express.Multer.File[];
+			reference_images?: Express.Multer.File[];
+		},
+	): Promise<AnalyzeProductDirectResponse> {
+		const frontImages = files?.front_images || [];
+		const backImages = files?.back_images || [];
+		const referenceImages = files?.reference_images || [];
+
+		if (!frontImages.length) {
+			throw new BadRequestException('At least one front image is required');
+		}
+
+		// Store uploaded files and get URLs
+		const storedFrontImages = await Promise.all(
+			frontImages.map((file) => this.filesService.storeImage(file)),
+		);
+		const storedBackImages = await Promise.all(
+			backImages.map((file) => this.filesService.storeImage(file)),
+		);
+		const storedReferenceImages = await Promise.all(
+			referenceImages.map((file) => this.filesService.storeImage(file)),
+		);
+
+		// Analyze with Claude
+		return this.productsService.analyzeProductDirect(
+			storedFrontImages.map((f) => f.url),
+			storedBackImages.map((f) => f.url),
+			storedReferenceImages.map((f) => f.url),
+			analyzeProductDirectDto.product_name,
+		);
 	}
 
 	@Get('getAllProducts')

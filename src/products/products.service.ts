@@ -19,6 +19,7 @@ import {
 	GenerationStatus,
 } from '../libs/enums';
 import { AnalyzedProductJSON } from '../common/interfaces/product-json.interface';
+import { AnalyzeProductDirectResponse } from '../libs/dto/analyze-product-direct.dto';
 
 @Injectable()
 export class ProductsService {
@@ -352,5 +353,28 @@ export class ProductsService {
 			prompt: prompts[0] || '',
 			extracted_variables: extractedVariables,
 		};
+	}
+
+	/**
+	 * STEP 1: Direct product analysis from uploaded images
+	 * POST /api/products/analyze
+	 * Accepts front, back, and reference images directly without creating a product first
+	 */
+	async analyzeProductDirect(
+		frontImageUrls: string[],
+		backImageUrls: string[],
+		referenceImageUrls: string[],
+		productName?: string,
+	): Promise<AnalyzeProductDirectResponse> {
+		if (!frontImageUrls.length) {
+			throw new BadRequestException('At least one front image is required');
+		}
+
+		return this.claudeService.analyzeProductDirect({
+			frontImages: frontImageUrls,
+			backImages: backImageUrls.length ? backImageUrls : undefined,
+			referenceImages: referenceImageUrls.length ? referenceImageUrls : undefined,
+			productName,
+		});
 	}
 }

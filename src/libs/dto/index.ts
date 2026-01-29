@@ -23,6 +23,7 @@ export * from './update-product.dto';
 export * from './upload-product.dto';
 export * from './analyze-images.dto';
 export * from './update-product-json.dto';
+export * from './analyze-product-direct.dto';
 
 // Generations DTOs
 export * from './create-generation.dto';
