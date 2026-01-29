@@ -9,6 +9,7 @@ import { Collection } from './entities/collection.entity';
 import { Product } from './entities/product.entity';
 import { Generation } from './entities/generation.entity';
 import { AdRecreation } from './entities/ad-recreation.entity';
+import { DAPreset } from './entities/da-preset.entity';
 
 @Module({
     imports: [
@@ -29,7 +30,7 @@ import { AdRecreation } from './entities/ad-recreation.entity';
 
                 return {
                     ...dbConfig,
-                    entities: [User, Brand, Collection, Product, Generation, AdRecreation],
+                    entities: [User, Brand, Collection, Product, Generation, AdRecreation, DAPreset],
                     autoLoadEntities: false,
                     maxQueryExecutionTime: 30000, // Increased from 10s to 30s
                     // Merge extra settings from config
@@ -40,7 +41,7 @@ import { AdRecreation } from './entities/ad-recreation.entity';
             },
         }),
 
-        TypeOrmModule.forFeature([User, Brand, Collection, Product, Generation, AdRecreation]),
+        TypeOrmModule.forFeature([User, Brand, Collection, Product, Generation, AdRecreation, DAPreset]),
     ],
     exports: [TypeOrmModule],
 })
