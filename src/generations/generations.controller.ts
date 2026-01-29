@@ -71,6 +71,70 @@ export class GenerationsController {
 	 *
 	 * Returns generation with images array.
 	 */
+	// ═══════════════════════════════════════════════════════════════════════════
+	// PHASE 4: SPLIT WORKFLOW (Build → Edit → Generate)
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 * POST /api/generations/:id/build-prompts
+	 * 
+	 * Step 1: Build prompts from Product + DA (No generation yet)
+	 */
+	@Post(':id/build-prompts')
+	async buildPrompts(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+	): Promise<{ success: boolean; generation_id: string; prompts: MergedPrompts; message: string }> {
+		return this.generationsService.buildPrompts(id, user.id);
+	}
+
+	/**
+	 * PUT /api/generations/:id/save-prompts
+	 * 
+	 * Step 2: Save user edits to the prompts
+	 */
+	@Post(':id/save-prompts') // Using POST to match REST pattern in this project, or PUT if prefer
+	async savePrompts(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+		@Body() body: { prompts: Partial<MergedPrompts> },
+	): Promise<{ success: boolean; generation_id: string; prompts: MergedPrompts; message: string }> {
+		if (!body.prompts) {
+			throw new BadRequestException('prompts object is required');
+		}
+		return this.generationsService.savePrompts(id, user.id, body.prompts);
+	}
+
+	/**
+	 * POST /api/generations/:id/generate-images
+	 * 
+	 * Step 3: Generate images (Partial or Full)
+	 * Body: { selected_shots: ['duo', 'solo'] }
+	 */
+	@Post(':id/generate-images')
+	async generateImages(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+		@Body() body: { selected_shots?: string[] },
+	): Promise<{ success: boolean; generation: Generation; message: string }> {
+		const generation = await this.generationsService.generateVisuals(id, user.id, {
+			selected_shots: body.selected_shots
+		});
+
+		const visuals = generation.visuals || [];
+		const completed = visuals.filter((v: any) => v.status === 'completed').length;
+
+		return {
+			success: true,
+			generation,
+			message: `Started generation for ${body.selected_shots?.length || 6} shots. Completed so far: ${completed}.`
+		};
+	}
+
+	/**
+	 * POST /api/generations/:id/execute
+	 * @deprecated Use split workflow instead
+	 */
 	@Post(':id/execute')
 	async execute(
 		@Param('id') id: string,

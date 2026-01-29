@@ -292,6 +292,46 @@ export class ProductsService {
 	}
 
 	/**
+	 * Update Product Analysis JSON (Persistent Edit)
+	 * PUT /api/products/:id/analysis
+	 *
+	 * Allows direct editing of the analyzed_product_json.
+	 * Changes are saved permanently and will be used in prompt generation.
+	 * Also updates final_product_json to match.
+	 */
+	async updateProductAnalysis(
+		id: string,
+		userId: string,
+		analysisData: AnalyzeProductDirectResponse
+	): Promise<Product> {
+		const product = await this.findOne(id, userId);
+
+		// Update analyzed_product_json with new data
+		product.analyzed_product_json = analysisData as unknown as Record<string, any>;
+
+		// Also update final_product_json (if no manual overrides, they should match)
+		if (!product.manual_product_overrides) {
+			product.final_product_json = analysisData as unknown as Record<string, any>;
+		} else {
+			// Re-merge with existing manual overrides
+			product.final_product_json = this.mergeProductJSON(
+				analysisData as unknown as Record<string, any>,
+				product.manual_product_overrides as Partial<AnalyzedProductJSON>
+			);
+		}
+
+		// Update product name and category if provided in analysis
+		if (analysisData.general_info?.product_name) {
+			product.name = analysisData.general_info.product_name;
+		}
+		if (analysisData.general_info?.category) {
+			product.category = analysisData.general_info.category;
+		}
+
+		return this.productsRepository.save(product);
+	}
+
+	/**
 	 * Merge analyzed product JSON with user overrides
 	 */
 	private mergeProductJSON(
@@ -430,4 +470,5 @@ export class ProductsService {
 			imageUrl: savedProduct.front_image_url || savedProduct.back_image_url
 		};
 	}
-}
+
+

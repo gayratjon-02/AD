@@ -172,6 +172,53 @@ export class DAService {
 	}
 
 	/**
+	 * Update DA preset analysis data
+	 * PUT /api/da/presets/:id/analysis
+	 *
+	 * Allows editing the analyzed_da_json and updates all related fields
+	 * System presets (is_default=true) cannot be modified
+	 *
+	 * @param id - Preset ID
+	 * @param analysisData - Updated AnalyzeDAPresetResponse data
+	 * @returns Updated DAPreset entity
+	 */
+	async updatePresetAnalysis(
+		id: string,
+		analysisData: AnalyzeDAPresetResponse,
+	): Promise<DAPreset> {
+		const preset = await this.findOne(id);
+
+		if (preset.is_default) {
+			throw new BadRequestException('System presets cannot be modified');
+		}
+
+		this.logger.log(`📝 Updating DA Preset analysis: ${preset.name} (${id})`);
+
+		// Update the analyzed_da_json
+		preset.analyzed_da_json = analysisData as unknown as Record<string, any>;
+
+		// Update all individual fields to stay in sync
+		preset.name = analysisData.da_name || preset.name;
+		preset.background_type = analysisData.background.type;
+		preset.background_hex = analysisData.background.hex;
+		preset.floor_type = analysisData.floor.type;
+		preset.floor_hex = analysisData.floor.hex;
+		preset.props_left = analysisData.props.left_side;
+		preset.props_right = analysisData.props.right_side;
+		preset.styling_pants = analysisData.styling.pants;
+		preset.styling_footwear = analysisData.styling.footwear;
+		preset.lighting_type = analysisData.lighting.type;
+		preset.lighting_temperature = analysisData.lighting.temperature;
+		preset.mood = analysisData.mood;
+		preset.quality = analysisData.quality;
+
+		const savedPreset = await this.daPresetRepository.save(preset);
+		this.logger.log(`✅ DA Preset analysis updated: ${savedPreset.name}`);
+
+		return savedPreset;
+	}
+
+	/**
 	 * Delete a user-created preset
 	 * System presets (is_default=true) cannot be deleted
 	 */
@@ -185,6 +232,8 @@ export class DAService {
 		await this.daPresetRepository.remove(preset);
 		return { message: `DA Preset "${preset.name}" deleted successfully` };
 	}
+
+
 
 	/**
 	 * Convert DAPreset entity to the "Gold Standard" JSON format

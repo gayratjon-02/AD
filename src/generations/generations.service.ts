@@ -370,6 +370,359 @@ export class GenerationsService {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════════
+	// PHASE 4: SPLIT WORKFLOW (Build → Edit → Generate)
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 * A. buildPrompts(generationId)
+	 *
+	 * Builds 6 prompts from Product + DA Preset data WITHOUT generating images.
+	 * Saves prompts to generation.merged_prompts for later editing/generation.
+	 *
+	 * @param generationId - Generation UUID
+	 * @param userId - User ID for authorization
+	 * @returns MergedPrompts object with all 6 shot prompts
+	 */
+	async buildPrompts(generationId: string, userId: string): Promise<{
+		success: boolean;
+		generation_id: string;
+		prompts: MergedPrompts;
+		message: string;
+	}> {
+		this.logger.log(`🏗️ Building prompts for generation: ${generationId}`);
+
+		// 1. Fetch Generation with relations
+		const generation = await this.generationsRepository.findOne({
+			where: { id: generationId },
+			relations: ['product', 'da_preset'],
+		});
+
+		if (!generation) {
+			throw new NotFoundException('Generation not found');
+		}
+
+		if (generation.user_id !== userId) {
+			throw new ForbiddenException('You do not own this generation');
+		}
+
+		// Validate we have the required data
+		if (!generation.product) {
+			throw new BadRequestException('Generation has no linked product');
+		}
+
+		if (!generation.da_preset) {
+			throw new BadRequestException('Generation has no linked DA Preset');
+		}
+
+		// Check product is analyzed
+		if (!generation.product.final_product_json && !generation.product.analyzed_product_json) {
+			throw new BadRequestException('Product must be analyzed first');
+		}
+
+		// 2. Build prompts using PromptBuilder
+		const generatedPrompts = this.promptBuilderService.buildPromptsFromEntities({
+			product: generation.product,
+			daPreset: generation.da_preset,
+			modelType: generation.model_type || 'adult',
+		});
+
+		// 3. Save prompts to generation (but don't generate images yet)
+		generation.merged_prompts = generatedPrompts.prompts;
+		generation.current_step = 'prompts_built';
+		generation.status = GenerationStatus.PENDING;
+		await this.generationsRepository.save(generation);
+
+		this.logger.log(`✅ Built and saved 6 prompts for generation ${generationId}`);
+
+		return {
+			success: true,
+			generation_id: generationId,
+			prompts: generatedPrompts.prompts,
+			message: 'Prompts built successfully. You can now edit them or proceed to image generation.',
+		};
+	}
+
+	/**
+	 * B. savePrompts(generationId, newPrompts)
+	 *
+	 * Saves edited prompts from frontend to generation.merged_prompts.
+	 * Allows partial updates (only changed shots).
+	 *
+	 * @param generationId - Generation UUID
+	 * @param userId - User ID for authorization
+	 * @param newPrompts - Full or partial MergedPrompts object with edits
+	 * @returns Updated MergedPrompts
+	 */
+	async savePrompts(
+		generationId: string,
+		userId: string,
+		newPrompts: Partial<MergedPrompts>,
+	): Promise<{
+		success: boolean;
+		generation_id: string;
+		prompts: MergedPrompts;
+		message: string;
+	}> {
+		this.logger.log(`📝 Saving edited prompts for generation: ${generationId}`);
+
+		const generation = await this.generationsRepository.findOne({
+			where: { id: generationId },
+		});
+
+		if (!generation) {
+			throw new NotFoundException('Generation not found');
+		}
+
+		if (generation.user_id !== userId) {
+			throw new ForbiddenException('You do not own this generation');
+		}
+
+		if (!generation.merged_prompts) {
+			throw new BadRequestException('Prompts must be built first using POST /:id/build-prompts');
+		}
+
+		// Merge new prompts with existing (preserve unedited shots)
+		const currentPrompts = generation.merged_prompts as MergedPrompts;
+		const shotTypes = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'] as const;
+
+		const updatedPrompts: MergedPrompts = {} as MergedPrompts;
+
+		for (const shotType of shotTypes) {
+			if (newPrompts[shotType]) {
+				// Merge with existing and mark as edited
+				updatedPrompts[shotType] = {
+					...currentPrompts[shotType],
+					...newPrompts[shotType],
+					editable: true,
+					last_edited_at: new Date().toISOString(),
+				};
+			} else {
+				// Keep existing
+				updatedPrompts[shotType] = currentPrompts[shotType];
+			}
+		}
+
+		// Save to database
+		generation.merged_prompts = updatedPrompts;
+		generation.current_step = 'prompts_edited';
+		await this.generationsRepository.save(generation);
+
+		this.logger.log(`✅ Saved edited prompts for generation ${generationId}`);
+
+		return {
+			success: true,
+			generation_id: generationId,
+			prompts: updatedPrompts,
+			message: 'Prompts saved successfully. Ready for image generation.',
+		};
+	}
+
+	/**
+	 * C. generateVisuals(generationId, options)
+	 *
+	 * Generates images for selected shots only (or all if none specified).
+	 * Uses the saved merged_prompts from the database.
+	 *
+	 * @param generationId - Generation UUID
+	 * @param userId - User ID for authorization
+	 * @param options - { selected_shots: string[] } - Array of shot types to generate
+	 * @returns Updated Generation with generated images
+	 */
+	async generateVisuals(
+		generationId: string,
+		userId: string,
+		options?: { selected_shots?: string[] },
+	): Promise<Generation> {
+		this.logger.log(`🚀 Generating visuals for generation: ${generationId}`);
+
+		// 1. Fetch Generation
+		const generation = await this.generationsRepository.findOne({
+			where: { id: generationId },
+			relations: ['product', 'da_preset'],
+		});
+
+		if (!generation) {
+			throw new NotFoundException('Generation not found');
+		}
+
+		if (generation.user_id !== userId) {
+			throw new ForbiddenException('You do not own this generation');
+		}
+
+		if (generation.status === GenerationStatus.PROCESSING) {
+			throw new BadRequestException('Generation is already processing');
+		}
+
+		if (!generation.merged_prompts) {
+			throw new BadRequestException('Prompts must be built first using POST /:id/build-prompts');
+		}
+
+		// 2. Determine which shots to generate
+		const allShotTypes = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'];
+		const selectedShots = options?.selected_shots?.length
+			? options.selected_shots.filter(s => allShotTypes.includes(s))
+			: allShotTypes;
+
+		if (selectedShots.length === 0) {
+			throw new BadRequestException('No valid shot types selected. Valid types: ' + allShotTypes.join(', '));
+		}
+
+		this.logger.log(`📋 Generating ${selectedShots.length} shots: ${selectedShots.join(', ')}`);
+
+		// 3. Update status
+		generation.status = GenerationStatus.PROCESSING;
+		generation.current_step = 'generating_images';
+		generation.started_at = new Date();
+		generation.progress_percent = 5;
+		await this.generationsRepository.save(generation);
+
+		try {
+			const mergedPrompts = generation.merged_prompts as MergedPrompts;
+			const generatedImages: Record<string, string> = generation.generated_images || {};
+			const visuals: any[] = generation.visuals || [];
+
+			let completedCount = 0;
+			const totalShots = selectedShots.length;
+
+			// 4. Generate only selected shots
+			for (const shotType of selectedShots) {
+				const promptObject = mergedPrompts[shotType as keyof MergedPrompts];
+
+				if (!promptObject || !promptObject.prompt) {
+					this.logger.warn(`⚠️ No prompt found for shot type: ${shotType}`);
+					continue;
+				}
+
+				const prompt = promptObject.prompt;
+				const visualIndex = allShotTypes.indexOf(shotType);
+
+				this.logger.log(`🎨 Generating ${completedCount + 1}/${totalShots}: ${shotType} (${promptObject.display_name})`);
+
+				// Emit processing event
+				this.emitVisualProcessing(generationId, userId, visualIndex, shotType);
+
+				try {
+					// Call Gemini API
+					const result = await this.geminiService.generateImage(prompt);
+
+					// Save image to storage
+					let imageUrl: string | null = null;
+					let imageFilename: string | null = null;
+
+					if (result.data) {
+						const storedFile = await this.filesService.storeBase64Image(result.data, result.mimeType);
+						imageUrl = storedFile.url;
+						imageFilename = storedFile.filename;
+						this.logger.log(`💾 Saved ${shotType} image: ${imageUrl}`);
+					}
+
+					// Store result
+					generatedImages[shotType] = imageUrl;
+
+					const visual = {
+						type: shotType,
+						display_name: promptObject.display_name,
+						prompt,
+						negative_prompt: promptObject.negative_prompt,
+						camera: promptObject.camera,
+						status: 'completed',
+						image_url: imageUrl,
+						image_filename: imageFilename,
+						mimeType: result.mimeType,
+						generated_at: new Date().toISOString(),
+					};
+
+					// Update or add to visuals array
+					const existingIndex = visuals.findIndex((v: any) => v.type === shotType);
+					if (existingIndex >= 0) {
+						visuals[existingIndex] = visual;
+					} else {
+						visuals.push(visual);
+					}
+
+					// Emit completion event
+					this.emitVisualCompleted(generationId, userId, visualIndex, visual);
+
+					completedCount++;
+
+				} catch (error: any) {
+					this.logger.error(`❌ Failed to generate ${shotType}: ${error.message}`);
+
+					const failedVisual = {
+						type: shotType,
+						display_name: promptObject.display_name,
+						prompt,
+						camera: promptObject.camera,
+						status: 'failed',
+						error: error.message,
+					};
+
+					// Update or add to visuals array
+					const existingIndex = visuals.findIndex((v: any) => v.type === shotType);
+					if (existingIndex >= 0) {
+						visuals[existingIndex] = failedVisual;
+					} else {
+						visuals.push(failedVisual);
+					}
+
+					// Emit failure event
+					this.emitVisualFailed(generationId, userId, visualIndex, error.message);
+
+					completedCount++;
+				}
+
+				// Update progress
+				generation.progress_percent = Math.round(5 + (completedCount / totalShots) * 90);
+				generation.completed_visuals_count = visuals.filter(v => v.status === 'completed').length;
+				await this.generationsRepository.save(generation);
+			}
+
+			// 5. Final save
+			generation.visuals = visuals;
+			generation.generated_images = generatedImages;
+			generation.current_step = 'completed';
+			generation.progress_percent = 100;
+			generation.completed_at = new Date();
+
+			const successCount = visuals.filter(v => v.status === 'completed').length;
+			const failedCount = visuals.filter(v => v.status === 'failed').length;
+
+			if (successCount === 0) {
+				generation.status = GenerationStatus.FAILED;
+			} else {
+				generation.status = GenerationStatus.COMPLETED;
+			}
+
+			await this.generationsRepository.save(generation);
+
+			// Emit completion event
+			this.emitGenerationDone(generationId, userId, {
+				completed: successCount,
+				failed: failedCount,
+				total: totalShots,
+				status: generation.status,
+			});
+
+			this.logger.log(`✅ Generation ${generationId} completed: ${successCount}/${totalShots} images`);
+
+			// Return with fresh data
+			return this.generationsRepository.findOne({
+				where: { id: generationId },
+				relations: ['product', 'da_preset'],
+			});
+
+		} catch (error: any) {
+			this.logger.error(`❌ Generation ${generationId} failed: ${error.message}`);
+
+			generation.status = GenerationStatus.FAILED;
+			generation.current_step = 'failed';
+			await this.generationsRepository.save(generation);
+
+			throw new InternalServerErrorException(`Generation failed: ${error.message}`);
+		}
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
 	// LEGACY METHODS (for backward compatibility)
 	// ═══════════════════════════════════════════════════════════════════════════
 
