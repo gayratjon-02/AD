@@ -27,6 +27,9 @@ import { FilesService } from '../files/files.service';
 import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
 import { AnalyzedProductJSON } from '../common/interfaces/product-json.interface';
 import { AnalyzedDAJSON } from '../common/interfaces/da-json.interface';
+import { PromptBuilderService } from '../ai/prompt-builder.service';
+import { AnalyzeProductDirectResponse } from '../libs/dto/analyze-product-direct.dto';
+import { AnalyzeDAPresetResponse } from '../libs/dto/analyze-da-preset.dto';
 
 type GenerationFilters = {
 	product_id?: string;
@@ -64,6 +67,7 @@ export class GenerationsService {
 		private readonly geminiService: GeminiService,
 		private readonly claudeService: ClaudeService,
 		private readonly filesService: FilesService,
+		private readonly promptBuilderService: PromptBuilderService,
 	) { }
 
 	async create(userId: string, dto: CreateGenerationDto): Promise<Generation> {
@@ -129,7 +133,7 @@ export class GenerationsService {
 	/**
 	 * STEP 3: Merge Product + DA → 6 prompts
 	 */
-	async mergePrompts(generationId: string, userId: string): Promise<MergedPrompts> {
+	async mergePrompts(generationId: string, userId: string, input?: { model_type?: 'adult' | 'kid' }): Promise<MergedPrompts> {
 		const generation = await this.generationsRepository.findOne({
 			where: { id: generationId },
 			relations: ['product', 'collection'],
@@ -157,12 +161,67 @@ export class GenerationsService {
 
 		const daJSON = generation.collection.analyzed_da_json;
 
-		// Merge with Claude
-		const mergedPrompts = await this.claudeService.mergeProductAndDA(
-			productJSON as AnalyzedProductJSON,
-			daJSON as AnalyzedDAJSON,
-			generation.collection.name
-		);
+		// Use PromptBuilderService for strict deterministic templates
+		const { prompts, negative_prompt } = this.promptBuilderService.buildPrompts({
+			product: productJSON as AnalyzeProductDirectResponse,
+			da: daJSON as AnalyzeDAPresetResponse,
+			options: {
+				model_type: (input?.model_type as 'adult' | 'kid') || 'adult',
+			}
+		});
+
+		// Map generated prompts to MergedPrompts structure
+		// Each key in GeneratedPrompts matches exactly one key in MergedPrompts
+		// Helper to build common structure
+		const buildMergedPrompt = (
+			type: string,
+			displayName: string,
+			prompt: string,
+			cameraFocus: string
+		) => ({
+			type,
+			display_name: displayName,
+			prompt,
+			negative_prompt: negative_prompt,
+			editable: true,
+			last_edited_at: null,
+			camera: {
+				focal_length_mm: 50,
+				aperture: 2.8,
+				focus: cameraFocus,
+				angle: 'Eye level'
+			},
+			background: {
+				wall: daJSON.background.type,
+				floor: daJSON.floor.type
+			},
+			product_details: {
+				type: productJSON.general_info.product_name,
+				color: productJSON.visual_specs.color_name,
+				fabric: productJSON.visual_specs.fabric_texture
+			},
+			da_elements: {
+				background: daJSON.background.type,
+				props: [...daJSON.props.left_side, ...daJSON.props.right_side].join(', '),
+				mood: daJSON.mood
+			}
+		});
+
+		// Map generated prompts to MergedPrompts structure
+		const mergedPrompts: MergedPrompts = {
+			duo: buildMergedPrompt('duo', 'DUO (Father & Son)', prompts.duo, 'Subject focus'),
+			solo: buildMergedPrompt('solo', 'SOLO (Model)', prompts.solo, 'Subject focus'),
+			flatlay_front: buildMergedPrompt('flatlay_front', 'FLAT LAY FRONT', prompts.flat_lay_front, 'Flat lay'),
+			flatlay_back: buildMergedPrompt('flatlay_back', 'FLAT LAY BACK', prompts.flat_lay_back, 'Flat lay'),
+			closeup_front: {
+				...buildMergedPrompt('closeup_front', 'CLOSE UP FRONT', prompts.close_up_front, 'Macro details'),
+				camera: { focal_length_mm: 100, aperture: 4.0, focus: 'Macro details', angle: 'Close up' }
+			},
+			closeup_back: {
+				...buildMergedPrompt('closeup_back', 'CLOSE UP BACK', prompts.close_up_back, 'Macro details'),
+				camera: { focal_length_mm: 100, aperture: 4.0, focus: 'Macro details', angle: 'Close up' }
+			},
+		};
 
 		// Save to generation
 		generation.merged_prompts = mergedPrompts;
@@ -170,7 +229,7 @@ export class GenerationsService {
 		generation.current_step = 'merged';
 		await this.generationsRepository.save(generation);
 
-		this.logger.log(`✅ Merged prompts for generation ${generationId} - Status set to PENDING`);
+		this.logger.log(`✅ Merged prompts for generation ${generationId} using Strict Template Engine - Status set to PENDING`);
 		this.logger.debug(`Merged prompts content: ${JSON.stringify(mergedPrompts).substring(0, 200)}...`);
 
 		return mergedPrompts;

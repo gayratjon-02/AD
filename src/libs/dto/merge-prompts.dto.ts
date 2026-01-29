@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional } from 'class-validator';
+import { IsUUID, IsOptional, IsString } from 'class-validator';
 
 export class MergePromptsDto {
 	@IsUUID()
@@ -8,4 +8,8 @@ export class MergePromptsDto {
 	@IsUUID()
 	@IsOptional()
 	collection_id?: string;
+
+	@IsOptional()
+	@IsString()
+	model_type?: 'adult' | 'kid'; // Defaults to 'adult' if missing
 }

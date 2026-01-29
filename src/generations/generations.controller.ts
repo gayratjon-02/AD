@@ -12,7 +12,7 @@ import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
 @Controller('generations')
 @UseGuards(JwtAuthGuard)
 export class GenerationsController {
-	constructor(private readonly generationsService: GenerationsService) {}
+	constructor(private readonly generationsService: GenerationsService) { }
 
 	@Post('createGeneration')
 	async createGeneration(@CurrentUser() user: User, @Body() dto: CreateGenerationDto): Promise<Generation> {
@@ -54,7 +54,9 @@ export class GenerationsController {
 		@CurrentUser() user: User,
 		@Body() mergePromptsDto?: MergePromptsDto,
 	): Promise<{ generation_id: string; merged_prompts: MergedPrompts; status: string; merged_at: string }> {
-		const mergedPrompts = await this.generationsService.mergePrompts(id, user.id);
+		const mergedPrompts = await this.generationsService.mergePrompts(id, user.id, {
+			model_type: mergePromptsDto?.model_type,
+		});
 		return {
 			generation_id: id,
 			merged_prompts: mergedPrompts,
@@ -129,14 +131,14 @@ export class GenerationsController {
 	async testSSE(@Param('id') generationId: string): Promise<{ message: string }> {
 		const testUserId = 'test-user-123'; // Use a test user ID
 		console.log(`🧪 Testing SSE events for generation ${generationId}, user ${testUserId}`);
-		
+
 		// Simulate 6 images being generated with SSE events
 		for (let i = 0; i < 6; i++) {
 			setTimeout(() => {
 				console.log(`🎯 Test: Emitting processing event for visual ${i}`);
 				this.generationsService.emitVisualProcessing(generationId, testUserId, i, `test-type-${i}`);
 			}, i * 1000); // Each event 1 second apart
-			
+
 			setTimeout(() => {
 				console.log(`🎯 Test: Emitting completed event for visual ${i}`);
 				this.generationsService.emitVisualCompleted(generationId, testUserId, i, {
@@ -148,7 +150,7 @@ export class GenerationsController {
 				});
 			}, (i * 1000) + 500); // Completion 500ms after processing
 		}
-		
+
 		return { message: `Test SSE events started for generation ${generationId}` };
 	}
 
@@ -175,7 +177,7 @@ export class GenerationsController {
 	): Promise<StreamableFile> {
 		// Check if pre-generated ZIP exists
 		const preGeneratedZip = await this.generationsService.getPreGeneratedZip(id, user.id);
-		
+
 		if (preGeneratedZip) {
 			// Use pre-generated ZIP for instant download
 			res.set({
