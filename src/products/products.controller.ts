@@ -49,6 +49,9 @@ interface ProductAnalysisResponse {
 	category: string;
 	analysis: AnalyzeProductDirectResponse;
 	imageUrl: string;
+	front_image_url?: string;
+	back_image_url?: string;
+	reference_images?: string[];
 	message: string;
 	next_step: string;
 }
@@ -189,6 +192,9 @@ export class ProductsController {
 			category: result.category,
 			analysis: result.analysis,
 			imageUrl: result.imageUrl,
+			front_image_url: result.front_image_url,
+			back_image_url: result.back_image_url,
+			reference_images: result.reference_images,
 			message: 'Product analyzed and saved successfully',
 			next_step: 'POST /api/generations/create with product_id and da_preset_id',
 		};

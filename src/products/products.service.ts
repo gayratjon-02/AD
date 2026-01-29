@@ -423,7 +423,16 @@ export class ProductsService {
 		backImageUrls: string[],
 		referenceImageUrls: string[],
 		productName?: string,
-	): Promise<{ id: string; name: string; category: string; analysis: AnalyzeProductDirectResponse; imageUrl: string }> {
+	): Promise<{
+		id: string;
+		name: string;
+		category: string;
+		analysis: AnalyzeProductDirectResponse;
+		imageUrl: string;
+		front_image_url: string | null;
+		back_image_url: string | null;
+		reference_images: string[];
+	}> {
 		// At least one front OR back image is required
 		if (!frontImageUrls.length && !backImageUrls.length) {
 			throw new BadRequestException('At least one front or back image is required');
@@ -460,15 +469,15 @@ export class ProductsService {
 		console.log(`💾 Product saved to DB: ${savedProduct.id} (${savedProduct.name})`);
 
 		// 3. Return formatted response for Frontend
-		// "success": true wrapper is handled by Controller or global interceptor usually, 
-		// but check Controller return type.
 		return {
 			id: savedProduct.id,
 			name: savedProduct.name,
 			category: savedProduct.category,
 			analysis: analysis,
-			imageUrl: savedProduct.front_image_url || savedProduct.back_image_url
+			imageUrl: savedProduct.front_image_url || savedProduct.back_image_url,
+			front_image_url: savedProduct.front_image_url,
+			back_image_url: savedProduct.back_image_url,
+			reference_images: savedProduct.reference_images || []
 		};
 	}
-
-
+}
