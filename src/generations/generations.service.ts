@@ -17,6 +17,7 @@ import * as archiver from 'archiver';
 import { Generation } from '../database/entities/generation.entity';
 import { Product } from '../database/entities/product.entity';
 import { Collection } from '../database/entities/collection.entity';
+import { DAPreset } from '../database/entities/da-preset.entity';
 
 import { CreateGenerationDto, GenerateDto, UpdateGenerationDto } from '../libs/dto';
 import { ErrorMessage, GenerationMessage, GenerationStatus, NotFoundMessage, PermissionMessage } from '../libs/enums';
@@ -60,6 +61,9 @@ export class GenerationsService {
 		@InjectRepository(Collection)
 		private readonly collectionsRepository: Repository<Collection>,
 
+		@InjectRepository(DAPreset)
+		private readonly daPresetRepository: Repository<DAPreset>,
+
 		@InjectQueue('generation')
 		private readonly generationQueue: Queue<GenerationJobData>,
 
@@ -69,6 +73,305 @@ export class GenerationsService {
 		private readonly filesService: FilesService,
 		private readonly promptBuilderService: PromptBuilderService,
 	) { }
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// PHASE 3: SIMPLIFIED GENERATION API (Product + DAPreset → 6 Images)
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 * A. createGenerationSimple(productId, daPresetId, modelType)
+	 *
+	 * Creates a new generation record linking a Product and DAPreset.
+	 * Validates that both exist and product is analyzed.
+	 *
+	 * @param userId - User ID
+	 * @param productId - Product UUID (must be analyzed)
+	 * @param daPresetId - DAPreset UUID
+	 * @param modelType - 'adult' or 'kid'
+	 * @returns Generation with status PENDING
+	 */
+	async createGenerationSimple(
+		userId: string,
+		productId: string,
+		daPresetId: string,
+		modelType: 'adult' | 'kid' = 'adult'
+	): Promise<Generation> {
+		this.logger.log(`🆕 Creating simplified generation: product=${productId}, da=${daPresetId}, model=${modelType}`);
+
+		// 1. Validate Product exists and belongs to user
+		const product = await this.productsRepository.findOne({
+			where: { id: productId },
+		});
+
+		if (!product) {
+			throw new NotFoundException('Product not found');
+		}
+
+		if (product.user_id !== userId) {
+			throw new ForbiddenException('You do not own this product');
+		}
+
+		// Check product is analyzed
+		if (!product.analyzed_product_json && !product.final_product_json) {
+			throw new BadRequestException('Product must be analyzed first. Use POST /api/products/analyze');
+		}
+
+		// 2. Validate DAPreset exists
+		const daPreset = await this.daPresetRepository.findOne({
+			where: { id: daPresetId },
+		});
+
+		if (!daPreset) {
+			throw new NotFoundException('DA Preset not found');
+		}
+
+		// 3. Create Generation record
+		const generation = this.generationsRepository.create({
+			user_id: userId,
+			product_id: productId,
+			da_preset_id: daPresetId,
+			model_type: modelType,
+			status: GenerationStatus.PENDING,
+			current_step: 'created',
+			progress_percent: 0,
+		});
+
+		const saved = await this.generationsRepository.save(generation);
+
+		this.logger.log(`✅ Generation created: ${saved.id} (Product: ${product.name}, DA: ${daPreset.name})`);
+
+		// Return with relations
+		return this.generationsRepository.findOne({
+			where: { id: saved.id },
+			relations: ['product', 'da_preset'],
+		});
+	}
+
+	/**
+	 * B. executeGeneration(generationId)
+	 *
+	 * The heavy lifter that:
+	 * 1. Fetches Product + DAPreset data
+	 * 2. Builds 6 prompts using PromptBuilder
+	 * 3. Calls Gemini API for each prompt
+	 * 4. Saves results to generation.prompts and generation.images
+	 *
+	 * @param generationId - Generation UUID
+	 * @param userId - User ID for authorization
+	 * @returns Updated Generation with images
+	 */
+	async executeGeneration(generationId: string, userId: string): Promise<Generation> {
+		this.logger.log(`🚀 Executing generation: ${generationId}`);
+
+		// 1. Fetch Generation with relations
+		const generation = await this.generationsRepository.findOne({
+			where: { id: generationId },
+			relations: ['product', 'da_preset'],
+		});
+
+		if (!generation) {
+			throw new NotFoundException('Generation not found');
+		}
+
+		if (generation.user_id !== userId) {
+			throw new ForbiddenException('You do not own this generation');
+		}
+
+		if (generation.status === GenerationStatus.PROCESSING) {
+			throw new BadRequestException('Generation is already processing');
+		}
+
+		if (generation.status === GenerationStatus.COMPLETED) {
+			throw new BadRequestException('Generation is already completed. Use reset endpoint first.');
+		}
+
+		// Validate we have the required data
+		if (!generation.product) {
+			throw new BadRequestException('Generation has no linked product');
+		}
+
+		if (!generation.da_preset) {
+			throw new BadRequestException('Generation has no linked DA Preset');
+		}
+
+		// 2. Update status to PROCESSING
+		generation.status = GenerationStatus.PROCESSING;
+		generation.current_step = 'building_prompts';
+		generation.started_at = new Date();
+		generation.progress_percent = 5;
+		await this.generationsRepository.save(generation);
+
+		try {
+			// 3. Build 6 prompts using PromptBuilder
+			this.logger.log(`🏗️ Building prompts for product: ${generation.product.name}`);
+
+			const generatedPrompts = this.promptBuilderService.buildPromptsFromEntities({
+				product: generation.product,
+				daPreset: generation.da_preset,
+				modelType: generation.model_type || 'adult',
+			});
+
+			// Save prompts to generation
+			generation.merged_prompts = generatedPrompts;
+			generation.current_step = 'generating_images';
+			generation.progress_percent = 10;
+			await this.generationsRepository.save(generation);
+
+			this.logger.log(`✅ Built 6 prompts. Starting image generation...`);
+
+			// 4. Generate images for each prompt
+			// Keys match MergedPrompts interface: duo, solo, flatlay_front, flatlay_back, closeup_front, closeup_back
+			const promptTypes = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'] as const;
+			const generatedImages: Record<string, string> = {};
+			const visuals: any[] = [];
+
+			let completedCount = 0;
+			const totalPrompts = promptTypes.length;
+
+			for (const promptType of promptTypes) {
+				// Get the MergedPromptObject and extract the prompt string
+				const promptObject = generatedPrompts.prompts[promptType];
+				const prompt = promptObject.prompt; // Extract actual prompt string from MergedPromptObject
+				const visualIndex = completedCount;
+
+				this.logger.log(`🎨 Generating image ${completedCount + 1}/${totalPrompts}: ${promptType} (${promptObject.display_name})`);
+
+				// Emit processing event
+				this.emitVisualProcessing(generationId, userId, visualIndex, promptType);
+
+				try {
+					// Call Gemini API
+					const result = await this.geminiService.generateImage(prompt);
+
+					// Save image to storage
+					let imageUrl: string | null = null;
+					let imageFilename: string | null = null;
+
+					if (result.data) {
+						const storedFile = await this.filesService.storeBase64Image(result.data, result.mimeType);
+						imageUrl = storedFile.url;
+						imageFilename = storedFile.filename;
+						this.logger.log(`💾 Saved ${promptType} image: ${imageUrl}`);
+					}
+
+					// Store result
+					generatedImages[promptType] = imageUrl;
+
+					const visual = {
+						type: promptType,
+						display_name: promptObject.display_name,
+						prompt,
+						negative_prompt: promptObject.negative_prompt,
+						camera: promptObject.camera,
+						status: 'completed',
+						image_url: imageUrl,
+						image_filename: imageFilename,
+						mimeType: result.mimeType,
+						generated_at: new Date().toISOString(),
+					};
+
+					visuals.push(visual);
+
+					// Emit completion event
+					this.emitVisualCompleted(generationId, userId, visualIndex, visual);
+
+					completedCount++;
+
+				} catch (error: any) {
+					this.logger.error(`❌ Failed to generate ${promptType}: ${error.message}`);
+
+					// Mark as failed but continue with others
+					visuals.push({
+						type: promptType,
+						display_name: promptObject.display_name,
+						prompt,
+						camera: promptObject.camera,
+						status: 'failed',
+						error: error.message,
+					});
+
+					// Emit failure event
+					this.emitVisualFailed(generationId, userId, visualIndex, error.message);
+
+					completedCount++;
+				}
+
+				// Update progress
+				generation.progress_percent = Math.round(10 + (completedCount / totalPrompts) * 85);
+				generation.completed_visuals_count = visuals.filter(v => v.status === 'completed').length;
+				await this.generationsRepository.save(generation);
+			}
+
+			// 5. Final save
+			generation.visuals = visuals;
+			generation.generated_images = generatedImages;
+			generation.current_step = 'completed';
+			generation.progress_percent = 100;
+			generation.completed_at = new Date();
+
+			const successCount = visuals.filter(v => v.status === 'completed').length;
+			const failedCount = visuals.filter(v => v.status === 'failed').length;
+
+			if (successCount === 0) {
+				generation.status = GenerationStatus.FAILED;
+			} else if (failedCount > 0) {
+				generation.status = GenerationStatus.COMPLETED; // Partial success
+			} else {
+				generation.status = GenerationStatus.COMPLETED;
+			}
+
+			await this.generationsRepository.save(generation);
+
+			// Emit completion event
+			this.emitGenerationDone(generationId, userId, {
+				completed: successCount,
+				failed: failedCount,
+				total: totalPrompts,
+				status: generation.status,
+			});
+
+			this.logger.log(`✅ Generation ${generationId} completed: ${successCount}/${totalPrompts} images`);
+
+			// Return with fresh data
+			return this.generationsRepository.findOne({
+				where: { id: generationId },
+				relations: ['product', 'da_preset'],
+			});
+
+		} catch (error: any) {
+			this.logger.error(`❌ Generation ${generationId} failed: ${error.message}`);
+
+			generation.status = GenerationStatus.FAILED;
+			generation.current_step = 'failed';
+			await this.generationsRepository.save(generation);
+
+			throw new InternalServerErrorException(`Generation failed: ${error.message}`);
+		}
+	}
+
+	/**
+	 * Get generation details with product and DA preset info
+	 */
+	async getGenerationDetails(generationId: string, userId: string): Promise<Generation> {
+		const generation = await this.generationsRepository.findOne({
+			where: { id: generationId },
+			relations: ['product', 'da_preset'],
+		});
+
+		if (!generation) {
+			throw new NotFoundException('Generation not found');
+		}
+
+		if (generation.user_id !== userId) {
+			throw new ForbiddenException('You do not own this generation');
+		}
+
+		return generation;
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// LEGACY METHODS (for backward compatibility)
+	// ═══════════════════════════════════════════════════════════════════════════
 
 	async create(userId: string, dto: CreateGenerationDto): Promise<Generation> {
 		// 🔍 Validate product exists and belongs to user

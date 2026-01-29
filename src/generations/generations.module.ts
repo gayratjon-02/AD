@@ -9,13 +9,14 @@ import { GenerationProcessor } from './generation.processor';
 import { Generation } from '../database/entities/generation.entity';
 import { Product } from '../database/entities/product.entity';
 import { Collection } from '../database/entities/collection.entity';
+import { DAPreset } from '../database/entities/da-preset.entity';
 import { AiModule } from '../ai/ai.module';
 import { GenerationQueueModule } from './generation.queue';
 import { FilesModule } from '../files/files.module';
 
 @Module({
 	imports: [
-		TypeOrmModule.forFeature([Generation, Product, Collection]),
+		TypeOrmModule.forFeature([Generation, Product, Collection, DAPreset]),
 		JwtModule.registerAsync({
 			imports: [ConfigModule],
 			useFactory: async (configService: ConfigService) => ({

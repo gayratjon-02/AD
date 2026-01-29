@@ -3,11 +3,13 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
+  UpdateDateColumn,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
 import { Product } from './product.entity';
 import { Collection } from './collection.entity';
+import { DAPreset } from './da-preset.entity';
 import { GenerationType, GenerationStatus } from '../../libs/enums';
 
 @Entity('generations')
@@ -29,12 +31,31 @@ export class Generation {
   @JoinColumn({ name: 'collection_id' })
   collection: Collection;
 
+  // ═══════════════════════════════════════════════════════════
+  // DA PRESET RELATION (Phase 3)
+  // ═══════════════════════════════════════════════════════════
+
+  @Column({ type: 'uuid', nullable: true })
+  da_preset_id: string;
+
+  @ManyToOne(() => DAPreset, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'da_preset_id' })
+  da_preset: DAPreset;
+
+  // ═══════════════════════════════════════════════════════════
+  // MODEL TYPE (adult/kid)
+  // ═══════════════════════════════════════════════════════════
+
+  @Column({ type: 'varchar', length: 20, default: 'adult' })
+  model_type: 'adult' | 'kid';
+
   @Column({ type: 'uuid' })
   user_id: string;
 
   @Column({
     type: 'enum',
     enum: GenerationType,
+    nullable: true,
   })
   generation_type: GenerationType;
 
@@ -50,6 +71,17 @@ export class Generation {
 
   @Column({ type: 'jsonb', nullable: true })
   visuals: any[];
+
+  // ═══════════════════════════════════════════════════════════
+  // GENERATED IMAGES (Final output - 6 image URLs)
+  // ═══════════════════════════════════════════════════════════
+
+  /**
+   * Final generated image URLs
+   * @example { "duo": "https://...", "solo": "https://...", ... }
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  generated_images: Record<string, string>;
 
   @Column({
     type: 'enum',
@@ -77,6 +109,9 @@ export class Generation {
 
   @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   created_at: Date;
+
+  @UpdateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP', onUpdate: 'CURRENT_TIMESTAMP' })
+  updated_at: Date;
 
   @Column({ type: 'timestamp', nullable: true })
   started_at: Date;

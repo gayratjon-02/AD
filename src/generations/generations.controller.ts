@@ -14,6 +14,120 @@ import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
 export class GenerationsController {
 	constructor(private readonly generationsService: GenerationsService) { }
 
+	// ═══════════════════════════════════════════════════════════════════════════
+	// PHASE 3: SIMPLIFIED GENERATION API (Product + DAPreset → 6 Images)
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 * POST /api/generations/create
+	 *
+	 * Creates a new generation linking Product + DAPreset.
+	 * Returns generation.id with status PENDING.
+	 *
+	 * Body:
+	 * - product_id (required): UUID of analyzed product
+	 * - da_preset_id (required): UUID of DA preset
+	 * - model_type (optional): 'adult' or 'kid' (default: 'adult')
+	 */
+	@Post('create')
+	async createSimple(
+		@CurrentUser() user: User,
+		@Body() body: { product_id: string; da_preset_id: string; model_type?: 'adult' | 'kid' },
+	): Promise<{
+		success: boolean;
+		generation: Generation;
+		message: string;
+		next_step: string;
+	}> {
+		if (!body.product_id) {
+			throw new BadRequestException('product_id is required');
+		}
+		if (!body.da_preset_id) {
+			throw new BadRequestException('da_preset_id is required');
+		}
+
+		const generation = await this.generationsService.createGenerationSimple(
+			user.id,
+			body.product_id,
+			body.da_preset_id,
+			body.model_type || 'adult',
+		);
+
+		return {
+			success: true,
+			generation,
+			message: 'Generation created successfully',
+			next_step: 'POST /api/generations/:id/execute to start image generation',
+		};
+	}
+
+	/**
+	 * POST /api/generations/:id/execute
+	 *
+	 * Executes the generation:
+	 * 1. Builds 6 prompts from Product + DA
+	 * 2. Calls Gemini API for each prompt
+	 * 3. Saves results
+	 *
+	 * Returns generation with images array.
+	 */
+	@Post(':id/execute')
+	async execute(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+	): Promise<{
+		success: boolean;
+		generation: Generation;
+		stats: {
+			completed: number;
+			failed: number;
+			total: number;
+		};
+	}> {
+		const generation = await this.generationsService.executeGeneration(id, user.id);
+
+		const visuals = generation.visuals || [];
+		const completed = visuals.filter((v: any) => v.status === 'completed').length;
+		const failed = visuals.filter((v: any) => v.status === 'failed').length;
+
+		return {
+			success: true,
+			generation,
+			stats: {
+				completed,
+				failed,
+				total: visuals.length,
+			},
+		};
+	}
+
+	/**
+	 * GET /api/generations/:id/details
+	 *
+	 * Gets generation details including product and DA preset info.
+	 */
+	@Get(':id/details')
+	async getDetails(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+	): Promise<{
+		generation: Generation;
+		prompts: any;
+		images: Record<string, string>;
+	}> {
+		const generation = await this.generationsService.getGenerationDetails(id, user.id);
+
+		return {
+			generation,
+			prompts: generation.merged_prompts,
+			images: generation.generated_images || {},
+		};
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
+	// LEGACY ENDPOINTS (for backward compatibility)
+	// ═══════════════════════════════════════════════════════════════════════════
+
 	@Post('createGeneration')
 	async createGeneration(@CurrentUser() user: User, @Body() dto: CreateGenerationDto): Promise<Generation> {
 		return this.generationsService.create(user.id, dto);
