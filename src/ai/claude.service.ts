@@ -196,8 +196,9 @@ export class ClaudeService {
 			},
 			design_front: {
 				has_logo: parsed.design_front?.has_logo ?? false,
-				logo_text: parsed.design_front?.logo_text || '',
+				logo_text: parsed.design_front?.logo_text || 'N/A',
 				logo_type: parsed.design_front?.logo_type || '',
+				logo_content: parsed.design_front?.logo_content || '',
 				logo_color: parsed.design_front?.logo_color || '',
 				placement: parsed.design_front?.placement || '',
 				description: parsed.design_front?.description || 'Clean front design',
@@ -206,8 +207,9 @@ export class ClaudeService {
 				has_logo: parsed.design_back?.has_logo ?? false,
 				has_patch: parsed.design_back?.has_patch ?? false,
 				description: parsed.design_back?.description || 'Clean back design',
-				patch_color: parsed.design_back?.patch_color || '',
-				patch_detail: parsed.design_back?.patch_detail || '',
+				technique: parsed.design_back?.technique || 'N/A',
+				patch_color: parsed.design_back?.patch_color || 'N/A',
+				patch_detail: parsed.design_back?.patch_detail || 'N/A',
 			},
 			garment_details: {
 				pockets: parsed.garment_details?.pockets || 'Standard pockets',

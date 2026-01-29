@@ -36,11 +36,13 @@ export interface VisualSpecs {
 
 /**
  * Front design details
+ * Includes anti-hallucination fields for accurate logo detection
  */
 export interface DesignFront {
 	has_logo: boolean;
 	logo_text: string;
 	logo_type: string;
+	logo_content: string;
 	logo_color: string;
 	placement: string;
 	description: string;
@@ -48,11 +50,13 @@ export interface DesignFront {
 
 /**
  * Back design details
+ * Includes technique field to distinguish embroidery vs embossed
  */
 export interface DesignBack {
 	has_logo: boolean;
 	has_patch: boolean;
 	description: string;
+	technique: string;
 	patch_color: string;
 	patch_detail: string;
 }
