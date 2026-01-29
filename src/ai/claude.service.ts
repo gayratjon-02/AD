@@ -211,8 +211,9 @@ export class ClaudeService {
 			},
 			garment_details: {
 				pockets: parsed.garment_details?.pockets || 'Standard pockets',
-				sleeves: parsed.garment_details?.sleeves || 'Standard sleeves',
-				bottom: parsed.garment_details?.bottom || 'Standard hem',
+				sleeves_or_legs: parsed.garment_details?.sleeves_or_legs || parsed.garment_details?.sleeves || 'Standard construction',
+				bottom_termination: parsed.garment_details?.bottom_termination || parsed.garment_details?.bottom || 'Standard hem',
+				hardware_finish: parsed.garment_details?.hardware_finish || 'No visible hardware',
 				neckline: parsed.garment_details?.neckline || 'Standard neckline',
 			},
 		};

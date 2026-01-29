@@ -59,11 +59,13 @@ export interface DesignBack {
 
 /**
  * Garment construction details (from reference images)
+ * Uses micro-detail scanning protocol
  */
 export interface GarmentDetails {
 	pockets: string;
-	sleeves: string;
-	bottom: string;
+	sleeves_or_legs: string;
+	bottom_termination: string;
+	hardware_finish: string;
 	neckline: string;
 }
 
