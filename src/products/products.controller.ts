@@ -28,7 +28,7 @@ export class ProductsController {
 	constructor(
 		private readonly productsService: ProductsService,
 		private readonly filesService: FilesService,
-	) {}
+	) { }
 
 	/**
 	 * Create Product (client workflow step 3)
@@ -112,7 +112,7 @@ export class ProductsController {
 			back_images?: Express.Multer.File[];
 			reference_images?: Express.Multer.File[];
 		},
-	): Promise<AnalyzeProductDirectResponse> {
+	): Promise<{ id: string; name: string; category: string; analysis: AnalyzeProductDirectResponse; imageUrl: string }> {
 		const frontImages = files?.front_images || [];
 		const backImages = files?.back_images || [];
 		const referenceImages = files?.reference_images || [];
@@ -135,6 +135,7 @@ export class ProductsController {
 
 		// Analyze with Claude
 		return this.productsService.analyzeProductDirect(
+			user.id,
 			storedFrontImages.map((f) => f.url),
 			storedBackImages.map((f) => f.url),
 			storedReferenceImages.map((f) => f.url),

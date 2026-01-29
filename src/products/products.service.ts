@@ -31,7 +31,7 @@ export class ProductsService {
 		@InjectRepository(Generation)
 		private generationsRepository: Repository<Generation>,
 		private readonly claudeService: ClaudeService,
-	) {}
+	) { }
 
 	/**
 	 * Create Product (client workflow: CREATE step).
@@ -312,16 +312,16 @@ export class ProductsService {
 
 	async remove(id: string, userId: string): Promise<{ message: string }> {
 		const product = await this.findOne(id, userId);
-		
+
 		// First, delete all related generations to avoid foreign key constraint errors
 		const relatedGenerations = await this.generationsRepository.find({
 			where: { product_id: id },
 		});
-		
+
 		if (relatedGenerations.length > 0) {
 			await this.generationsRepository.remove(relatedGenerations);
 		}
-		
+
 		// Now delete the product
 		await this.productsRepository.remove(product);
 		return { message: 'Product deleted successfully' };
@@ -360,11 +360,12 @@ export class ProductsService {
 	 * Accepts front, back, and reference images directly without creating a product first
 	 */
 	async analyzeProductDirect(
+		userId: string,
 		frontImageUrls: string[],
 		backImageUrls: string[],
 		referenceImageUrls: string[],
 		productName?: string,
-	): Promise<AnalyzeProductDirectResponse> {
+	): Promise<{ id: string; name: string; category: string; analysis: AnalyzeProductDirectResponse; imageUrl: string }> {
 		// At least one front OR back image is required
 		if (!frontImageUrls.length && !backImageUrls.length) {
 			throw new BadRequestException('At least one front or back image is required');
@@ -375,15 +376,40 @@ export class ProductsService {
 		console.log('  Back images:', backImageUrls.length);
 		console.log('  Reference images:', referenceImageUrls.length);
 
-		const result = await this.claudeService.analyzeProductDirect({
+		// 1. Analyze with Claude
+		const analysis = await this.claudeService.analyzeProductDirect({
 			frontImages: frontImageUrls.length ? frontImageUrls : undefined,
 			backImages: backImageUrls.length ? backImageUrls : undefined,
 			referenceImages: referenceImageUrls.length ? referenceImageUrls : undefined,
 			productName,
 		});
 
-		console.log('✅ Product Analysis RESULT =>:', JSON.stringify(result, null, 2));
+		console.log('✅ Product Analysis Complete');
 
-		return result;
+		// 2. 🛡️ Save to Database (Persistence)
+		const product = this.productsRepository.create({
+			user_id: userId,
+			name: analysis.general_info.product_name, // Map from analysis
+			category: analysis.general_info.category, // Map from analysis
+			front_image_url: frontImageUrls[0] || null,
+			back_image_url: backImageUrls[0] || null,
+			reference_images: referenceImageUrls,
+			analyzed_product_json: analysis as unknown as Record<string, any>, // Store full JSON
+			final_product_json: analysis as unknown as Record<string, any>, // Init final with analyzed
+		});
+
+		const savedProduct = await this.productsRepository.save(product);
+		console.log(`💾 Product saved to DB: ${savedProduct.id} (${savedProduct.name})`);
+
+		// 3. Return formatted response for Frontend
+		// "success": true wrapper is handled by Controller or global interceptor usually, 
+		// but check Controller return type.
+		return {
+			id: savedProduct.id,
+			name: savedProduct.name,
+			category: savedProduct.category,
+			analysis: analysis,
+			imageUrl: savedProduct.front_image_url || savedProduct.back_image_url
+		};
 	}
 }

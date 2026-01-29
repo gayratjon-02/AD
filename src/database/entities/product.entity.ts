@@ -48,6 +48,10 @@ export class Product {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
+  /** Product category, e.g. "Track Pants", "Hoodie" */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  category: string;
+
   // ═══════════════════════════════════════════════════════════════════
   // SOURCE IMAGES (uploaded by user)
   // These are used as REFERENCE for Gemini image generation
