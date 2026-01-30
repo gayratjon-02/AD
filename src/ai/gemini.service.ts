@@ -105,7 +105,14 @@ export class GeminiService {
 		const ratioText = this.mapAspectRatioToGemini(aspectRatio ?? '4:5');
 		const resolutionText = this.mapResolutionToGemini(resolution);
 
+
 		// 🚀 CRITICAL: Sanitize prompt to avoid PII policy violations
+		// Defensive check for empty prompt
+		if (!prompt) {
+			this.logger.error('❌ CRITICAL: generateImages called with EMPTY/UNDEFINED prompt!');
+			throw new GeminiGenerationError('Prompt string is required');
+		}
+
 		const sanitizedPrompt = this.sanitizePromptForImageGeneration(prompt);
 
 		// Enhanced prompt for product photography - NO aspect ratio in text (ratio is in imageConfig only)
@@ -374,6 +381,7 @@ High quality studio lighting, sharp details, clean background.`;
 	 * This is essential for generating product images with models
 	 */
 	private sanitizePromptForImageGeneration(prompt: string): string {
+		if (!prompt) return '';
 		const lowerPrompt = prompt.toLowerCase();
 
 		// If the prompt contains photorealistic human markers (injected by PromptBuilder

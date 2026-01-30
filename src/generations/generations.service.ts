@@ -620,12 +620,13 @@ export class GenerationsService {
 			for (const shotType of selectedShots) {
 				const promptObject = mergedPrompts[shotType as keyof MergedPrompts];
 
-				if (!promptObject || !promptObject.gemini_prompt) {
-					this.logger.warn(`⚠️ No prompt found for shot type: ${shotType}`);
+				// Support legacy 'prompt' field if 'gemini_prompt' is missing
+				const prompt = promptObject.gemini_prompt || promptObject.prompt;
+
+				if (!prompt) {
+					this.logger.warn(`⚠️ No prompt found for shot type: ${shotType} (gemini_prompt and prompt are empty)`);
 					continue;
 				}
-
-				const prompt = promptObject.gemini_prompt;
 				const visualIndex = allShotTypes.indexOf(shotType);
 
 				this.logger.log(`🎨 Generating ${completedCount + 1}/${totalShots}: ${shotType} (${promptObject.display_name})`);
