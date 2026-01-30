@@ -309,8 +309,8 @@ export class ClaudeService {
 				right_side: Array.isArray(parsed.props?.right_side) ? parsed.props.right_side : [],
 			},
 			styling: {
-				pants: parsed.styling?.pants || 'Black trousers (#1A1A1A)',
-				footwear: parsed.styling?.footwear || 'BAREFOOT',
+				pants: parsed.styling?.bottom ?? parsed.styling?.pants ?? 'Black trousers (#1A1A1A)',
+				footwear: parsed.styling?.feet ?? parsed.styling?.footwear ?? 'BAREFOOT',
 			},
 			lighting: {
 				type: parsed.lighting?.type || 'Soft diffused studio lighting',

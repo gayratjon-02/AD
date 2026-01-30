@@ -119,34 +119,28 @@ export class DAService {
 		delete cleanProps.style;
 
 		// ═══════════════════════════════════════════════════════════
-		// RULE 2: SMART FOOTWEAR (No More Forced Barefoot)
+		// RULE 2: STYLING — MIRROR RULE (No Override)
 		// ═══════════════════════════════════════════════════════════
-		// 
-		// 🆕 NEW BEHAVIOR: Models should wear stylish shoes matching the outfit
-		// Instead of forcing BAREFOOT for indoor scenes, we now:
-		// 1. Preserve footwear from DA reference if specified
-		// 2. Apply a stylish default if no footwear is specified
-		//
-		// The actual smart matching based on product category happens in PromptBuilderService
+		// Preserve EXACTLY what the AI reported from the reference image.
+		// Do NOT replace BAREFOOT with "stylish" shoes. Do NOT guess or "improve" footwear.
 
-		// Defensive: Ensure styling object exists
 		if (!daJson.styling) {
 			daJson.styling = { pants: '', footwear: '' };
 		}
 
-		// If footwear is missing or explicitly BAREFOOT, apply a stylish default
-		const currentFootwear = (daJson.styling?.footwear || '').toLowerCase().trim();
-		if (!currentFootwear || currentFootwear === 'barefoot' || currentFootwear === '') {
-			this.logger.log('👟 No footwear specified → Setting stylish default');
-			daJson.styling.footwear = 'Clean white premium leather sneakers';
-			(daJson.styling as any).feet = 'Clean white premium leather sneakers';
-			(daJson.styling as any).shoes = 'Clean white premium leather sneakers';
+		// Map feet -> footwear if prompt returned "feet"
+		if ((daJson.styling as any).feet != null && daJson.styling.footwear === '') {
+			daJson.styling.footwear = (daJson.styling as any).feet;
+		}
+		// Only default footwear if completely missing (empty string)
+		if (!daJson.styling.footwear || daJson.styling.footwear.trim() === '') {
+			daJson.styling.footwear = 'BAREFOOT';
 		}
 
 		// ═══════════════════════════════════════════════════════════
-		// RULE 3: Default Pants (Brand Standard)
+		// RULE 3: Default Pants only if missing
 		// ═══════════════════════════════════════════════════════════
-		if (!daJson.styling?.pants) {
+		if (!daJson.styling?.pants || daJson.styling.pants.trim() === '') {
 			daJson.styling.pants = 'Black chino pants (#1A1A1A)';
 		}
 

@@ -1,102 +1,76 @@
 /**
- * DA (Art Direction) Reference Analysis Prompt v2.0
+ * DA (Art Direction) Reference Analysis Prompt — STRICT "MIRROR" version
  *
- * Used for: POST /api/da/analyze
- * Purpose: Reverse-engineer a reference image into a strict DAPreset JSON structure
+ * Used for: POST /api/da/analyze (DAService.analyzeReference → ClaudeService.analyzeDAForPreset)
+ * Purpose: Extract visual attributes and SUBJECT'S STYLING exactly as they appear. No guessing.
  *
- * This prompt instructs Claude to act as an expert Set Designer and Art Director,
- * extracting spatial, material, and atmospheric information from the image.
- * 
- * v2.0 CHANGES:
- * - Removed forced BAREFOOT rule for indoor scenes
- * - Models now wear stylish shoes matching the outfit
+ * CRITICAL: The AI must describe EXACTLY what the person in the reference image is wearing
+ * on their feet and legs. No hallucinating footwear (e.g. "Indoor = Barefoot") or "improving" the style.
  */
-export const DA_REFERENCE_ANALYSIS_PROMPT = `You are an expert AI Set Designer and "Brand Guardian" for a premium luxury fashion client.
-Your goal is to analyze the reference image and reverse-engineer a "Digital Set" that strictly adheres to the Client's Brand Codes.
+export const DA_REFERENCE_ANALYSIS_PROMPT = `You are a Computer Vision Specialist analyzing a "Style Reference" image for a fashion generation pipeline.
+Your goal is to extract the visual attributes of the scene and the SUBJECT'S STYLING exactly as they appear.
 
-═══════════════════════════════════════════════════════════
-🛡️ BRAND CODE OVERRIDES (NON-NEGOTIABLE)
-═══════════════════════════════════════════════════════════
+**CRITICAL INSTRUCTION FOR STYLING (THE "MIRROR" RULE):**
+You are NOT a stylist. You are a REPORTER. Do not suggest what "should" be worn. Describe only what IS worn in the image.
 
-1. **THE "SMART FOOTWEAR" RULE**
-   - Models should ALWAYS wear stylish footwear that matches the outfit style.
-   - **DEFAULT:** "Clean white premium leather sneakers" (for sporty/casual looks)
-   - For OUTERWEAR (jackets, coats): Use "Stylish leather Chelsea boots" or similar
-   - Only use specific footwear from reference if clearly visible and fashion-appropriate.
-   - *Example:* Reference shows indoor scene? → Output: "Clean white premium leather sneakers"
-   - *Example:* Reference shows leather jacket? → Output: "Stylish black leather Chelsea boots"
+**ANALYSIS SECTIONS:**
 
-2. **THE "UNIFORM" PANTS RULE**
-   - The Default Standard is: **"Black chino pants (#1A1A1A)"**
-   - Only deviate if the reference image styling is RADICALLY different (e.g., shorts, blue jeans).
-   - If unsure, default to the Brand Standard: "Black chino pants (#1A1A1A)".
+1.  **STYLING (Bottoms & Feet) - HIGHEST PRIORITY:**
+    * **Bottoms:** Describe the pants/skirt/shorts worn by the model in the reference image. Note color, material, and fit.
+        * *Example:* "Black baggy cargo pants", "Beige chinos", "Dark blue denim jeans".
+    * **FEET / FOOTWEAR:** Look specifically at the model's feet.
+        * **IF BAREFOOT:** Output "BAREFOOT". (Do not change this because of the outfit).
+        * **IF SOCKS:** Output "Wearing socks" + color.
+        * **IF SHOES:** Describe the exact type and color. (e.g., "White leather court sneakers", "Black chelsea boots", "Brown loafers").
+    * **Constraint:** If the feet are not visible (cropped), infer the most logical footwear based ONLY on the visible pants style (e.g. Sweatpants -> Sneakers), but prioritize visible evidence.
 
-3. **THE "PROPS SPLIT" RULE**
-   - You MUST visually separate props into **left_side** and **right_side** arrays.
-   - Do NOT dump all items into one list.
-   - Look at the image composition:
-     - Items to the left of the subject -> "left_side"
-     - Items to the right of the subject -> "right_side"
+2.  **BACKGROUND & ATMOSPHERE:**
+    * Describe the wall texture, floor material, and color palette.
+    * *Example:* "Dark walnut wood paneling with polished concrete floor."
+    * Extract dominant background color as HEX (e.g. #43161f). Extract floor color as HEX if different.
 
-═══════════════════════════════════════════════════════════
-🎨 VISUAL ANALYSIS INSTRUCTIONS
-═══════════════════════════════════════════════════════════
+3.  **PROPS & DECOR:**
+    * List specific items on the left and right (e.g., "Yellow mushroom lamp", "Vintage books").
+    * Output as two arrays: "left_side" and "right_side" based on position in the image.
 
-**1. BACKGROUND & FLOOR (Precision Required)**
-   - Extract the **DOMINANT HEX COLOR** for both background and floor.
-   - Do not just say "wood" -> Say "Walnut wood (#5D4037)"
-   - Do not just say "white wall" -> Say "Off-white plaster (#F5F5F5)"
+4.  **LIGHTING:**
+    * Describe type (Soft Studio, Hard Sunlight) and temperature.
 
-**2. LIGHTING (Atmosphere)**
-   - Identify the TYPE (Soft, Hard, Natural, Artificial).
-   - Estimate the TEMPERATURE (e.g., 4500K, 3200K).
-
-**3. MOOD**
-   - evocative description (10-15 words).
-
-**4. QUALITY**
-   - Always output: "8K editorial Vogue-level"
-
-═══════════════════════════════════════════════════════════
-📋 JSON OUTPUT FORMAT (STRICT)
-═══════════════════════════════════════════════════════════
-
-Return ONLY this exact JSON structure (no markdown, no explanations):
+**OUTPUT FORMAT (JSON):**
+Return ONLY valid JSON. No markdown, no code fences, no explanations.
 
 {
-  "da_name": "Custom Analysis",
+  "da_name": "string (short title for this reference)",
   "background": {
-    "type": "Material description",
-    "hex": "#XXXXXX"
+    "type": "string (wall texture and color description)",
+    "hex": "string (dominant background hex, e.g. #43161f)"
   },
   "floor": {
-    "type": "Material description",
-    "hex": "#XXXXXX"
+    "type": "string (floor material and color)",
+    "hex": "string (floor color hex, e.g. #3d2914)"
   },
   "props": {
-    "left_side": ["Item 1", "Item 2"],
-    "right_side": ["Item 3", "Item 4"]
-  },
-  "styling": {
-    "pants": "Black chino pants (#1A1A1A)",
-    "footwear": "Clean white premium leather sneakers"
+    "left_side": ["string (item 1)", "string (item 2)"],
+    "right_side": ["string (item 1)", "string (item 2)"]
   },
   "lighting": {
-    "type": "Lighting type",
-    "temperature": "e.g. 4500K"
+    "type": "string (e.g. Soft Studio, Hard Sunlight)",
+    "temperature": "string (e.g. 3200K warm, 5000K neutral)"
   },
-  "mood": "Evocative description",
-  "quality": "8K editorial Vogue-level"
+  "styling": {
+    "bottom": "string (Exact description of pants/skirt/shorts)",
+    "feet": "string (Exact description of footwear or 'BAREFOOT' or 'Wearing socks' + color)",
+    "accessories": "string (Any visible hats/glasses or 'None visible')"
+  },
+  "mood": "string (atmosphere in a few words)",
+  "quality": "string (e.g. 8K editorial Vogue-level)"
 }
 
-═══════════════════════════════════════════════════════════
-⚠️ FINAL CHECKLIST
-═══════════════════════════════════════════════════════════
-- Did you include stylish footwear matching the outfit?
-- Did you split props into left/right?
-- Did you use "Black chino pants (#1A1A1A)" as default?
-- Did you include HEX codes?
-- Is the output valid JSON?
+**FINAL CHECKLIST:**
+- Did you describe ONLY what is visible in the image (MIRROR rule)?
+- Is styling.feet populated strictly from visual evidence (or BAREFOOT if barefoot)?
+- Did you split props into left_side and right_side?
+- Did you include HEX codes for background and floor?
 
 Analyze the image now.`;
 
@@ -112,7 +86,7 @@ Return ONLY valid JSON matching this structure:
   "background": { "type": "Neutral grey seamless paper", "hex": "#808080" },
   "floor": { "type": "Light grey concrete", "hex": "#A9A9A9" },
   "props": { "left_side": [], "right_side": [] },
-  "styling": { "pants": "Black trousers (#1A1A1A)", "footwear": "Clean white premium leather sneakers" },
+  "styling": { "bottom": "Black trousers (#1A1A1A)", "feet": "BAREFOOT", "accessories": "None visible" },
   "lighting": { "type": "Soft diffused studio lighting", "temperature": "5000K neutral" },
   "mood": "Clean, professional, product-focused",
   "quality": "8K editorial Vogue-level"
