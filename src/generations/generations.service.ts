@@ -1057,6 +1057,7 @@ export class GenerationsService {
 
 		const query = this.generationsRepository
 			.createQueryBuilder('generation')
+			.leftJoinAndSelect('generation.product', 'product')
 			.where('generation.user_id = :userId', { userId })
 			.orderBy('generation.created_at', 'DESC')
 			.skip(skip)

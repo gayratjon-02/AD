@@ -263,7 +263,7 @@ export class PromptBuilderService {
         // 5. NEGATIVE PROMPT (shared across all shots)
         // ═══════════════════════════════════════════════════════════
 
-        const negativePrompt = 'text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers';
+        const negativePrompt = 'text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers, collage, split screen, inset image, picture in picture, multiple views, overlay, promotional material, text blocks, border, frame, montage, composite image';
 
         // ═══════════════════════════════════════════════════════════
         // 6. GENERATE 6 SHOT PROMPTS (MergedPromptObject format)
@@ -645,7 +645,7 @@ export class PromptBuilderService {
      */
     private buildShotNegativePrompt(shotType: string, product: AnalyzeProductDirectResponse): string {
         // Base negative prompt
-        let negativePrompt = 'text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers';
+        let negativePrompt = 'text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers, collage, split screen, inset image, picture in picture, multiple views, overlay, promotional material, text blocks, border, frame, montage, composite image';
 
         // Get material from fabric texture (analyze for material keywords)
         const fabricTexture = product.visual_specs.fabric_texture || '';
@@ -659,6 +659,11 @@ export class PromptBuilderService {
 
             // Also add color consistency blockers
             negativePrompt += ', wrong color, color shift, faded color, washed out';
+
+            // 🚀 ANTI-GHOSTING SHIELD (Close-Ups)
+            if (shotType.includes('closeup')) {
+                negativePrompt += ', double logo, duplicate text, blurry details, distorted letters, extra branding, messy stitching, bad focus, ghosting, motion blur';
+            }
         }
 
         return negativePrompt;
@@ -677,7 +682,7 @@ export class PromptBuilderService {
         zipperText: string,
         qualitySuffix: string
     ): string {
-        return `Photorealistic editorial fashion photography. Father and Son standing together in a ${da.mood} moment. ` +
+        return `Photorealistic editorial fashion photography. Medium Shot of Father and Son standing together in a ${da.mood} moment. ` +
             `Both wearing matching ${baseAttire}. ${styling}. ${scene}. ` +
             `${product.design_front.description}.${zipperText} ` +
             `Real human skin texture, natural poses, editorial quality.${qualitySuffix}`;
@@ -701,7 +706,7 @@ export class PromptBuilderService {
             subject = 'Cute young boy, age 5-7, child model, standing naturally, playful natural pose';
         }
 
-        return `Photorealistic editorial fashion photography. ${subject}. ` +
+        return `Photorealistic editorial fashion photography. Medium Shot. ${subject}. ` +
             `${baseAttire}. ${product.design_front.description}. ${logoTextFront}. ` +
             `${styling}. ${scene}.${zipperText} ` +
             `Real human skin texture, editorial quality.${qualitySuffix}`;
