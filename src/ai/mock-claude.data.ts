@@ -2,10 +2,14 @@ import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
 
 export const MOCK_MERGED_PROMPTS: MergedPrompts = {
     duo: {
-        type: 'duo',
-        display_name: 'DUO (Two Models)',
-        prompt: 'Professional e-commerce photography of two mannequins wearing the collection pieces, side by side, studio lighting, neutral background, emphasizing the fit and fabric drape.',
+        visual_id: 'mock_visual_duo_adult',
+        shot_type: 'duo',
+        model_type: 'adult',
+        gemini_prompt: 'Professional e-commerce photography of two mannequins wearing the collection pieces, side by side, studio lighting, neutral background, emphasizing the fit and fabric drape.',
         negative_prompt: 'blurry, low quality, distorted, watermark, text, logos, deformed',
+        output: { resolution: '4K', aspect_ratio: '4:5' },
+        display_name: 'DUO (Two Models)',
+        prompt: 'Professional e-commerce photography of two mannequins wearing the collection pieces, side by side, studio lighting, neutral background, emphasizing the fit and fabric drape.', // Legacy
         camera: {
             focal_length_mm: 50,
             aperture: 8,
@@ -32,10 +36,14 @@ export const MOCK_MERGED_PROMPTS: MergedPrompts = {
         last_edited_at: null
     },
     solo: {
-        type: 'solo',
-        display_name: 'SOLO (Single Model)',
-        prompt: 'Professional e-commerce photography of a single mannequin displaying the primary product, full body shot, dynamic pose, studio lighting.',
+        visual_id: 'mock_visual_solo_adult',
+        shot_type: 'solo',
+        model_type: 'adult',
+        gemini_prompt: 'Professional e-commerce photography of a single mannequin displaying the primary product, full body shot, dynamic pose, studio lighting.',
         negative_prompt: 'blurry, low quality, distorted, watermark',
+        output: { resolution: '4K', aspect_ratio: '4:5' },
+        display_name: 'SOLO (Single Model)',
+        prompt: 'Professional e-commerce photography of a single mannequin displaying the primary product, full body shot, dynamic pose, studio lighting.', // Legacy
         camera: {
             focal_length_mm: 85,
             aperture: 5.6,
@@ -61,10 +69,14 @@ export const MOCK_MERGED_PROMPTS: MergedPrompts = {
         last_edited_at: null
     },
     flatlay_front: {
-        type: 'flatlay_front',
-        display_name: 'FLAT LAY FRONT',
-        prompt: 'Professional flatlay photography of the product, front view, neatly arranged on a surface, overhead shot, soft lighting, 90 degree angle.',
+        visual_id: 'mock_visual_flatlay_front_adult',
+        shot_type: 'flatlay_front',
+        model_type: 'adult',
+        gemini_prompt: 'Professional flatlay photography of the product, front view, neatly arranged on a surface, overhead shot, soft lighting, 90 degree angle.',
         negative_prompt: 'wrinkles, messy, shadows, distorted',
+        output: { resolution: '4K', aspect_ratio: '4:5' },
+        display_name: 'FLAT LAY FRONT',
+        prompt: 'Professional flatlay photography of the product, front view, neatly arranged on a surface, overhead shot, soft lighting, 90 degree angle.', // Legacy
         camera: {
             focal_length_mm: 35,
             aperture: 11,
@@ -90,10 +102,14 @@ export const MOCK_MERGED_PROMPTS: MergedPrompts = {
         last_edited_at: null
     },
     flatlay_back: {
-        type: 'flatlay_back',
-        display_name: 'FLAT LAY BACK',
-        prompt: 'Professional flatlay photography of the product, back view, neatly arranged on a surface, overhead shot, soft lighting, 90 degree angle.',
+        visual_id: 'mock_visual_flatlay_back_adult',
+        shot_type: 'flatlay_back',
+        model_type: 'adult',
+        gemini_prompt: 'Professional flatlay photography of the product, back view, neatly arranged on a surface, overhead shot, soft lighting, 90 degree angle.',
         negative_prompt: 'wrinkles, messy, shadows, distorted',
+        output: { resolution: '4K', aspect_ratio: '4:5' },
+        display_name: 'FLAT LAY BACK',
+        prompt: 'Professional flatlay photography of the product, back view, neatly arranged on a surface, overhead shot, soft lighting, 90 degree angle.', // Legacy
         camera: {
             focal_length_mm: 35,
             aperture: 11,
@@ -118,10 +134,14 @@ export const MOCK_MERGED_PROMPTS: MergedPrompts = {
         last_edited_at: null
     },
     closeup_front: {
-        type: 'closeup_front',
-        display_name: 'CLOSE UP FRONT',
-        prompt: 'Macro photography detail shot of the product front features, zooming in on logos/prints or fabric texture, shallow depth of field.',
+        visual_id: 'mock_visual_closeup_front_product',
+        shot_type: 'closeup_front',
+        model_type: 'product',
+        gemini_prompt: 'Macro photography detail shot of the product front features, zooming in on logos/prints or fabric texture, shallow depth of field.',
         negative_prompt: 'blurry, out of focus, noisy',
+        output: { resolution: '4K', aspect_ratio: '4:5' },
+        display_name: 'CLOSE UP FRONT',
+        prompt: 'Macro photography detail shot of the product front features, zooming in on logos/prints or fabric texture, shallow depth of field.', // Legacy
         camera: {
             focal_length_mm: 100,
             aperture: 2.8,
@@ -147,10 +167,14 @@ export const MOCK_MERGED_PROMPTS: MergedPrompts = {
         last_edited_at: null
     },
     closeup_back: {
-        type: 'closeup_back',
-        display_name: 'CLOSE UP BACK',
-        prompt: 'Macro photography detail shot of the product back features, zooming in on labels or back design elements, shallow depth of field.',
+        visual_id: 'mock_visual_closeup_back_product',
+        shot_type: 'closeup_back',
+        model_type: 'product',
+        gemini_prompt: 'Macro photography detail shot of the product back features, zooming in on labels or back design elements, shallow depth of field.',
         negative_prompt: 'blurry, out of focus, noisy',
+        output: { resolution: '4K', aspect_ratio: '4:5' },
+        display_name: 'CLOSE UP BACK',
+        prompt: 'Macro photography detail shot of the product back features, zooming in on labels or back design elements, shallow depth of field.', // Legacy
         camera: {
             focal_length_mm: 100,
             aperture: 2.8,
