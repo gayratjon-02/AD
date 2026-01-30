@@ -263,7 +263,8 @@ export class PromptBuilderService {
         // 5. NEGATIVE PROMPT (shared across all shots)
         // ═══════════════════════════════════════════════════════════
 
-        const negativePrompt = 'text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers, collage, split screen, inset image, picture in picture, multiple views, overlay, promotional material, text blocks, border, frame, montage, composite image';
+        const GLOBAL_NEGATIVE_PROMPT = 'collage, split screen, inset image, picture in picture, multiple views, overlay, montage, composite image, promotional material, text blocks, watermarks, border, frame, padding, white background';
+        const negativePrompt = `${GLOBAL_NEGATIVE_PROMPT}, text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers`;
 
         // ═══════════════════════════════════════════════════════════
         // 6. GENERATE 6 SHOT PROMPTS (MergedPromptObject format)
@@ -645,7 +646,10 @@ export class PromptBuilderService {
      */
     private buildShotNegativePrompt(shotType: string, product: AnalyzeProductDirectResponse): string {
         // Base negative prompt
-        let negativePrompt = 'text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers, collage, split screen, inset image, picture in picture, multiple views, overlay, promotional material, text blocks, border, frame, montage, composite image';
+        // Base negative prompt - ALWAYS START WITH GLOBAL ANTI-COLLAGE PROTOCOL
+        const GLOBAL_NEGATIVE_PROMPT = 'collage, split screen, inset image, picture in picture, multiple views, overlay, montage, composite image, promotional material, text blocks, watermarks, border, frame, padding, white background';
+
+        let negativePrompt = `${GLOBAL_NEGATIVE_PROMPT}, text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers`;
 
         // Get material from fabric texture (analyze for material keywords)
         const fabricTexture = product.visual_specs.fabric_texture || '';
