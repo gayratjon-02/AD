@@ -11,7 +11,7 @@ import { Server } from 'socket.io';
 
 const ROOM_PREFIX = 'gen:';
 
-@WebSocketGateway(0, {
+@WebSocketGateway({
 	cors: { origin: '*' },
 	namespace: '/generations',
 })
@@ -26,7 +26,7 @@ export class GenerationGateway implements OnGatewayConnection, OnGatewayDisconne
 		this.server = server;
 		this.isInitialized = true;
 		this.logger.log(`✅ [Socket] Gateway initialized for namespace /generations`);
-		
+
 		// Verify server structure
 		if (this.server && this.server.sockets) {
 			this.logger.log(`✅ [Socket] Server sockets available`);
@@ -71,7 +71,7 @@ export class GenerationGateway implements OnGatewayConnection, OnGatewayDisconne
 
 		try {
 			const room = ROOM_PREFIX + generationId;
-			
+
 			// Try to get client count for logging (non-blocking)
 			let clientCount = '?';
 			try {
@@ -86,7 +86,7 @@ export class GenerationGateway implements OnGatewayConnection, OnGatewayDisconne
 			}
 
 			this.logger.log(`📡 [Socket] Emitting '${event}' to room ${room} (${clientCount} clients)`);
-			
+
 			// Emit to room - this should work even if adapter check failed
 			this.server.to(room).emit(event, data);
 		} catch (error: any) {
