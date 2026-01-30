@@ -36,4 +36,12 @@ export class MergePromptsDto {
 	@IsOptional()
 	@IsObject()
 	shot_options?: ShotOptions;
+
+	/**
+	 * Resolution for prompt quality suffix: "4K" | "2K"
+	 * Passed to PromptBuilderService to append quality keywords
+	 */
+	@IsOptional()
+	@IsString()
+	resolution?: string;
 }

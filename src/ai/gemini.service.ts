@@ -2,7 +2,7 @@ import { Injectable, InternalServerErrorException, Logger, BadRequestException }
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenAI } from '@google/genai';
 import { AIMessage, FileMessage } from '../libs/enums';
-import { GEMINI_MODEL, GeminiImageResult } from '../libs/config';
+import { GEMINI_MODEL, VALID_IMAGE_SIZES, GeminiImageResult } from '../libs/config';
 import { AnalyzedProductJSON } from '../common/interfaces/product-json.interface';
 import { AnalyzedDAJSON } from '../common/interfaces/da-json.interface';
 import { PRODUCT_ANALYSIS_PROMPT } from './prompts/product-analysis.prompt';
@@ -36,7 +36,39 @@ export class GeminiService {
 	// ⏱️ Timeout: 3 daqiqa (180 sekund) - image generation can take longer
 	private readonly TIMEOUT_MS = 180 * 1000; // 3 minutes in milliseconds
 
+	/** DTO aspect ratio -> Gemini API accepted aspect ratio (4:5 not supported by model -> 3:4) */
+	private static readonly ASPECT_RATIO_MAP: Record<string, string> = {
+		'1:1': '1:1',
+		'9:16': '9:16',
+		'4:5': '3:4',  // Gemini does not support 4:5; use 3:4 portrait
+		'16:9': '16:9',
+		'3:4': '3:4',
+		'4:3': '4:3',
+		'2:3': '2:3',
+		'3:2': '3:2',
+		'21:9': '21:9',
+	};
+
 	constructor(private readonly configService: ConfigService) { }
+
+	/**
+	 * Map DTO aspect_ratio to Gemini API accepted value.
+	 * 4:5 is not supported by Gemini -> fallback to 3:4.
+	 */
+	private mapAspectRatioToGemini(dtoRatio?: string): string {
+		if (!dtoRatio || typeof dtoRatio !== 'string') return '1:1';
+		const normalized = dtoRatio.trim();
+		return GeminiService.ASPECT_RATIO_MAP[normalized] ?? '1:1';
+	}
+
+	/**
+	 * Normalize resolution to Gemini imageSize (1K, 2K, 4K).
+	 */
+	private mapResolutionToGemini(resolution?: string): string {
+		if (!resolution || typeof resolution !== 'string') return '1K';
+		const upper = resolution.trim().toUpperCase();
+		return VALID_IMAGE_SIZES.includes(upper as any) ? upper : '1K';
+	}
 
 	/**
 	 * Promise with timeout wrapper
@@ -70,22 +102,21 @@ export class GeminiService {
 		const client = this.getClient(userApiKey);
 		const startTime = Date.now();
 
-		// Build enhanced prompt - FOCUS ON PRODUCT, NOT PEOPLE
-		const ratioText = aspectRatio || '1:1';
-		const resolutionText = resolution || '1K'; // "1K", "2K", "4K"
+		// Default aspect_ratio to 4:5 if missing; then map to Gemini format (4:5 -> 3:4; 1:1, 9:16, 16:9 supported)
+		const ratioText = this.mapAspectRatioToGemini(aspectRatio ?? '4:5');
+		const resolutionText = this.mapResolutionToGemini(resolution);
 
 		// 🚀 CRITICAL: Sanitize prompt to avoid PII policy violations
 		const sanitizedPrompt = this.sanitizePromptForImageGeneration(prompt);
 
-		// Enhanced prompt for product photography - NO SPECIFIC PEOPLE DESCRIPTIONS
+		// Enhanced prompt for product photography - NO aspect ratio in text (ratio is in imageConfig only)
 		const enhancedPrompt = `Professional e-commerce product photography: ${sanitizedPrompt}. 
-High quality studio lighting, sharp details, clean background. 
-Aspect ratio: ${ratioText}. Resolution: ${resolutionText}.`;
+High quality studio lighting, sharp details, clean background.`;
 
 		this.logger.log(`🎨 ========== GEMINI IMAGE GENERATION START ==========`);
 		this.logger.log(`📋 Model: ${this.MODEL}`);
-		this.logger.log(`📐 Aspect ratio: ${ratioText}`);
-		this.logger.log(`📏 Resolution: ${resolutionText}`);
+		this.logger.log(`📐 Aspect ratio (DTO: ${aspectRatio ?? 'default'} -> API: ${ratioText})`);
+		this.logger.log(`📏 Resolution (DTO: ${resolution ?? 'default'} -> API: ${resolutionText})`);
 		this.logger.log(`⏱️ Timeout: ${this.TIMEOUT_MS / 1000} seconds`);
 		this.logger.log(`📝 Original prompt (first 200 chars): ${prompt.substring(0, 200)}...`);
 		this.logger.log(`📝 Sanitized prompt (first 200 chars): ${sanitizedPrompt.substring(0, 200)}...`);
@@ -100,8 +131,8 @@ Aspect ratio: ${ratioText}. Resolution: ${resolutionText}.`;
 				config: {
 					responseModalities: ['TEXT', 'IMAGE'], // CRITICAL: Force image generation
 					imageConfig: {
-						aspectRatio: ratioText,
-						imageSize: resolutionText,
+						aspectRatio: ratioText,   // Mapped: 4:5 -> 3:4, etc.
+						imageSize: resolutionText, // 1K, 2K, 4K
 					}
 				}
 			});

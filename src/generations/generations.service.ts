@@ -218,6 +218,7 @@ export class GenerationsService {
 					product: generation.product,
 					daPreset: generation.da_preset,
 					modelType: generation.model_type || 'adult',
+					resolution: generation.resolution,
 				});
 			} else {
 				// Use Collection DA flow (Legacy)
@@ -230,6 +231,7 @@ export class GenerationsService {
 					da: convertedDA,
 					options: {
 						model_type: (generation.model_type as 'adult' | 'kid') || 'adult',
+						resolution: generation.resolution,
 					}
 				});
 			}
@@ -263,8 +265,13 @@ export class GenerationsService {
 				this.emitVisualProcessing(generationId, userId, visualIndex, promptType);
 
 				try {
-					// Call Gemini API
-					const result = await this.geminiService.generateImage(prompt);
+					// Call Gemini API with generation aspect_ratio and resolution
+					const result = await this.geminiService.generateImage(
+						prompt,
+						undefined,
+						generation.aspect_ratio,
+						generation.resolution,
+					);
 
 					// Save image to storage
 					let imageUrl: string | null = null;
@@ -442,11 +449,12 @@ export class GenerationsService {
 			throw new BadRequestException('Product must be analyzed first');
 		}
 
-		// 2. Build prompts using PromptBuilder
+			// 2. Build prompts using PromptBuilder (include resolution for quality suffix)
 		const generatedPrompts = this.promptBuilderService.buildPromptsFromEntities({
 			product: generation.product,
 			daPreset: generation.da_preset,
 			modelType: generation.model_type || 'adult',
+			resolution: generation.resolution,
 		});
 
 		// 3. Save prompts to generation (but don't generate images yet)
@@ -625,8 +633,13 @@ export class GenerationsService {
 				this.emitVisualProcessing(generationId, userId, visualIndex, shotType);
 
 				try {
-					// Call Gemini API
-					const result = await this.geminiService.generateImage(prompt);
+					// Call Gemini API with generation aspect_ratio and resolution
+					const result = await this.geminiService.generateImage(
+						prompt,
+						undefined,
+						generation.aspect_ratio,
+						generation.resolution,
+					);
 
 					// Save image to storage
 					let imageUrl: string | null = null;
@@ -1939,8 +1952,13 @@ export class GenerationsService {
 		this.emitVisualProcessing(generationId, userId, visualIndex, visual.type || `visual_${visualIndex}`);
 
 		try {
-			// Generate image
-			const result = await this.geminiService.generateImage(prompt, model);
+			// Generate image with generation aspect_ratio and resolution
+			const result = await this.geminiService.generateImage(
+				prompt,
+				model,
+				generation.aspect_ratio,
+				generation.resolution,
+			);
 
 			// Save to storage
 			let imageUrl: string | null = null;

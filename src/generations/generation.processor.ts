@@ -12,6 +12,8 @@ import { FilesService } from '../files/files.service';
 import { PromptBuilder } from '../common/utils/prompt-builder.util';
 import { GenerationGateway } from './generation.gateway';
 
+import { PromptBuilderService } from '../ai/prompt-builder.service';
+
 export interface GenerationJobData {
 	generationId: string;
 	prompts: string[];
@@ -33,6 +35,7 @@ export class GenerationProcessor {
 		private readonly generationsService: GenerationsService,
 		private readonly filesService: FilesService,
 		private readonly generationGateway: GenerationGateway,
+		private readonly promptBuilderService: PromptBuilderService,
 	) { }
 
 	/**
@@ -154,9 +157,18 @@ export class GenerationProcessor {
 				});
 
 				// Enhance prompt based on shot type (duo/solo get photorealistic human injection)
-				const enhancedPrompt = PromptBuilder.enhanceForShotType(prompt, visualType);
+				let enhancedPrompt = PromptBuilder.enhanceForShotType(prompt, visualType);
 				if (enhancedPrompt !== prompt) {
 					this.logger.log(`🔧 [${i + 1}] Enhanced prompt for ${visualType} (human model shot)`);
+				}
+
+				// 🚀 Apply Resolution Keywords (4K/2K)
+				if (generation.resolution) {
+					const originalPrompt = enhancedPrompt;
+					enhancedPrompt = this.promptBuilderService.applyResolutionKeywords(enhancedPrompt, generation.resolution);
+					if (enhancedPrompt !== originalPrompt) {
+						this.logger.log(`🔧 [${i + 1}] Applied resolution keywords for ${generation.resolution}`);
+					}
 				}
 
 				try {

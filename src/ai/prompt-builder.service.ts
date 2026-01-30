@@ -25,6 +25,8 @@ interface MergeInput {
         model_type?: 'adult' | 'kid';
         /** NEW: Per-shot control options */
         shot_options?: ShotOptions;
+        /** Resolution for prompt quality suffix: "4K" | "2K" */
+        resolution?: string;
     };
 }
 
@@ -38,6 +40,8 @@ interface EntityMergeInput {
     modelType?: 'adult' | 'kid';
     /** NEW: Per-shot control options */
     shotOptions?: ShotOptions;
+    /** Resolution for prompt quality suffix: "4K" | "2K" */
+    resolution?: string;
 }
 
 /**
@@ -171,6 +175,7 @@ export class PromptBuilderService {
             options: {
                 model_type: modelType,
                 shot_options: shotOptions,
+                resolution: input.resolution,
             },
         });
     }
@@ -206,10 +211,11 @@ export class PromptBuilderService {
         const isProductBottom = this.isBottomGarment(product.general_info.category);
 
         // ═══════════════════════════════════════════════════════════
-        // 3. COMMON PROMPT FRAGMENTS
+        // 3. COMMON PROMPT FRAGMENTS (resolution-based quality suffix)
         // ═══════════════════════════════════════════════════════════
 
-        const qualitySuffix = `, ${da.quality}, ${da.lighting.type}, ${da.lighting.temperature}`;
+        const resolutionSuffix = this.getResolutionQualitySuffix(options.resolution);
+        const qualitySuffix = `, ${da.quality}, ${da.lighting.type}, ${da.lighting.temperature}${resolutionSuffix}`;
         const baseAttire = `Wearing ${product.visual_specs.color_name} ${product.general_info.product_name}`;
 
         // SMART STYLING: If product IS a bottom → only footwear, no DA pants
@@ -433,6 +439,35 @@ export class PromptBuilderService {
         const defaultFootwear = 'Fashionable footwear matching the outfit style';
         this.logger.log(`👟 Smart Footwear: Default for "${productCategory}" → "${defaultFootwear}"`);
         return defaultFootwear;
+    }
+
+    /**
+     * Public method to apply resolution keywords to an existing prompt string.
+     * Useful for applying resolution settings at generation time.
+     */
+    applyResolutionKeywords(prompt: string, resolution: string): string {
+        const suffix = this.getResolutionQualitySuffix(resolution);
+        if (!suffix) return prompt;
+        // Avoid double applying if already present (basic check)
+        if (prompt.includes('8k resolution') && suffix.includes('8k resolution')) return prompt;
+        return `${prompt}${suffix}`;
+    }
+
+    /**
+     * Resolution-based quality suffix for positive_prompt (High Fidelity keywords).
+     * Do NOT put aspect ratio in the text prompt; ratio is passed only to Gemini config.
+     * 4K -> high-fidelity keywords; 2K/default -> standard quality tags.
+     */
+    private getResolutionQualitySuffix(resolution?: string): string {
+        if (!resolution || typeof resolution !== 'string') return '';
+        const r = resolution.trim().toUpperCase();
+        if (r === '4K') {
+            return ', 8k resolution, ultra-sharp focus, highly detailed texture, wallpaper quality, professional editorial photography, hasselblad x2d quality';
+        }
+        if (r === '2K') {
+            return ', high quality, sharp focus, professional photo';
+        }
+        return '';
     }
 
     /**
