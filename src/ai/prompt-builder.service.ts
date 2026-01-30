@@ -276,13 +276,14 @@ export class PromptBuilderService {
             last_edited_at: null,
         };
 
-        // 6.3 FLAT LAY FRONT (with size variation)
+        // 6.3 FLAT LAY FRONT (with size variation + shot-specific negative prompt)
         const flatLayFrontPrompt = this.buildFlatLayFrontPrompt(product, da, options.model_type, logoTextFront, qualitySuffix);
+        const flatLayFrontNegative = this.buildShotNegativePrompt('flatlay_front', product);
         const flatlay_front: MergedPromptObject = {
             ...SHOT_CONFIGS.flatlay_front,
             display_name: options.model_type === 'adult' ? 'Flat Lay Front (Adult Size)' : 'Flat Lay Front (Kid Size)',
             prompt: flatLayFrontPrompt,
-            negative_prompt: negativePrompt,
+            negative_prompt: flatLayFrontNegative,
             background,
             product_details: {
                 ...productDetails,
@@ -293,13 +294,14 @@ export class PromptBuilderService {
             last_edited_at: null,
         };
 
-        // 6.4 FLAT LAY BACK (with size variation)
+        // 6.4 FLAT LAY BACK (with size variation + shot-specific negative prompt)
         const flatLayBackPrompt = this.buildFlatLayBackPrompt(product, da, options.model_type, qualitySuffix);
+        const flatLayBackNegative = this.buildShotNegativePrompt('flatlay_back', product);
         const flatlay_back: MergedPromptObject = {
             ...SHOT_CONFIGS.flatlay_back,
             display_name: options.model_type === 'adult' ? 'Flat Lay Back (Adult Size)' : 'Flat Lay Back (Kid Size)',
             prompt: flatLayBackPrompt,
-            negative_prompt: negativePrompt,
+            negative_prompt: flatLayBackNegative,
             background,
             product_details: {
                 ...productDetails,
@@ -310,12 +312,13 @@ export class PromptBuilderService {
             last_edited_at: null,
         };
 
-        // 6.5 CLOSE UP FRONT
+        // 6.5 CLOSE UP FRONT (with shot-specific negative prompt)
         const closeUpFrontPrompt = this.buildCloseUpFrontPrompt(product, da, qualitySuffix);
+        const closeUpFrontNegative = this.buildShotNegativePrompt('closeup_front', product);
         const closeup_front: MergedPromptObject = {
             ...SHOT_CONFIGS.closeup_front,
             prompt: closeUpFrontPrompt,
-            negative_prompt: negativePrompt,
+            negative_prompt: closeUpFrontNegative,
             background,
             product_details: productDetails,
             da_elements: daElements,
@@ -323,12 +326,13 @@ export class PromptBuilderService {
             last_edited_at: null,
         };
 
-        // 6.6 CLOSE UP BACK
+        // 6.6 CLOSE UP BACK (with shot-specific negative prompt)
         const closeUpBackPrompt = this.buildCloseUpBackPrompt(product, da, qualitySuffix);
+        const closeUpBackNegative = this.buildShotNegativePrompt('closeup_back', product);
         const closeup_back: MergedPromptObject = {
             ...SHOT_CONFIGS.closeup_back,
             prompt: closeUpBackPrompt,
-            negative_prompt: negativePrompt,
+            negative_prompt: closeUpBackNegative,
             background,
             product_details: productDetails,
             da_elements: daElements,
@@ -444,6 +448,126 @@ export class PromptBuilderService {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // 🎨 COLOR WEIGHTING SYSTEM (Anti-Hallucination for Flat Lay/Closeup)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Apply color weighting for product-only shots (no human model)
+     * This forces the AI to respect the specific color instead of defaulting
+     * 
+     * @param colorName - Product color name (e.g., "DEEP BURGUNDY SUEDE")
+     * @param shotType - Type of shot (flatlay_front, flatlay_back, closeup_front, closeup_back)
+     * @returns Weighted color string like "(DEEP BURGUNDY SUEDE:1.5)"
+     */
+    private applyColorWeighting(colorName: string, shotType: string): string {
+        const productOnlyShots = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'];
+
+        if (productOnlyShots.includes(shotType)) {
+            // Apply high weight (1.5) to color for product-only shots
+            return `(${colorName}:1.5)`;
+        }
+
+        return colorName;
+    }
+
+    /**
+     * Generate material-specific negative prompts to prevent color bias
+     * Suede tends to generate as beige/tan by default - we need to block these
+     * 
+     * @param material - Product material (e.g., "Suede", "Leather")
+     * @param actualColor - The actual product color to avoid blocking
+     * @returns Additional negative prompt terms
+     */
+    private getMaterialNegativePrompt(material: string, actualColor: string): string {
+        const materialLower = material?.toLowerCase() || '';
+        const colorLower = actualColor?.toLowerCase() || '';
+
+        // Check if material is Suede or Nubuck
+        if (materialLower.includes('suede') || materialLower.includes('nubuck')) {
+            const suedeBiasColors = ['beige', 'tan', 'camel', 'sand', 'khaki', 'cream', 'ivory'];
+
+            // Filter out colors that match the actual product color
+            const colorsToBlock = suedeBiasColors.filter(biasColor => {
+                // Don't block if actual color contains this bias color
+                return !colorLower.includes(biasColor);
+            });
+
+            if (colorsToBlock.length > 0) {
+                this.logger.log(`🎨 Suede Material Detected → Blocking bias colors: ${colorsToBlock.join(', ')}`);
+                return `, ${colorsToBlock.join(', ')} color, wrong color`;
+            }
+        }
+
+        // Check if material is Leather (tends to look shiny/black)
+        if (materialLower.includes('leather') && !colorLower.includes('black')) {
+            this.logger.log(`🎨 Leather Material Detected → Blocking black leather bias`);
+            return ', black leather, dark leather, shiny leather';
+        }
+
+        return '';
+    }
+
+    /**
+     * Build texture reinforcement string for materials
+     * Ensures the AI generates correct material appearance
+     * 
+     * @param material - Product material
+     * @param fabricTexture - Fabric texture from analysis
+     * @returns Texture reinforcement phrase
+     */
+    private getTextureReinforcement(material: string, fabricTexture: string): string {
+        const materialLower = material?.toLowerCase() || '';
+        const textureLower = fabricTexture?.toLowerCase() || '';
+
+        // Suede: matte, light-absorbing, napped
+        if (materialLower.includes('suede') || materialLower.includes('nubuck')) {
+            if (!textureLower.includes('matte') && !textureLower.includes('napped')) {
+                return 'matte finish, soft napped texture, light-absorbing surface';
+            }
+        }
+
+        // Velvet: plush, light-absorbing
+        if (materialLower.includes('velvet') || materialLower.includes('velour')) {
+            return 'plush velvet texture, light-absorbing, soft sheen';
+        }
+
+        // Corduroy: vertical ridges
+        if (materialLower.includes('corduroy')) {
+            return 'vertical corduroy ridges, matte cotton texture';
+        }
+
+        return '';
+    }
+
+    /**
+     * Build shot-specific negative prompt with material bias blocking
+     * 
+     * @param shotType - Type of shot
+     * @param product - Product data
+     * @returns Complete negative prompt for this shot
+     */
+    private buildShotNegativePrompt(shotType: string, product: AnalyzeProductDirectResponse): string {
+        // Base negative prompt
+        let negativePrompt = 'text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers';
+
+        // Get material from fabric texture (analyze for material keywords)
+        const fabricTexture = product.visual_specs.fabric_texture || '';
+        const colorName = product.visual_specs.color_name || '';
+
+        // Add material-specific negative prompts for product-only shots
+        const productOnlyShots = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'];
+        if (productOnlyShots.includes(shotType)) {
+            const materialNegative = this.getMaterialNegativePrompt(fabricTexture, colorName);
+            negativePrompt += materialNegative;
+
+            // Also add color consistency blockers
+            negativePrompt += ', wrong color, color shift, faded color, washed out';
+        }
+
+        return negativePrompt;
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // PROMPT BUILDERS (6 Shot Types)
     // ═══════════════════════════════════════════════════════════
 
@@ -487,9 +611,11 @@ export class PromptBuilderService {
     }
 
     /**
-     * FLAT LAY FRONT with Size Variation
+     * FLAT LAY FRONT with Size Variation + Color Weighting
      * Adult: "Adult-size garment" - larger proportions
      * Kid: "Child-size garment" - smaller, compact proportions
+     * 
+     * 🎨 COLOR WEIGHTING: Applied to prevent AI defaulting to beige/tan for suede
      */
     private buildFlatLayFrontPrompt(
         product: AnalyzeProductDirectResponse,
@@ -503,17 +629,30 @@ export class PromptBuilderService {
             ? 'Adult-size garment with standard adult proportions'
             : 'Child-size garment with smaller, compact proportions';
 
-        return `Professional overhead flat lay photography of ${product.general_info.product_name}. ` +
+        // 🎨 COLOR WEIGHTING: Apply high weight (1.5) to color for product-only shots
+        const weightedColor = this.applyColorWeighting(product.visual_specs.color_name, 'flatlay_front');
+
+        // 🎨 TEXTURE REINFORCEMENT: Ensure correct material appearance
+        const textureReinforcement = this.getTextureReinforcement(
+            product.visual_specs.fabric_texture,
+            product.visual_specs.fabric_texture
+        );
+        const texturePhrase = textureReinforcement ? `, ${textureReinforcement}` : '';
+
+        return `Professional overhead flat lay photography of ${weightedColor} ${product.general_info.product_name}. ` +
             `${sizeDescription}. ` +
             `${product.design_front.description}. ${logoTextFront}. ` +
+            `Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
             `Laid flat on ${da.floor.type} surface. ` +
             `NO PEOPLE, NO HANDS, PERFECTLY FOLDED, pristine condition.${qualitySuffix}`;
     }
 
     /**
-     * FLAT LAY BACK with Size Variation
+     * FLAT LAY BACK with Size Variation + Color Weighting
      * Adult: "Adult-size garment" - larger proportions
      * Kid: "Child-size garment" - smaller, compact proportions
+     * 
+     * 🎨 COLOR WEIGHTING: Applied to prevent AI defaulting to beige/tan for suede
      */
     private buildFlatLayBackPrompt(
         product: AnalyzeProductDirectResponse,
@@ -533,12 +672,29 @@ export class PromptBuilderService {
             ? 'Adult-size garment with standard adult proportions'
             : 'Child-size garment with smaller, compact proportions';
 
-        return `Professional overhead flat lay photography of the BACK of ${product.general_info.product_name}. ` +
+        // 🎨 COLOR WEIGHTING: Apply high weight (1.5) to color for product-only shots
+        const weightedColor = this.applyColorWeighting(product.visual_specs.color_name, 'flatlay_back');
+
+        // 🎨 TEXTURE REINFORCEMENT: Ensure correct material appearance
+        const textureReinforcement = this.getTextureReinforcement(
+            product.visual_specs.fabric_texture,
+            product.visual_specs.fabric_texture
+        );
+        const texturePhrase = textureReinforcement ? `, ${textureReinforcement}` : '';
+
+        return `Professional overhead flat lay photography of the BACK of ${weightedColor} ${product.general_info.product_name}. ` +
             `${sizeDescription}. ` +
             `${product.design_back.description}. ${patchDetail}${technique}` +
+            `Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
             `Showing rear details clearly. NO PEOPLE, NO HANDS.${qualitySuffix}`;
     }
 
+    /**
+     * CLOSE UP FRONT with Color Weighting
+     * Macro detail shot of front texture and logo
+     * 
+     * 🎨 COLOR WEIGHTING: Applied to prevent color bias in macro shots
+     */
     private buildCloseUpFrontPrompt(
         product: AnalyzeProductDirectResponse,
         da: AnalyzeDAPresetResponse,
@@ -548,11 +704,27 @@ export class PromptBuilderService {
             ? `, hardware: ${product.garment_details.hardware_finish}`
             : '';
 
-        return `Macro detail shot of ${product.visual_specs.fabric_texture}. ` +
-            `Focus on ${product.design_front.logo_type}${hardwareText}. ` +
+        // 🎨 COLOR WEIGHTING: Apply high weight (1.5) to color for product-only shots
+        const weightedColor = this.applyColorWeighting(product.visual_specs.color_name, 'closeup_front');
+
+        // 🎨 TEXTURE REINFORCEMENT: Ensure correct material appearance
+        const textureReinforcement = this.getTextureReinforcement(
+            product.visual_specs.fabric_texture,
+            product.visual_specs.fabric_texture
+        );
+        const texturePhrase = textureReinforcement ? `. ${textureReinforcement}` : '';
+
+        return `Macro detail shot of ${weightedColor} ${product.visual_specs.fabric_texture}. ` +
+            `Focus on ${product.design_front.logo_type}${hardwareText}${texturePhrase}. ` +
             `Hard side lighting to emphasize texture and details.${qualitySuffix}`;
     }
 
+    /**
+     * CLOSE UP BACK with Color Weighting
+     * Macro detail shot of back patch and branding
+     * 
+     * 🎨 COLOR WEIGHTING: Applied to prevent color bias in macro shots
+     */
     private buildCloseUpBackPrompt(
         product: AnalyzeProductDirectResponse,
         da: AnalyzeDAPresetResponse,
@@ -563,8 +735,18 @@ export class PromptBuilderService {
             : '';
         const patchDetail = product.design_back.patch_detail || 'rear branding';
 
-        return `Macro detail shot of the rear brand patch. ` +
-            `Focus on ${patchDetail}${techniqueText}. ` +
+        // 🎨 COLOR WEIGHTING: Apply high weight (1.5) to color for product-only shots
+        const weightedColor = this.applyColorWeighting(product.visual_specs.color_name, 'closeup_back');
+
+        // 🎨 TEXTURE REINFORCEMENT: Ensure correct material appearance
+        const textureReinforcement = this.getTextureReinforcement(
+            product.visual_specs.fabric_texture,
+            product.visual_specs.fabric_texture
+        );
+        const texturePhrase = textureReinforcement ? `. ${textureReinforcement}` : '';
+
+        return `Macro detail shot of ${weightedColor} rear brand patch. ` +
+            `Focus on ${patchDetail}${techniqueText}${texturePhrase}. ` +
             `Emphasizing craftsmanship and quality.${qualitySuffix}`;
     }
 }
