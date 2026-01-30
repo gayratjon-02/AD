@@ -741,21 +741,30 @@ export class GenerationsService {
 			throw new ForbiddenException(PermissionMessage.NOT_OWNER);
 		}
 
-		// 🔍 Validate collection matches product's collection
-		if (product.collection_id !== dto.collection_id) {
-			throw new BadRequestException('Collection ID does not match product\'s collection');
-		}
-
+		// Validate collection exists and belongs to user
 		const collection = await this.collectionsRepository.findOne({
 			where: { id: dto.collection_id },
+			relations: ['brand'],
 		});
 
 		if (!collection) {
 			throw new NotFoundException(NotFoundMessage.COLLECTION_NOT_FOUND);
 		}
 
-		// ✅ No need to check collection ownership since product already belongs to user
-		// and product.collection_id matches dto.collection_id
+		if (collection.brand?.user_id !== userId) {
+			throw new ForbiddenException(PermissionMessage.NOT_OWNER);
+		}
+
+		// If product has no collection, assign it to the provided collection
+		// This supports the analyzeProductDirect flow where products are created without collection
+		if (!product.collection_id) {
+			product.collection_id = dto.collection_id;
+			await this.productsRepository.save(product);
+			this.logger.log(`📎 Assigned product ${product.id} to collection ${dto.collection_id}`);
+		} else if (product.collection_id !== dto.collection_id) {
+			// If product already has a different collection, reject
+			throw new BadRequestException('Collection ID does not match product\'s collection');
+		}
 
 		// 🎨 Set default values for aspect_ratio and resolution if not provided
 		const aspectRatio = dto.aspect_ratio || '4:5'; // Default to 4:5 portrait
@@ -1053,6 +1062,11 @@ export class GenerationsService {
 		}
 
 		// Daily generation limit removed - no restrictions
+
+		// Update resolution and aspect ratio if provided
+		if (dto.resolution) generation.resolution = dto.resolution;
+		if (dto.aspect_ratio) generation.aspect_ratio = dto.aspect_ratio;
+		await this.generationsRepository.save(generation);
 
 
 
