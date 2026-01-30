@@ -283,11 +283,13 @@ export class PromptBuilderService {
 
         // 6.1 DUO (Father + Son) — FORCE: resolution suffix at very end of prompt
         const duoPrompt = this.buildDuoPrompt(product, da, baseAttire, styling, scene, zipperText, qualitySuffix);
+        const duoFinalPrompt = duoPrompt + resolutionSuffix;
         const duo: MergedPromptObject = {
             visual_id: `visual_1_duo_adult`,
             shot_type: 'duo',
             model_type: 'adult',
-            gemini_prompt: duoPrompt + resolutionSuffix,
+            gemini_prompt: duoFinalPrompt,
+            prompt: duoFinalPrompt, // Backward compat
             negative_prompt: negativePrompt,
             output: {
                 resolution: resolution,
@@ -319,6 +321,7 @@ export class PromptBuilderService {
 
         // 6.2 SOLO (uses soloSubject - can be different from flat lay)
         const soloPrompt = this.buildSoloPrompt(product, da, soloSubject, baseAttire, styling, scene, zipperText, logoTextFront, qualitySuffix);
+        const soloFinalPrompt = soloPrompt + resolutionSuffix;
 
         // 🚀 STRICT NEGATIVE PROMPTING FOR SOLO
         let soloNegative = negativePrompt;
@@ -336,7 +339,8 @@ export class PromptBuilderService {
             visual_id: `visual_2_solo_${soloSubject}`,
             shot_type: 'solo',
             model_type: soloSubject,
-            gemini_prompt: soloPrompt + resolutionSuffix,
+            gemini_prompt: soloFinalPrompt,
+            prompt: soloFinalPrompt, // Backward compat
             negative_prompt: soloNegative,
             output: {
                 resolution: resolution,
@@ -352,13 +356,15 @@ export class PromptBuilderService {
 
         // 6.3 FLAT LAY FRONT — FORCE: resolution suffix at very end
         const flatLayFrontPrompt = this.buildFlatLayFrontPrompt(product, da, flatLayFrontSize, logoTextFront, qualitySuffix);
+        const flatLayFrontFinal = flatLayFrontPrompt + resolutionSuffix;
         const flatLayFrontNegative = this.buildShotNegativePrompt('flatlay_front', product);
         const flatlay_front: MergedPromptObject = {
             visual_id: `visual_3_flatlay_front_${flatLayFrontSize}`,
             shot_type: 'flatlay_front',
             model_type: flatLayFrontSize,
-            gemini_prompt: flatLayFrontPrompt + resolutionSuffix,
-            negative_prompt: this.buildShotNegativePrompt('flatlay_front', product),
+            gemini_prompt: flatLayFrontFinal,
+            prompt: flatLayFrontFinal, // Backward compat
+            negative_prompt: flatLayFrontNegative,
             output: {
                 resolution: resolution,
                 aspect_ratio: (options as any).aspect_ratio || '4:5'
@@ -376,12 +382,14 @@ export class PromptBuilderService {
 
         // 6.4 FLAT LAY BACK — FORCE: resolution suffix at very end
         const flatLayBackPrompt = this.buildFlatLayBackPrompt(product, da, flatLayBackSize, qualitySuffix);
+        const flatLayBackFinal = flatLayBackPrompt + resolutionSuffix;
         const flatLayBackNegative = this.buildShotNegativePrompt('flatlay_back', product);
         const flatlay_back: MergedPromptObject = {
             visual_id: `visual_4_flatlay_back_${flatLayBackSize}`,
             shot_type: 'flatlay_back',
             model_type: flatLayBackSize,
-            gemini_prompt: flatLayBackPrompt + resolutionSuffix,
+            gemini_prompt: flatLayBackFinal,
+            prompt: flatLayBackFinal, // Backward compat
             negative_prompt: flatLayBackNegative,
             output: {
                 resolution: resolution,
@@ -400,13 +408,15 @@ export class PromptBuilderService {
 
         // 6.5 CLOSE UP FRONT — FORCE: resolution suffix at very end
         const closeUpFrontPrompt = this.buildCloseUpFrontPrompt(product, da, qualitySuffix);
+        const closeUpFrontFinal = closeUpFrontPrompt + resolutionSuffix;
         // Force strict no-human negative prompt for closeups
         const closeUpFrontNegative = this.buildShotNegativePrompt('closeup_front', product) + ', face, head, hands, legs, person, human, body, street scene, walking, distance shot';
         const closeup_front: MergedPromptObject = {
             visual_id: `visual_5_closeup_front_product`,
             shot_type: 'closeup_front',
             model_type: 'product',
-            gemini_prompt: closeUpFrontPrompt + resolutionSuffix,
+            gemini_prompt: closeUpFrontFinal,
+            prompt: closeUpFrontFinal, // Backward compat
             negative_prompt: closeUpFrontNegative,
             output: {
                 resolution: resolution,
@@ -422,6 +432,7 @@ export class PromptBuilderService {
 
         // 6.6 CLOSE UP BACK — FORCE: resolution suffix at very end
         const closeUpBackPrompt = this.buildCloseUpBackPrompt(product, da, qualitySuffix);
+        const closeUpBackFinal = closeUpBackPrompt + resolutionSuffix;
         // Force strict no-human negative prompt for closeups
         let closeUpBackNegative = this.buildShotNegativePrompt('closeup_back', product) + ', face, head, hands, legs, person, human, body, street scene, walking, distance shot';
 
@@ -438,7 +449,8 @@ export class PromptBuilderService {
             visual_id: `visual_6_closeup_back_product`,
             shot_type: 'closeup_back',
             model_type: 'product',
-            gemini_prompt: closeUpBackPrompt + resolutionSuffix,
+            gemini_prompt: closeUpBackFinal,
+            prompt: closeUpBackFinal, // Backward compat
             negative_prompt: closeUpBackNegative,
             output: {
                 resolution: resolution,

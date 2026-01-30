@@ -256,8 +256,14 @@ export class GenerationsService {
 			for (const promptType of promptTypes) {
 				// Get the MergedPromptObject and extract the prompt string
 				const promptObject = generatedPrompts.prompts[promptType];
-				const prompt = promptObject.prompt; // Extract actual prompt string from MergedPromptObject
+				// Use gemini_prompt (official field) with fallback to deprecated prompt field
+				const prompt = (promptObject.gemini_prompt || promptObject.prompt || '').trim();
 				const visualIndex = completedCount;
+
+				if (!prompt) {
+					this.logger.error(`❌ No prompt for ${promptType}. promptObject:`, JSON.stringify(promptObject).substring(0, 200));
+					throw new BadRequestException(`No prompt found for shot type: ${promptType}`);
+				}
 
 				this.logger.log(`🎨 Generating image ${completedCount + 1}/${totalPrompts}: ${promptType} (${promptObject.display_name})`);
 
@@ -995,10 +1001,10 @@ export class GenerationsService {
 		// This fixes the "No visuals found" error
 		const visualTypes = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'] as const;
 		generation.visuals = visualTypes
-			.filter(type => updatedPrompts[type]?.prompt) // Only include types with prompts
+			.filter(type => updatedPrompts[type]?.gemini_prompt || updatedPrompts[type]?.prompt) // Only include types with prompts
 			.map(type => ({
 				type,
-				prompt: updatedPrompts[type].prompt,
+				prompt: updatedPrompts[type].gemini_prompt || updatedPrompts[type].prompt,
 				status: 'pending',
 				url: null,
 				created_at: new Date().toISOString()
@@ -1201,11 +1207,12 @@ export class GenerationsService {
 				// Normalize type key
 				const normalizedType = typeNormalizer[type] || type;
 				const promptData = (generation.merged_prompts as any)[normalizedType];
-				if (!promptData || !promptData.prompt) {
+				const extractedPrompt = promptData?.gemini_prompt || promptData?.prompt;
+				if (!promptData || !extractedPrompt) {
 					this.logger.warn(`⚠️ No prompt found for visual type: ${type} (normalized: ${normalizedType})`);
 					return null;
 				}
-				return { type: normalizedType, prompt: promptData.prompt };
+				return { type: normalizedType, prompt: extractedPrompt };
 			}).filter(item => item !== null) as { type: string, prompt: string }[];
 
 			prompts = validItems.map(item => item.prompt);
