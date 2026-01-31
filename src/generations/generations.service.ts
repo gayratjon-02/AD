@@ -932,6 +932,9 @@ export class GenerationsService {
 		// 🆕 Log shot options if provided
 		if (input?.shot_options) {
 			this.logger.log(`🎯 Using shot_options for granular control: ${JSON.stringify(input.shot_options)}`);
+			if (input.shot_options.solo) {
+				this.logger.log(`🎯 SOLO Option Debug: subject=${(input.shot_options.solo as any).subject}, enabled=${input.shot_options.solo.enabled}`);
+			}
 		}
 
 		// Use PromptBuilderService for strict deterministic templates
@@ -958,7 +961,7 @@ export class GenerationsService {
 				shot_options: input?.shot_options,
 				resolution,
 				aspect_ratio: aspectRatio,
-			}
+			},
 		});
 
 		// prompts is already in MergedPrompts format with all camera, background, product_details, da_elements

@@ -314,6 +314,7 @@ export class PromptBuilderService {
 
         // SOLO: Get subject from shot_options.solo.subject
         const soloSubject = shotOptions.solo?.subject || options.model_type || 'adult';
+        this.logger.log(`🎯 Prompt Builder Resolved SOLO Subject: "${soloSubject}" (from shotOptions: ${shotOptions.solo?.subject}, modelType: ${options.model_type})`);
 
         // FLAT LAY: Get size from shot_options.flatlay_front.size / flatlay_back.size
         const flatLayFrontSize = shotOptions.flatlay_front?.size || options.model_type || 'adult';
@@ -837,11 +838,11 @@ export class PromptBuilderService {
         // ═══════════════════════════════════════════════════════════
         let subjectPart = '';
         if (modelType === 'kid') {
-            // KID: Very explicit child description
-            subjectPart = 'SINGLE CHILD MODEL. A cute young BOY, age 5-7 years old, small child. NOT an adult. Playful innocent expression, childlike features.';
+            // KID: Very explicit child description with negative enforcement in positive prompt
+            subjectPart = 'Subject: SINGLE CHILD MODEL (BOY). Age 5-7 years old. Small kid size. (NO ADULTS). Playful innocent expression, childlike features.';
         } else {
-            // ADULT: Very explicit adult description
-            subjectPart = 'SINGLE ADULT MALE MODEL. A handsome MAN in his 30s. NOT a child. Athletic build, confident gaze, light stubble beard.';
+            // ADULT: Very explicit adult description with negative enforcement in positive prompt
+            subjectPart = 'Subject: SINGLE ADULT MALE MODEL. Age 30s. Full adult size. (NO KIDS). Athletic build, confident gaze, light stubble beard.';
         }
 
         // ═══════════════════════════════════════════════════════════
