@@ -232,6 +232,11 @@ export class ClaudeService {
 				patch_color: parsed.design_back?.patch_color || 'N/A',
 				patch_detail: parsed.design_back?.patch_detail || 'N/A',
 				font_family: parsed.design_back?.font_family,
+				patch_edge: parsed.design_back?.patch_edge,
+				patch_artwork_color: parsed.design_back?.patch_artwork_color,
+				patch_layout: parsed.design_back?.patch_layout,
+				patch_stitch: parsed.design_back?.patch_stitch,
+				patch_thickness: parsed.design_back?.patch_thickness,
 				placement: parsed.design_back?.placement,
 				size: parsed.design_back?.size,
 				size_relative_pct: parsed.design_back?.size_relative_pct,
@@ -240,9 +245,13 @@ export class ClaudeService {
 			garment_details: {
 				pockets: parsed.garment_details?.pockets || 'Standard pockets',
 				sleeves_or_legs: parsed.garment_details?.sleeves_or_legs || parsed.garment_details?.sleeves || 'Standard construction',
+				sleeve_branding: parsed.garment_details?.sleeve_branding,
 				bottom_termination: parsed.garment_details?.bottom_termination || parsed.garment_details?.bottom || 'Standard hem',
+				bottom_branding: parsed.garment_details?.bottom_branding,
+				closure_details: parsed.garment_details?.closure_details,
 				hardware_finish: parsed.garment_details?.hardware_finish || 'No visible hardware',
 				neckline: parsed.garment_details?.neckline || 'Standard neckline',
+				seam_architecture: parsed.garment_details?.seam_architecture,
 			},
 		};
 

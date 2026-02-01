@@ -996,9 +996,10 @@ export class PromptBuilderService {
         da: AnalyzeDAPresetResponse,
         qualitySuffix: string
     ): string {
-        const hardwareText = product.garment_details.hardware_finish
-            ? `, hardware: ${product.garment_details.hardware_finish}`
-            : '';
+        const parts: string[] = [];
+        if (product.garment_details.closure_details) parts.push(`closure: ${product.garment_details.closure_details}`);
+        if (product.garment_details.hardware_finish) parts.push(`hardware: ${product.garment_details.hardware_finish}`);
+        const hardwareText = parts.length > 0 ? `, ${parts.join('; ')}` : '';
 
         // 🎨 COLOR WEIGHTING
         const weightedColor = this.applyColorWeighting(product.visual_specs.color_name, 'closeup_front');

@@ -115,8 +115,10 @@ export class GeminiService {
 
 		const sanitizedPrompt = this.sanitizePromptForImageGeneration(prompt);
 
-		// Enhanced prompt for product photography - NO aspect ratio in text (ratio is in imageConfig only)
-		const enhancedPrompt = `Professional e-commerce product photography: ${sanitizedPrompt}. 
+		// Enhanced prompt: STRICT—render exactly as specified, no additions, no deviations
+		const enhancedPrompt = `Render EXACTLY as specified. Do NOT add, remove, or change any element. 100% match to the product specification. No creative additions.
+
+Professional e-commerce product photography: ${sanitizedPrompt}.
 High quality studio lighting, sharp details, clean background.`;
 
 		this.logger.log(`🎨 ========== GEMINI IMAGE GENERATION START ==========`);
