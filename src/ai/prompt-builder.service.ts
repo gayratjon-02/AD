@@ -240,6 +240,11 @@ export class PromptBuilderService {
         const styling = isProductBottom
             ? footwear  // Product is pants/shorts → just footwear
             : `Wearing ${pants}, ${footwear}`;  // Product is top → include DA pants + footwear
+        // Solo shot: use solo-safe footwear (no "Child"/"father") to avoid Vertex RAI child filter
+        const footwearSolo = this.getSoloSafeFootwear(footwear);
+        const stylingSolo = isProductBottom
+            ? footwearSolo
+            : `Wearing ${pants}, ${footwearSolo}`;
 
         if (isProductBottom) {
             this.logger.log(`👖 Category Detection: Product "${product.general_info.category}" is a BOTTOM → skipping DA pants`);
@@ -336,7 +341,7 @@ export class PromptBuilderService {
         this.logger.log(`🎯 Shot Settings: SOLO=${soloSubject}, FlatLayFront=${flatLayFrontSize}, FlatLayBack=${flatLayBackSize}`);
 
         // 6.2 SOLO (uses soloSubject - can be different from flat lay)
-        const soloPrompt = this.buildSoloPrompt(product, da, soloSubject, baseAttire, styling, scene, zipperText, logoTextFront, qualitySuffix);
+        const soloPrompt = this.buildSoloPrompt(product, da, soloSubject, baseAttire, stylingSolo, scene, zipperText, logoTextFront, qualitySuffix);
         const soloFinalPrompt = soloPrompt + resolutionSuffix;
 
         // 🚀 STRICT NEGATIVE PROMPTING FOR SOLO
@@ -560,6 +565,22 @@ export class PromptBuilderService {
         const defaultFootwear = 'Fashionable footwear matching the outfit style';
         this.logger.log(`👟 Smart Footwear: Default for "${productCategory}" → "${defaultFootwear}"`);
         return defaultFootwear;
+    }
+
+    /**
+     * Solo-safe footwear: Vertex RAI blocks prompts that mention "Child" or "father" even for solo shots.
+     * When DA footwear is duo-style (e.g. "Child in white sneakers, father in black leather dress shoes"),
+     * return a single-adult phrasing so solo prompts pass safety.
+     */
+    private getSoloSafeFootwear(footwear: string): string {
+        const lower = (footwear || '').toLowerCase();
+        if (lower.includes('child') || lower.includes('father') || lower.includes('son')) {
+            // Prefer "black leather dress shoes" for editorial; keep it neutral
+            const soloFootwear = 'black leather dress shoes';
+            this.logger.log(`👟 Solo-safe footwear: DA had duo phrasing → "${soloFootwear}"`);
+            return soloFootwear;
+        }
+        return footwear;
     }
 
     /**
@@ -789,8 +810,9 @@ export class PromptBuilderService {
     /**
      * DUO PROMPT - Subject-First Architecture
      * 
-     * 🎯 CRITICAL: SUBJECT (Father + Son) must be FIRST in prompt!
-     * Gemini gives highest weight to early tokens.
+     * 🎯 CRITICAL: SUBJECT must be FIRST in prompt!
+     * Vertex Imagen RAI blocks "father/son" and "younger male" (child inference).
+     * Use two-adults-only wording so RAI does not filter.
      */
     private buildDuoPrompt(
         product: AnalyzeProductDirectResponse,
@@ -802,9 +824,9 @@ export class PromptBuilderService {
         qualitySuffix: string
     ): string {
         // ═══════════════════════════════════════════════════════════
-        // 🎯 PRIORITY 1: SUBJECT FIRST (Most Important!)
+        // 🎯 PRIORITY 1: SUBJECT FIRST (Two adults only — avoids RAI child filter)
         // ═══════════════════════════════════════════════════════════
-        const subjectPart = 'FATHER AND SON. Two male models - one adult man (30s, athletic build), one younger male. Intergenerational family fashion editorial. Both looking at camera. BOTH FULLY CLOTHED, NEVER SHIRTLESS.';
+        const subjectPart = 'Two adult male models - one man in his 30s, athletic build, one man in his late 20s. Both clearly adults. Fashion editorial. Both looking at camera. BOTH FULLY CLOTHED, NEVER SHIRTLESS.';
 
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 2: APPAREL (What they're wearing) - USE baseAttire (includes t-shirt when product is bottom!)

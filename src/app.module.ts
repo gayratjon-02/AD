@@ -8,6 +8,7 @@ import appConfig from './config/app.config';
 import jwtConfig from './config/jwt.config';
 import uploadConfig from './config/upload.config';
 import geminiConfig from './config/gemini.config';
+import vertexConfig from './config/vertex.config';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -28,7 +29,7 @@ import { AppService } from './app.service';
 	imports: [
 		ConfigModule.forRoot({
 			isGlobal: true,
-			load: [databaseConfig, appConfig, jwtConfig, uploadConfig, geminiConfig],
+			load: [databaseConfig, appConfig, jwtConfig, uploadConfig, geminiConfig, vertexConfig],
 		}),
 
 		// BullMQ Configuration

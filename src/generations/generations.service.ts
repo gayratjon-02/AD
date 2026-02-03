@@ -22,7 +22,7 @@ import { DAPreset } from '../database/entities/da-preset.entity';
 import { CreateGenerationDto, GenerateDto, UpdateGenerationDto } from '../libs/dto';
 import { ErrorMessage, GenerationMessage, GenerationStatus, NotFoundMessage, PermissionMessage } from '../libs/enums';
 import { GenerationJobData } from './generation.processor';
-import { GeminiService } from '../ai/gemini.service';
+import { VertexImagenService } from '../ai/vertex-imagen.service';
 import { ClaudeService } from '../ai/claude.service';
 import { FilesService } from '../files/files.service';
 import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
@@ -68,7 +68,7 @@ export class GenerationsService {
 		private readonly generationQueue: Queue<GenerationJobData>,
 
 		private readonly configService: ConfigService,
-		private readonly geminiService: GeminiService,
+		private readonly vertexImagenService: VertexImagenService,
 		private readonly claudeService: ClaudeService,
 		private readonly filesService: FilesService,
 		private readonly promptBuilderService: PromptBuilderService,
@@ -276,7 +276,7 @@ export class GenerationsService {
 
 				try {
 					// Call Gemini API with generation aspect_ratio and resolution
-					const result = await this.geminiService.generateImage(
+					const result = await this.vertexImagenService.generateImage(
 						prompt,
 						undefined,
 						generation.aspect_ratio,
@@ -649,7 +649,7 @@ export class GenerationsService {
 
 				try {
 					// Call Gemini API with generation aspect_ratio and resolution
-					const result = await this.geminiService.generateImage(
+					const result = await this.vertexImagenService.generateImage(
 						prompt,
 						undefined,
 						generation.aspect_ratio,
@@ -1313,16 +1313,15 @@ export class GenerationsService {
 	}
 
 	async debugConfig(): Promise<{
-		gemini_configured: boolean;
+		vertex_configured: boolean;
 		model: string;
 		redis_connected: boolean;
 		queue_status: any;
 		active_jobs: any[];
 		failed_jobs: any[];
 	}> {
-		const geminiApiKey = this.configService.get<string>('gemini.apiKey');
-
-		this.logger.log(`Debug - Gemini API Key configured: ${!!geminiApiKey}`);
+		const vertexConfigured = this.vertexImagenService.isConfigured();
+		this.logger.log(`Debug - Vertex AI Imagen configured: ${vertexConfigured}`);
 
 		let redisConnected = false;
 		let jobCounts = {};
@@ -1348,8 +1347,8 @@ export class GenerationsService {
 		}
 
 		return {
-			gemini_configured: !!geminiApiKey,
-			model: 'gemini-2.5-flash-image',
+			vertex_configured: vertexConfigured,
+			model: this.vertexImagenService.getModelName(),
 			redis_connected: redisConnected,
 			queue_status: jobCounts,
 			active_jobs: activeJobs.map(job => ({
@@ -2026,7 +2025,7 @@ export class GenerationsService {
 
 		try {
 			// Generate image with generation aspect_ratio and resolution
-			const result = await this.geminiService.generateImage(
+			const result = await this.vertexImagenService.generateImage(
 				prompt,
 				model,
 				generation.aspect_ratio,

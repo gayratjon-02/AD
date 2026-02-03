@@ -5,7 +5,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateUserDto } from '../libs/dto';
 import { User } from '../database/entities/user.entity';
 import { ClaudeService } from '../ai/claude.service';
-import { GeminiService } from '../ai/gemini.service';
+import { VertexImagenService } from '../ai/vertex-imagen.service';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -13,7 +13,7 @@ export class UsersController {
 	constructor(
 		private readonly usersService: UsersService,
 		private readonly claudeService: ClaudeService,
-		private readonly geminiService: GeminiService,
+		private readonly vertexImagenService: VertexImagenService,
 	) {}
 
 	@Get('getUser')
@@ -45,14 +45,15 @@ export class UsersController {
 	@Get('getApiKeyStatus')
 	async getApiKeyStatus(@CurrentUser() user: User): Promise<{
 		anthropic: { hasSystemKey: boolean; hasUserKey: boolean; activeSource: string; model: string };
+		vertex: { configured: boolean; model: string };
 		gemini: { hasSystemKey: boolean; hasUserKey: boolean; activeSource: string; model: string };
 	}> {
 		const userSettings = await this.usersService.getUserApiKeys(user.id);
 		const anthropicStatus = this.claudeService.getApiKeyStatus();
-		const geminiStatus = this.geminiService.getApiKeyStatus();
-
+		const vertexConfigured = this.vertexImagenService.isConfigured();
+		const vertexModel = this.vertexImagenService.getModelName();
 		const anthropicModel = userSettings.claude_model || this.claudeService.getModel();
-		const geminiModel = userSettings.gemini_model || this.geminiService.getModel();
+		const imagenModelOverride = userSettings.gemini_model || vertexModel;
 
 		return {
 			anthropic: {
@@ -61,11 +62,15 @@ export class UsersController {
 				activeSource: userSettings.api_key_anthropic ? 'user' : (anthropicStatus.hasSystemKey ? 'system' : 'none'),
 				model: anthropicModel,
 			},
+			vertex: {
+				configured: vertexConfigured,
+				model: imagenModelOverride,
+			},
 			gemini: {
-				hasSystemKey: geminiStatus.hasSystemKey,
+				hasSystemKey: false,
 				hasUserKey: !!userSettings.api_key_gemini,
-				activeSource: userSettings.api_key_gemini ? 'user' : (geminiStatus.hasSystemKey ? 'system' : 'none'),
-				model: geminiModel,
+				activeSource: userSettings.api_key_gemini ? 'user' : 'none',
+				model: imagenModelOverride,
 			},
 		};
 	}

@@ -5,7 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Generation } from '../database/entities/generation.entity';
 import { Product } from '../database/entities/product.entity';
-import { GeminiService } from '../ai/gemini.service';
+import { VertexImagenService } from '../ai/vertex-imagen.service';
 import { GenerationStatus } from '../libs/enums';
 import { GenerationsService } from './generations.service';
 import { FilesService } from '../files/files.service';
@@ -31,7 +31,7 @@ export class GenerationProcessor {
 		private readonly generationsRepository: Repository<Generation>,
 		@InjectRepository(Product)
 		private readonly productsRepository: Repository<Product>,
-		private readonly geminiService: GeminiService,
+		private readonly vertexImagenService: VertexImagenService,
 		private readonly generationsService: GenerationsService,
 		private readonly filesService: FilesService,
 		private readonly generationGateway: GenerationGateway,
@@ -142,7 +142,7 @@ export class GenerationProcessor {
 				elapsed_seconds: 0,
 			});
 
-			const geminiModel = model || process.env.GEMINI_MODEL || 'gemini-3-pro-image-preview';
+			const imagenModel = model || process.env.VERTEX_IMAGEN_MODEL || 'imagen-3.0-generate-002';
 
 			// Process ALL images in parallel
 			const imagePromises = prompts.map(async (prompt, i) => {
@@ -172,9 +172,9 @@ export class GenerationProcessor {
 				}
 
 				try {
-					const result = await this.geminiService.generateImage(
+					const result = await this.vertexImagenService.generateImage(
 						enhancedPrompt,
-						geminiModel,
+						imagenModel,
 						generation.aspect_ratio,
 						generation.resolution
 					);
