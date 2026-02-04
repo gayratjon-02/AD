@@ -34,6 +34,11 @@ const IMAGEN_ASPECT_RATIOS: Record<string, string> = {
 	'21:9': '16:9',
 };
 
+/** Max retries for 429 (quota exceeded); delays: ~5s, ~15s, ~45s */
+const QUOTA_RETRY_ATTEMPTS = 3;
+const QUOTA_RETRY_DELAY_MS = 5000;
+const QUOTA_RETRY_MULTIPLIER = 3;
+
 @Injectable()
 export class VertexImagenService {
 	private readonly logger = new Logger(VertexImagenService.name);
@@ -102,6 +107,10 @@ export class VertexImagenService {
 		});
 	}
 
+	private sleep(ms: number): Promise<void> {
+		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
 	/**
 	 * Generate one image via Vertex AI Imagen 3 predict API.
 	 * Returns same shape as GeminiService.generateImage for drop-in use.
@@ -146,8 +155,9 @@ export class VertexImagenService {
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT_MS);
 
+		let res: Response;
 		try {
-			const res = await fetch(url, {
+			res = await fetch(url, {
 				method: 'POST',
 				headers: {
 					Authorization: `Bearer ${token}`,
@@ -158,10 +168,32 @@ export class VertexImagenService {
 			});
 			clearTimeout(timeoutId);
 
+			// 429 Quota exceeded: retry with exponential backoff (5s, 15s, 45s)
+			if (res.status === 429) {
+				const errText = await res.text();
+				for (let attempt = 0; attempt < QUOTA_RETRY_ATTEMPTS; attempt++) {
+					this.logger.warn(`Vertex Imagen 429 quota exceeded (attempt ${attempt + 1}/${QUOTA_RETRY_ATTEMPTS}). ${errText.slice(0, 150)}`);
+					if (attempt < QUOTA_RETRY_ATTEMPTS - 1) {
+						const delayMs = QUOTA_RETRY_DELAY_MS * Math.pow(QUOTA_RETRY_MULTIPLIER, attempt);
+						this.logger.log(`Retrying in ${delayMs / 1000}s...`);
+						await this.sleep(delayMs);
+						res = await fetch(url, {
+							method: 'POST',
+							headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+							body: JSON.stringify(body),
+							signal: controller.signal,
+						});
+						if (res.status !== 429) break;
+					} else {
+						const userMsg = 'Vertex AI quota exceeded. Try again later or request a quota increase in Google Cloud.';
+						throw new VertexImagenGenerationError(userMsg);
+					}
+				}
+			}
+
 			if (!res.ok) {
 				const errText = await res.text();
 				this.logger.error(`Vertex Imagen API error ${res.status}: ${errText}`);
-				// Try to parse JSON error for clearer message
 				let errMessage = errText.substring(0, 400);
 				try {
 					const errJson = JSON.parse(errText);
@@ -176,18 +208,33 @@ export class VertexImagenService {
 			const data = (await res.json()) as {
 				predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string; raiFilteredReason?: string; [k: string]: unknown }>;
 				raiFilteredReason?: string;
+				error?: { message?: string; code?: number };
+				message?: string;
+				[k: string]: unknown;
 			};
+
+			// Debug: always log full raw response when no image (so you see exact Google/RAI error in console)
 			const predictions = data?.predictions;
 			if (!predictions?.length || !predictions[0].bytesBase64Encoded) {
+				// Full response for debugging (exact error from Google)
+				console.log('[Vertex Imagen] No image – full API response:', JSON.stringify(data, null, 2));
+				this.logger.warn(`Vertex AI returned no image. Full response logged above (console).`);
+
+				// Extract user-facing message from known fields (Google may use raiFilteredReason, error.message, etc.)
 				const first = predictions?.[0] as Record<string, unknown> | undefined;
 				const rai = (first?.raiFilteredReason as string) || (data.raiFilteredReason as string);
+				const errMsg = (data?.error as { message?: string })?.message || (data?.message as string);
+				const combined = [rai, errMsg].filter(Boolean).join('. ') || null;
+				const userMessage = combined || 'Vertex AI returned no image (content may be blocked by safety policy).';
+
 				if (rai) {
 					this.logger.warn(`Vertex Imagen RAI filter: ${rai}`);
-					throw new VertexImagenGenerationError(`Image filtered by safety: ${rai}`);
 				}
-				const logged = JSON.stringify(data).slice(0, 800);
-				this.logger.warn(`Vertex AI returned no image. Response (truncated): ${logged}`);
-				throw new VertexImagenGenerationError('Vertex AI returned no image (check logs for RAI/safety reason)');
+				if (errMsg) {
+					this.logger.warn(`Vertex Imagen error message: ${errMsg}`);
+				}
+
+				throw new VertexImagenGenerationError(userMessage);
 			}
 
 			const first = predictions[0];

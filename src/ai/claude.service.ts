@@ -20,6 +20,13 @@ import { AnalyzeProductDirectResponse } from '../libs/dto/analyze/analyze-produc
 import { AnalyzeDAPresetResponse } from '../libs/dto/analyze/analyze-da-preset.dto';
 import { AnalyzeCompetitorAdInput, AnalyzeProductDirectInput, AnalyzeProductInput, ClaudeContentBlock, ClaudeImageMediaType, GeneratePromptsInput } from 'src/libs/types/claude/claude.type';
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// YANGI IMPORTLAR
+// ═══════════════════════════════════════════════════════════════════════════════
+import { PRODUCT_ANALYSIS_V3_PROMPT } from './prompts/product-analysis-v3.prompt';
+import { generateImageContext, getPantsSpecificPrompt, getJacketSpecificPrompt } from './helpers/image-labeling.helper';
+import { validateProductAnalysis } from './validator/product-analysis.validator';
+
 
 @Injectable()
 export class ClaudeService {
@@ -72,8 +79,9 @@ export class ClaudeService {
 		return result;
 	}
 
-	// start****************************************************
-	// analyze product direct
+	// ═══════════════════════════════════════════════════════════════════════════════
+	// YANGILANGAN analyzeProductDirect METHOD
+	// ═══════════════════════════════════════════════════════════════════════════════
 	async analyzeProductDirect(input: AnalyzeProductDirectInput): Promise<AnalyzeProductDirectResponse> {
 		// At least one front OR back image is required
 		if (!input.frontImages?.length && !input.backImages?.length) {
@@ -87,41 +95,38 @@ export class ClaudeService {
 			...(input.referenceImages || []),
 		];
 
-		let promptText = PRODUCT_ANALYSIS_DIRECT_PROMPT;
+		// ════════════════════════════════════════════════════════════════
+		// YANGI: V3 Prompt + Enhanced Image Context
+		// ════════════════════════════════════════════════════════════════
 
-		// Add image context to help Claude understand which images are which
-		promptText += '\n\n═══════════════════════════════════════════════════════════';
-		promptText += '\n📸 IMAGES PROVIDED FOR THIS ANALYSIS';
-		promptText += '\n═══════════════════════════════════════════════════════════';
+		// 1. Yangi optimized prompt ishlatish
+		let promptText = PRODUCT_ANALYSIS_V3_PROMPT;
 
-		let imageIndex = 1;
-		if (input.frontImages?.length) {
-			promptText += `\n\nFRONT IMAGES (${input.frontImages.length}):`;
-			for (let i = 0; i < input.frontImages.length; i++) {
-				promptText += `\n  Image ${imageIndex}: Front view ${i + 1}`;
-				imageIndex++;
-			}
-		}
-		if (input.backImages?.length) {
-			promptText += `\n\nBACK IMAGES (${input.backImages.length}):`;
-			for (let i = 0; i < input.backImages.length; i++) {
-				promptText += `\n  Image ${imageIndex}: Back view ${i + 1}`;
-				imageIndex++;
-			}
-		}
-		if (input.referenceImages?.length) {
-			promptText += `\n\nREFERENCE IMAGES (${input.referenceImages.length}):`;
-			for (let i = 0; i < input.referenceImages.length; i++) {
-				promptText += `\n  Image ${imageIndex}: Reference/detail ${i + 1}`;
-				imageIndex++;
-			}
-		}
+		// 2. Enhanced image context qo'shish
+		const imageContext = generateImageContext({
+			frontImages: input.frontImages || [],
+			backImages: input.backImages || [],
+			referenceImages: input.referenceImages || [],
+			productName: input.productName,
+		});
+		promptText += imageContext;
 
-		promptText += `\n\nTOTAL: ${allImages.length} images for analysis`;
-
+		// 3. Product name va category-specific hints
 		if (input.productName) {
-			promptText += `\n\n🏷️ Product name hint: ${input.productName}`;
+			promptText += `\n🏷️ Product name: ${input.productName}`;
+
+			// Category-specific rules qo'shish
+			const nameLower = input.productName.toLowerCase();
+			if (nameLower.includes('jogger') || nameLower.includes('pant') || nameLower.includes('track')) {
+				promptText += getPantsSpecificPrompt();
+			} else if (nameLower.includes('jacket') || nameLower.includes('bomber') || nameLower.includes('hoodie')) {
+				promptText += getJacketSpecificPrompt();
+			}
 		}
+
+		// ════════════════════════════════════════════════════════════════
+		// Claude API Call
+		// ════════════════════════════════════════════════════════════════
 
 		const content: ClaudeContentBlock[] = [
 			{ type: 'text', text: promptText },
@@ -141,75 +146,101 @@ export class ClaudeService {
 			throw new InternalServerErrorException('Failed to parse product analysis');
 		}
 
-		// Validate and ensure all required fields exist with proper structure
+		// ════════════════════════════════════════════════════════════════
+		// YANGI: Post-processing Validation
+		// ════════════════════════════════════════════════════════════════
 
-		// 🚀 BRAND GUARDIAN: Force "Romimi" text to be "Serif wordmark" (Fixes Script hallucination)
-		if (parsed.design_front?.logo_text && parsed.design_front.logo_text.toLowerCase().includes('romimi')) {
-			this.logger.log(`🛡️ Brand Guardian: Detected 'Romimi' logo. Overriding hallucinated '${parsed.design_front.logo_type}' with 'Serif wordmark'.`);
-			parsed.design_front.logo_type = 'Serif wordmark';
-			parsed.design_front.logo_content = "Clean white 'Romimi' text in classic Serif font";
-			// Ensure font_family is set (Didot/Bodoni typical for Romimi) if missing
-			if (!parsed.design_front.font_family || /^(serif|sans-serif|script)$/i.test(parsed.design_front.font_family)) {
-				parsed.design_front.font_family = parsed.design_front.font_family || 'Didot';
+		const validationResult = validateProductAnalysis(parsed);
+
+		// Log validation issues
+		if (validationResult.flags.length > 0) {
+			this.logger.warn('⚠️ Validation flags:', validationResult.flags.map(f => ({
+				field: f.field,
+				issue: f.issue,
+				corrected: f.corrected,
+			})));
+		}
+
+		if (validationResult.was_modified) {
+			this.logger.log('✅ Auto-corrected some fields based on validation');
+		}
+
+		// Validated data ishlatish
+		const validatedData = validationResult.data;
+
+		// ════════════════════════════════════════════════════════════════
+		// Brand Guardian (Romimi fix)
+		// ════════════════════════════════════════════════════════════════
+
+		if (validatedData.design_front?.logo_text && validatedData.design_front.logo_text.toLowerCase().includes('romimi')) {
+			this.logger.log(`🛡️ Brand Guardian: Detected 'Romimi' logo. Fixing logo type.`);
+			validatedData.design_front.logo_type = 'Serif wordmark';
+			validatedData.design_front.logo_content = "Clean white 'Romimi' text in classic Serif font";
+			if (!validatedData.design_front.font_family || /^(serif|sans-serif|script)$/i.test(validatedData.design_front.font_family)) {
+				validatedData.design_front.font_family = 'Didot';
 			}
-			if (parsed.design_front.description) {
-				parsed.design_front.description = parsed.design_front.description.replace(/script/gi, 'classic Serif');
+			if (validatedData.design_front.description) {
+				validatedData.design_front.description = validatedData.design_front.description.replace(/script/gi, 'classic Serif');
 			}
 		}
 
+		// ════════════════════════════════════════════════════════════════
+		// Response Building
+		// ════════════════════════════════════════════════════════════════
+
 		const result: AnalyzeProductDirectResponse = {
 			general_info: {
-				product_name: parsed.general_info?.product_name || 'UNNAMED PRODUCT',
-				category: parsed.general_info?.category || 'Apparel',
-				fit_type: parsed.general_info?.fit_type || 'Regular fit',
-				gender_target: parsed.general_info?.gender_target || 'Unisex',
+				product_name: validatedData.general_info?.product_name || 'UNNAMED PRODUCT',
+				category: validatedData.general_info?.category || 'Apparel',
+				fit_type: validatedData.general_info?.fit_type || 'Regular fit',
+				gender_target: validatedData.general_info?.gender_target || 'Unisex',
 			},
 			visual_specs: {
-				color_name: parsed.visual_specs?.color_name || 'BLACK',
-				hex_code: parsed.visual_specs?.hex_code || '#000000',
-				fabric_texture: parsed.visual_specs?.fabric_texture || 'Cotton blend fabric',
+				color_name: validatedData.visual_specs?.color_name || 'BLACK',
+				hex_code: validatedData.visual_specs?.hex_code || '#000000',
+				fabric_texture: validatedData.visual_specs?.fabric_texture || 'Cotton blend fabric',
 			},
 			design_front: {
-				has_logo: parsed.design_front?.has_logo ?? false,
-				logo_text: parsed.design_front?.logo_text || 'N/A',
-				font_family: parsed.design_front?.font_family,
-				logo_type: parsed.design_front?.logo_type || '',
-				logo_content: parsed.design_front?.logo_content || '',
-				logo_color: parsed.design_front?.logo_color || '',
-				placement: parsed.design_front?.placement || '',
-				size: parsed.design_front?.size,
-				size_relative_pct: parsed.design_front?.size_relative_pct,
-				description: parsed.design_front?.description || 'Clean front design',
-				micro_details: parsed.design_front?.micro_details,
+				has_logo: validatedData.design_front?.has_logo ?? false,
+				logo_text: validatedData.design_front?.logo_text || 'N/A',
+				font_family: validatedData.design_front?.font_family,
+				logo_type: validatedData.design_front?.logo_type || '',
+				logo_content: validatedData.design_front?.logo_content || '',
+				logo_color: validatedData.design_front?.logo_color || '',
+				placement: validatedData.design_front?.placement || '',
+				size: validatedData.design_front?.size,
+				size_relative_pct: validatedData.design_front?.size_relative_pct,
+				description: validatedData.design_front?.description || 'Clean front design',
+				micro_details: validatedData.design_front?.micro_details,
 			},
 			design_back: {
-				has_logo: parsed.design_back?.has_logo ?? false,
-				has_patch: parsed.design_back?.has_patch ?? false,
-				description: parsed.design_back?.description || 'Clean back design',
-				technique: parsed.design_back?.technique || 'N/A',
-				patch_color: parsed.design_back?.patch_color || 'N/A',
-				patch_detail: parsed.design_back?.patch_detail || 'N/A',
-				font_family: parsed.design_back?.font_family,
-				patch_edge: parsed.design_back?.patch_edge,
-				patch_artwork_color: parsed.design_back?.patch_artwork_color,
-				patch_layout: parsed.design_back?.patch_layout,
-				patch_stitch: parsed.design_back?.patch_stitch,
-				patch_thickness: parsed.design_back?.patch_thickness,
-				placement: parsed.design_back?.placement,
-				size: parsed.design_back?.size,
-				size_relative_pct: parsed.design_back?.size_relative_pct,
-				micro_details: parsed.design_back?.micro_details,
+				has_logo: validatedData.design_back?.has_logo ?? false,
+				has_patch: validatedData.design_back?.has_patch ?? false,
+				description: validatedData.design_back?.description || 'Clean back design',
+				technique: validatedData.design_back?.technique || 'N/A',
+				patch_color: validatedData.design_back?.patch_color || 'N/A',
+				patch_detail: validatedData.design_back?.patch_detail || 'N/A',
+				font_family: validatedData.design_back?.font_family,
+				patch_edge: validatedData.design_back?.patch_edge,
+				patch_artwork_color: validatedData.design_back?.patch_artwork_color,
+				patch_layout: validatedData.design_back?.patch_layout,
+				patch_stitch: validatedData.design_back?.patch_stitch,
+				patch_thickness: validatedData.design_back?.patch_thickness,
+				placement: validatedData.design_back?.placement,
+				size: validatedData.design_back?.size,
+				size_relative_pct: validatedData.design_back?.size_relative_pct,
+				micro_details: validatedData.design_back?.micro_details,
 			},
 			garment_details: {
-				pockets: parsed.garment_details?.pockets || 'Standard pockets',
-				sleeves_or_legs: parsed.garment_details?.sleeves_or_legs || parsed.garment_details?.sleeves || 'Standard construction',
-				sleeve_branding: parsed.garment_details?.sleeve_branding,
-				bottom_termination: parsed.garment_details?.bottom_termination || parsed.garment_details?.bottom || 'Standard hem',
-				bottom_branding: parsed.garment_details?.bottom_branding,
-				closure_details: parsed.garment_details?.closure_details,
-				hardware_finish: parsed.garment_details?.hardware_finish || 'No visible hardware',
-				neckline: parsed.garment_details?.neckline || 'Standard neckline',
-				seam_architecture: parsed.garment_details?.seam_architecture,
+				pockets: validatedData.garment_details?.pockets || 'Standard pockets',
+				sleeves_or_legs: validatedData.garment_details?.sleeves_or_legs || validatedData.garment_details?.sleeves || 'Standard construction',
+				sleeve_branding: validatedData.garment_details?.sleeve_branding,
+				bottom_termination: validatedData.garment_details?.bottom_termination || validatedData.garment_details?.bottom || 'Standard hem',
+				bottom_branding: validatedData.garment_details?.bottom_branding,
+				closure_details: validatedData.garment_details?.closure_details,
+				hardware_finish: validatedData.garment_details?.hardware_finish || 'No visible hardware',
+				neckline: validatedData.garment_details?.neckline || 'N/A',
+				seam_architecture: validatedData.garment_details?.seam_architecture,
 			},
 		};
 
@@ -412,7 +443,7 @@ Generate the 6 merged prompts now. Return ONLY valid JSON object with the struct
 			this.logger.error(`❌ Claude API Error in mergeProductAndDA: ${error.message}`);
 
 			// 🚀 FALLBACK: If API fails (e.g. billing, rate limit), use mock data
-			this.logger.warn('⚠️ FALLBACK FACTIVATED: Returning MOCK merged prompts due to API error');
+			this.logger.warn('⚠️ FALLBACK ACTIVATED: Returning MOCK merged prompts due to API error');
 			const { MOCK_MERGED_PROMPTS } = await import('./mock-claude.data');
 			return JSON.parse(JSON.stringify(MOCK_MERGED_PROMPTS));
 		}

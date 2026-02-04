@@ -71,7 +71,7 @@ export interface GeneratedPrompts {
 const SHOT_CONFIGS: Record<string, ShotTypeConfig> = {
     duo: {
         type: 'duo',
-        display_name: 'DUO (Father + Son)',
+        display_name: 'DUO (Two Models)',
         camera: {
             focal_length_mm: 85,
             aperture: 2.8,
@@ -292,8 +292,9 @@ export class PromptBuilderService {
         // 6. GENERATE 6 SHOT PROMPTS (MergedPromptObject format)
         // ═══════════════════════════════════════════════════════════
 
-        // 6.1 DUO (Father + Son) — FORCE: resolution suffix at very end of prompt
-        const duoPrompt = this.buildDuoPrompt(product, da, baseAttire, styling, scene, zipperText, qualitySuffix);
+        // 6.1 DUO (Two Models) — FORCE: resolution suffix at very end; use duo-safe styling (no Child/father) for Vertex RAI
+        const duoStyling = this.getDuoSafeStyling(styling);
+        const duoPrompt = this.buildDuoPrompt(product, da, baseAttire, duoStyling, scene, zipperText, qualitySuffix);
         const duoFinalPrompt = duoPrompt + resolutionSuffix;
         const duo: MergedPromptObject = {
             visual_id: `visual_1_duo_adult`,
@@ -306,7 +307,7 @@ export class PromptBuilderService {
                 resolution: resolution,
                 aspect_ratio: (options as any).aspect_ratio || '4:5'
             },
-            display_name: 'Duo Shot (Father & Son)',
+            display_name: 'Duo Shot (Two Models)',
             editable: true,
             last_edited_at: null,
             background: background,
@@ -581,6 +582,24 @@ export class PromptBuilderService {
             return soloFootwear;
         }
         return footwear;
+    }
+
+    /**
+     * Duo-safe styling: Vertex RAI blocks prompts that mention "Child", "father", "son" in DUO shots.
+     * When DA styling is father/son style (e.g. "Child in white sneakers, father in black leather dress shoes"),
+     * rephrase to two-adult wording so the DUO prompt passes safety.
+     */
+    private getDuoSafeStyling(styling: string): string {
+        if (!styling || typeof styling !== 'string') return styling;
+        const lower = styling.toLowerCase();
+        if (!lower.includes('child') && !lower.includes('father') && !lower.includes('son')) return styling;
+        // Rephrase "Child in X, father in Y" → "One model in X, one in Y" (keep footwear detail, remove child/father)
+        let out = styling
+            .replace(/\bChild\s+in\s+/gi, 'One model in ')
+            .replace(/\bfather\s+in\s+/gi, 'one in ')
+            .replace(/\bson\s+in\s+/gi, 'one in ');
+        this.logger.log(`👟 Duo-safe styling: DA had father/son phrasing → "${out.slice(0, 120)}..."`);
+        return out;
     }
 
     /**
