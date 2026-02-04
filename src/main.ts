@@ -69,9 +69,11 @@ async function bootstrap() {
 					process.env.FRONTEND_URL,
 					'http://localhost:3000',
 					'http://localhost:3001',
+					'http://localhost:4000',
 					'http://localhost:5030',
-					'http://167.172.90.235:5030', // Production frontend (Droplet)
-					'http://209.97.168.255:5030', // Production frontend (alt)
+					'http://167.172.90.235:4000', // Production frontend (new port)
+					'http://167.172.90.235:5030', // Production frontend (legacy)
+					'http://209.97.168.255:4000', // Production frontend (alt)
 				].filter(Boolean);
 
 				if (allowedOrigins.includes(origin)) {

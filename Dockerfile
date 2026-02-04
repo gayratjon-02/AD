@@ -30,8 +30,11 @@ COPY --from=builder /usr/src/app/dist ./dist
 # Create uploads directory
 RUN mkdir -p uploads
 
-# Expose port
-EXPOSE 5032
+# Expose port (container internal port)
+EXPOSE 5001
+
+# Set default port
+ENV PORT=5001
 
 # Start the application
 CMD ["npm", "run", "start:prod"]

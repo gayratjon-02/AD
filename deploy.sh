@@ -44,3 +44,6 @@ echo "   docker compose logs -f redis           - Redis log'larini ko'rish"
 echo "   docker compose logs -f postgres        - PostgreSQL log'larini ko'rish"
 echo "   docker compose ps                      - Container'lar holatini ko'rish"
 echo "   docker compose down                    - Barcha container'larni to'xtatish"
+
+
+docker compose up --build -d

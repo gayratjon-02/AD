@@ -401,23 +401,57 @@ High quality studio lighting, sharp details, clean background.`;
 		// Filter valid images
 		const validImages = (referenceImages || []).filter(img => img && img.trim() !== '');
 
-		this.logger.log(`🖼️ ========== GEMINI WITH REFERENCE IMAGES ==========`);
-		this.logger.log(`📋 Reference images count: ${validImages.length}`);
+		// ═══════════════════════════════════════════════════════════════════
+		// 📊 DEBUG: LOG ALL INPUT DATA
+		// ═══════════════════════════════════════════════════════════════════
+		console.log('\n');
+		console.log('╔══════════════════════════════════════════════════════════════════╗');
+		console.log('║  🚀 GEMINI API CALL - WITH REFERENCE IMAGES                      ║');
+		console.log('╚══════════════════════════════════════════════════════════════════╝');
+		console.log('');
+		console.log('📋 INPUT PARAMETERS:');
+		console.log('─────────────────────────────────────────────────────────────────────');
+		console.log(`   Model: ${this.MODEL}`);
+		console.log(`   Aspect Ratio: ${aspectRatio || 'default (4:5)'}`);
+		console.log(`   Resolution: ${resolution || 'default (1K)'}`);
+		console.log('');
+		console.log('🖼️  REFERENCE IMAGES:');
+		console.log('─────────────────────────────────────────────────────────────────────');
+		console.log(`   Total count: ${validImages.length}`);
 		validImages.forEach((img, i) => {
-			this.logger.log(`   - Image ${i + 1}: ${img.substring(0, 80)}...`);
+			console.log(`   [${i + 1}] ${img}`);
 		});
+		console.log('');
+		console.log('📝 ORIGINAL PROMPT (first 500 chars):');
+		console.log('─────────────────────────────────────────────────────────────────────');
+		console.log(prompt.substring(0, 500));
+		if (prompt.length > 500) console.log(`   ... (${prompt.length - 500} more chars)`);
+		console.log('');
 
 		// If no valid reference images, fall back to regular generation
 		if (validImages.length === 0) {
-			this.logger.warn(`⚠️ No valid reference images provided, falling back to text-only generation`);
+			console.log('⚠️  WARNING: No valid reference images provided!');
+			console.log('   → Falling back to text-only generation');
+			console.log('═════════════════════════════════════════════════════════════════════\n');
 			return this.generateImage(prompt, undefined, aspectRatio, resolution, userApiKey);
 		}
 
 		// Build image parts from URLs
 		const imageParts = await this.buildImageParts(validImages);
 
+		console.log('📦 IMAGE PARTS BUILT:');
+		console.log('─────────────────────────────────────────────────────────────────────');
+		console.log(`   Successfully loaded: ${imageParts.length} images`);
+		imageParts.forEach((part: any, i) => {
+			const dataLen = part.inlineData?.data?.length || 0;
+			console.log(`   [${i + 1}] Type: ${part.inlineData?.mimeType || 'unknown'}, Size: ${(dataLen / 1024).toFixed(1)} KB`);
+		});
+		console.log('');
+
 		if (imageParts.length === 0) {
-			this.logger.warn(`⚠️ Failed to load reference images, falling back to text-only generation`);
+			console.log('⚠️  WARNING: Failed to load any reference images!');
+			console.log('   → Falling back to text-only generation');
+			console.log('═════════════════════════════════════════════════════════════════════\n');
 			return this.generateImage(prompt, undefined, aspectRatio, resolution, userApiKey);
 		}
 
@@ -443,7 +477,21 @@ ${this.sanitizePromptForImageGeneration(prompt)}
 
 HIGH QUALITY OUTPUT: Professional e-commerce photography, studio lighting, sharp details.`;
 
-		this.logger.log(`📝 Reference prompt (first 300 chars): ${referencePrompt.substring(0, 300)}...`);
+		console.log('🔧 ENHANCED PROMPT (sent to Gemini):');
+		console.log('─────────────────────────────────────────────────────────────────────');
+		console.log(referencePrompt.substring(0, 800));
+		if (referencePrompt.length > 800) console.log(`   ... (${referencePrompt.length - 800} more chars)`);
+		console.log('');
+
+		console.log('⚙️  GEMINI CONFIG:');
+		console.log('─────────────────────────────────────────────────────────────────────');
+		console.log(`   responseModalities: ['TEXT', 'IMAGE']`);
+		console.log(`   imageConfig.aspectRatio: ${ratioText}`);
+		console.log(`   imageConfig.imageSize: ${resolutionText}`);
+		console.log(`   safetySettings: All set to BLOCK_NONE`);
+		console.log('');
+		console.log('📤 SENDING REQUEST TO GEMINI API...');
+		console.log('─────────────────────────────────────────────────────────────────────');
 
 		try {
 			const imageConfig = {
@@ -483,45 +531,89 @@ HIGH QUALITY OUTPUT: Professional e-commerce photography, studio lighting, sharp
 			);
 
 			const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
-			this.logger.log(`⏱️ Gemini response received in ${elapsedTime}s`);
+
+			// ═══════════════════════════════════════════════════════════════════
+			// 📊 DEBUG: LOG RESPONSE DATA
+			// ═══════════════════════════════════════════════════════════════════
+			console.log('');
+			console.log('📥 GEMINI RESPONSE RECEIVED:');
+			console.log('─────────────────────────────────────────────────────────────────────');
+			console.log(`   ⏱️  Time elapsed: ${elapsedTime}s`);
+			console.log(`   📦 Candidates count: ${response.candidates?.length || 0}`);
 
 			// Parse response (same logic as generateImages)
 			if (!response.candidates || response.candidates.length === 0) {
-				this.logger.error(`❌ No candidates in response`);
+				console.log('   ❌ ERROR: No candidates in response!');
+				console.log('═════════════════════════════════════════════════════════════════════\n');
 				throw new GeminiGenerationError('Gemini returned no candidates');
 			}
 
 			const candidate = response.candidates[0];
 			const parts = candidate.content?.parts || [];
 
-			for (const part of parts as any[]) {
+			console.log(`   📄 Parts in first candidate: ${parts.length}`);
+			console.log('');
+			console.log('📋 RESPONSE PARTS BREAKDOWN:');
+			console.log('─────────────────────────────────────────────────────────────────────');
+
+			for (let i = 0; i < parts.length; i++) {
+				const part = parts[i] as any;
+				console.log(`   [Part ${i + 1}]:`);
+
 				if (part.inlineData) {
 					const mimeType = part.inlineData.mimeType || 'image/png';
 					const data = part.inlineData.data;
+					const dataLen = data?.length || 0;
+
+					console.log(`      Type: IMAGE`);
+					console.log(`      MimeType: ${mimeType}`);
+					console.log(`      Data size: ${(dataLen / 1024).toFixed(1)} KB (${dataLen} bytes)`);
 
 					if (data && data.length > 0) {
-						this.logger.log(`🎉 SUCCESS: Generated image with reference in ${elapsedTime}s`);
+						console.log('');
+						console.log('╔══════════════════════════════════════════════════════════════════╗');
+						console.log('║  🎉 SUCCESS! IMAGE GENERATED WITH REFERENCE                      ║');
+						console.log('╚══════════════════════════════════════════════════════════════════╝');
+						console.log(`   Total time: ${elapsedTime}s`);
+						console.log(`   Output: ${mimeType}, ${(dataLen / 1024).toFixed(1)} KB`);
+						console.log('═════════════════════════════════════════════════════════════════════\n');
 						return { mimeType, data };
 					}
 				}
 
-				// Check for refusal
 				if (part.text) {
+					console.log(`      Type: TEXT`);
+					console.log(`      Content: ${part.text.substring(0, 200)}${part.text.length > 200 ? '...' : ''}`);
+
 					const lowerText = part.text.toLowerCase();
 					if (lowerText.includes('cannot generate') || lowerText.includes('unable to')) {
+						console.log('');
+						console.log('❌ MODEL REFUSED TO GENERATE!');
+						console.log(`   Reason: ${part.text.substring(0, 300)}`);
+						console.log('═════════════════════════════════════════════════════════════════════\n');
 						throw new GeminiGenerationError(`Model refused: ${part.text.substring(0, 200)}`);
 					}
 				}
 			}
 
+			console.log('');
+			console.log('❌ ERROR: No image data found in response parts!');
+			console.log('═════════════════════════════════════════════════════════════════════\n');
 			throw new GeminiGenerationError('Gemini did not generate any images with reference');
 
 		} catch (error: any) {
 			const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
-			this.logger.error(`❌ Reference generation failed after ${elapsedTime}s: ${error.message}`);
 
-			// On failure, try falling back to text-only generation
-			this.logger.warn(`🔄 Falling back to text-only generation...`);
+			console.log('');
+			console.log('╔══════════════════════════════════════════════════════════════════╗');
+			console.log('║  ❌ GEMINI GENERATION FAILED                                     ║');
+			console.log('╚══════════════════════════════════════════════════════════════════╝');
+			console.log(`   Time elapsed: ${elapsedTime}s`);
+			console.log(`   Error: ${error.message}`);
+			console.log('');
+			console.log('🔄 Falling back to text-only generation...');
+			console.log('═════════════════════════════════════════════════════════════════════\n');
+
 			return this.generateImage(prompt, undefined, aspectRatio, resolution, userApiKey);
 		}
 	}

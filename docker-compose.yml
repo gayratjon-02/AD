@@ -4,10 +4,10 @@ services:
     build: .
     restart: always
     ports:
-      - "5031:5032"               # HOST : CONTAINER
+      - "4001:5001"               # SERVER:CONTAINER - Backend runs on 5001 inside, exposed on 4001
     environment:
       NODE_ENV: production
-      PORT_API: 5032
+      PORT_API: 5001
 
       DATABASE_URL: ${DATABASE_URL}
 
@@ -27,13 +27,13 @@ services:
       JWT_EXPIRES_IN: 7d
       SECRET_TOKEN: ${JWT_SECRET}
 
-      # CORS
-      FRONTEND_URL: ${FRONTEND_URL:-http://167.172.90.235:5030}
+      # CORS - Frontend runs on port 4000
+      FRONTEND_URL: ${FRONTEND_URL:-http://167.172.90.235:4000}
 
-      # File Uploads
+      # File Uploads - Backend runs on port 4001
       FILE_STORAGE_PROVIDER: local
       UPLOAD_LOCAL_PATH: uploads
-      UPLOAD_BASE_URL: ${UPLOAD_BASE_URL:-http://167.172.90.235:5031}
+      UPLOAD_BASE_URL: ${UPLOAD_BASE_URL:-http://167.172.90.235:4001}
       UPLOAD_MAX_FILE_SIZE: 5242880
       UPLOAD_ALLOWED_MIME_TYPES: image/jpeg,image/png,image/webp
 
