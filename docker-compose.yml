@@ -46,7 +46,7 @@ services:
       - backend-network
 
   redis:
-    container_name: romimi-redis
+    container_name: romimi-redis-v2
     image: redis:7-alpine
     restart: always
     command: >
