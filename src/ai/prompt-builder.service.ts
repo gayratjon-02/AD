@@ -999,10 +999,18 @@ export class PromptBuilderService {
         // Priority 2: Shot
         const shotAction = `Professional overhead flat lay photography. ${sizeDescription}. Laid flat on ${da.floor.type} surface.`;
 
+        // 🎯 Priority 3: DA ENVIRONMENT (background, props) - Ensures DA compliance!
+        const leftItems = da.ground?.left_items || [];
+        const rightItems = da.ground?.right_items || [];
+        const leftProps = leftItems.length > 0 ? leftItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ') : '';
+        const rightProps = rightItems.length > 0 ? rightItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ') : '';
+        const propsText = [leftProps, rightProps].filter(Boolean).join(', ') || 'minimal styling';
+        const environmentPart = `${da.background.type} backdrop. Props around garment: ${propsText}. Mood: ${da.mood || 'editorial elegance'}.`;
+
         // Priority 4: Helpers
         const helpers = `NO PEOPLE, NO HANDS, PERFECTLY FOLDED, pristine condition. ${qualitySuffix}`;
 
-        return `${productData} ${shotAction} ${helpers}`;
+        return `${productData} ${shotAction} ${environmentPart} ${helpers}`;
     }
 
     /**
@@ -1045,12 +1053,20 @@ export class PromptBuilderService {
             `${product.design_back.description}. ${patchDetail}${technique}`;
 
         // Priority 2: Shot
-        const shotAction = `Professional overhead flat lay photography. ${sizeDescription}. showing rear details clearly.`;
+        const shotAction = `Professional overhead flat lay photography. ${sizeDescription}. Laid flat on ${da.floor.type} surface. Showing rear details clearly.`;
+
+        // 🎯 Priority 3: DA ENVIRONMENT (background, props) - Ensures DA compliance!
+        const leftItems = da.ground?.left_items || [];
+        const rightItems = da.ground?.right_items || [];
+        const leftProps = leftItems.length > 0 ? leftItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ') : '';
+        const rightProps = rightItems.length > 0 ? rightItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ') : '';
+        const propsText = [leftProps, rightProps].filter(Boolean).join(', ') || 'minimal styling';
+        const environmentPart = `${da.background.type} backdrop. Props around garment: ${propsText}. Mood: ${da.mood || 'editorial elegance'}.`;
 
         // Priority 4: Helpers
         const helpers = `NO PEOPLE, NO HANDS. ${qualitySuffix}`;
 
-        return `${productData} ${shotAction} ${helpers}`;
+        return `${productData} ${shotAction} ${environmentPart} ${helpers}`;
     }
 
     /**
@@ -1079,10 +1095,13 @@ export class PromptBuilderService {
         // Priority 2: Shot
         const shotAction = `Macro extreme close-up detail shot of texture. Focus on fabric weave and stitching details.`;
 
+        // 🎯 Priority 3: DA ENVIRONMENT - Even closeups respect DA backdrop/mood
+        const environmentPart = `Shot on ${da.floor.type} with ${da.background.type} backdrop. Mood: ${da.mood || 'editorial elegance'}.`;
+
         // Priority 4: Helpers
         const helpers = `NO PEOPLE, NO HANDS, MACRO LENS. ${qualitySuffix}`;
 
-        return `${productData} ${shotAction} ${helpers}`;
+        return `${productData} ${shotAction} ${environmentPart} ${helpers}`;
     }
 
 
@@ -1131,9 +1150,12 @@ export class PromptBuilderService {
         // Priority 2: Shot
         const shotAction = `Macro detail shot. ${focusPhrase}.`;
 
+        // 🎯 Priority 3: DA ENVIRONMENT - Even closeups respect DA backdrop/mood
+        const environmentPart = `Shot on ${da.floor.type} with ${da.background.type} backdrop. Mood: ${da.mood || 'editorial elegance'}.`;
+
         // Priority 4: Helpers
         const helpers = `Emphasizing craftsmanship and quality. ${qualitySuffix}`;
 
-        return `${productData} ${shotAction} ${helpers}`;
+        return `${productData} ${shotAction} ${environmentPart} ${helpers}`;
     }
 }
