@@ -997,19 +997,14 @@ export class PromptBuilderService {
         const productData = `Product: ${weightedColor} ${product.general_info.product_name}. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
             `${product.design_front.description}. ${logoTextFront}.`;
 
-        // Priority 2: Shot - GARMENT ON HANGER (client requirement)
-        const shotAction = `Professional product photography. ${sizeDescription}. Garment hanging on elegant wooden hanger. Front view displayed cleanly. Full garment visible from collar to hem.`;
+        // Priority 2: Shot - GARMENT ON HANGER hanging from WALL HOOK (client requirement)
+        const shotAction = `Professional product photography. ${sizeDescription}. Garment displayed on elegant wooden hanger. Hanger hanging from small metal wall hook on dark walnut wood panel wall. Front view, centered composition. Full garment visible from collar to hem.`;
 
-        // 🎯 Priority 3: DA ENVIRONMENT (background, props) - Ensures DA compliance!
-        const leftItems = da.ground?.left_items || [];
-        const rightItems = da.ground?.right_items || [];
-        const leftProps = leftItems.length > 0 ? leftItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ') : '';
-        const rightProps = rightItems.length > 0 ? rightItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ') : '';
-        const propsText = [leftProps, rightProps].filter(Boolean).join(', ') || 'minimal styling';
-        const environmentPart = `${da.background.type} backdrop. Decorative props nearby: ${propsText}. Mood: ${da.mood || 'editorial elegance'}.`;
+        // 🎯 Priority 3: DA ENVIRONMENT - wood panel wall is primary background
+        const environmentPart = `Dark wooden wall panel backdrop with visible wood grain texture. Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. Soft diffused lighting.`;
 
         // Priority 4: Helpers
-        const helpers = `NO PEOPLE, NO HANDS, NO MANNEQUIN. Clean hanger shot, pristine condition. ${qualitySuffix}`;
+        const helpers = `NO PEOPLE, NO HANDS, NO MANNEQUIN. Clean wall-mounted hanger display, pristine condition. ${qualitySuffix}`;
 
         return `${productData} ${shotAction} ${environmentPart} ${helpers}`;
     }
@@ -1054,19 +1049,14 @@ export class PromptBuilderService {
         const productData = `Product: BACK VIEW of ${weightedColor} ${product.general_info.product_name}. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
             `${product.design_back.description}. ${patchDetail}${technique}`;
 
-        // Priority 2: Shot - GARMENT ON HANGER (client requirement)
-        const shotAction = `Professional product photography. ${sizeDescription}. Garment hanging on elegant wooden hanger, turned to show BACK. Rear details clearly visible from shoulders to hem.`;
+        // Priority 2: Shot - GARMENT ON HANGER hanging from WALL HOOK (client requirement)
+        const shotAction = `Professional product photography. ${sizeDescription}. Garment displayed on elegant wooden hanger, turned to show BACK. Hanger hanging from small metal wall hook on dark walnut wood panel wall. Centered composition. Rear details clearly visible from shoulders to hem.`;
 
-        // 🎯 Priority 3: DA ENVIRONMENT (background, props) - Ensures DA compliance!
-        const leftItems = da.ground?.left_items || [];
-        const rightItems = da.ground?.right_items || [];
-        const leftProps = leftItems.length > 0 ? leftItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ') : '';
-        const rightProps = rightItems.length > 0 ? rightItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ') : '';
-        const propsText = [leftProps, rightProps].filter(Boolean).join(', ') || 'minimal styling';
-        const environmentPart = `${da.background.type} backdrop. Decorative props nearby: ${propsText}. Mood: ${da.mood || 'editorial elegance'}.`;
+        // 🎯 Priority 3: DA ENVIRONMENT - wood panel wall is primary background
+        const environmentPart = `Dark wooden wall panel backdrop with visible wood grain texture. Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. Soft diffused lighting.`;
 
         // Priority 4: Helpers
-        const helpers = `NO PEOPLE, NO HANDS, NO MANNEQUIN. Clean hanger shot. ${qualitySuffix}`;
+        const helpers = `NO PEOPLE, NO HANDS, NO MANNEQUIN. Clean wall-mounted hanger display. ${qualitySuffix}`;
 
         return `${productData} ${shotAction} ${environmentPart} ${helpers}`;
     }
