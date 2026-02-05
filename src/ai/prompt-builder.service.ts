@@ -968,6 +968,7 @@ export class PromptBuilderService {
      * Adult: "Adult-size garment" - larger proportions
      * Kid: "Child-size garment" - smaller, compact proportions
      * CLIENT REQUEST: Garment must be displayed ON A HANGER, not laid flat
+     * PANTS/TROUSERS: Folded over the hanger bar
      * 
      * 🎨 COLOR WEIGHTING: Applied to prevent AI defaulting to beige/tan for suede
      */
@@ -993,12 +994,23 @@ export class PromptBuilderService {
         );
         const texturePhrase = textureReinforcement ? `, ${textureReinforcement}` : '';
 
+        // 👖 PANTS DETECTION: Check if product is pants/trousers/jeans
+        const productName = product.general_info.product_name?.toLowerCase() || '';
+        const isPants = productName.includes('pant') ||
+            productName.includes('trouser') ||
+            productName.includes('jean') ||
+            productName.includes('jogger') ||
+            productName.includes('short') ||
+            productName.includes('bottom');
+
         // Priority 1: Client Data
         const productData = `Product: ${weightedColor} ${product.general_info.product_name}. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
             `${product.design_front.description}. ${logoTextFront}.`;
 
-        // Priority 2: Shot - GARMENT ON HANGER hanging from WALL HOOK (client requirement)
-        const shotAction = `Professional product photography. ${sizeDescription}. Garment displayed on elegant wooden hanger. Hanger hanging from small metal wall hook on dark walnut wood panel wall. Front view, centered composition. Full garment visible from collar to hem.`;
+        // Priority 2: Shot - Different display for pants vs tops
+        const shotAction = isPants
+            ? `Professional product photography. ${sizeDescription}. Pants FOLDED neatly over elegant wooden hanger bar. Hanger hanging from small metal wall hook on dark walnut wood panel wall. Front view, centered composition. Waistband at top, legs folded and draped elegantly.`
+            : `Professional product photography. ${sizeDescription}. Garment displayed on elegant wooden hanger. Hanger hanging from small metal wall hook on dark walnut wood panel wall. Front view, centered composition. Full garment visible from collar to hem.`;
 
         // 🎯 Priority 3: DA ENVIRONMENT - wood panel wall is primary background
         const environmentPart = `Dark wooden wall panel backdrop with visible wood grain texture. Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. Soft diffused lighting.`;
@@ -1014,6 +1026,7 @@ export class PromptBuilderService {
      * Adult: "Adult-size garment" - larger proportions
      * Kid: "Child-size garment" - smaller, compact proportions
      * CLIENT REQUEST: Garment must be displayed ON A HANGER, not laid flat
+     * PANTS/TROUSERS: Folded over the hanger bar
      * 
      * 🎨 COLOR WEIGHTING: Applied to prevent AI defaulting to beige/tan for suede
      */
@@ -1045,12 +1058,23 @@ export class PromptBuilderService {
         );
         const texturePhrase = textureReinforcement ? `, ${textureReinforcement}` : '';
 
+        // 👖 PANTS DETECTION: Check if product is pants/trousers/jeans
+        const productName = product.general_info.product_name?.toLowerCase() || '';
+        const isPants = productName.includes('pant') ||
+            productName.includes('trouser') ||
+            productName.includes('jean') ||
+            productName.includes('jogger') ||
+            productName.includes('short') ||
+            productName.includes('bottom');
+
         // Priority 1: Client Data
         const productData = `Product: BACK VIEW of ${weightedColor} ${product.general_info.product_name}. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
             `${product.design_back.description}. ${patchDetail}${technique}`;
 
-        // Priority 2: Shot - GARMENT ON HANGER hanging from WALL HOOK (client requirement)
-        const shotAction = `Professional product photography. ${sizeDescription}. Garment displayed on elegant wooden hanger, turned to show BACK. Hanger hanging from small metal wall hook on dark walnut wood panel wall. Centered composition. Rear details clearly visible from shoulders to hem.`;
+        // Priority 2: Shot - Different display for pants vs tops
+        const shotAction = isPants
+            ? `Professional product photography. ${sizeDescription}. Pants FOLDED neatly over elegant wooden hanger bar, showing BACK. Hanger hanging from small metal wall hook on dark walnut wood panel wall. Back pockets and waistband clearly visible. Legs folded and draped elegantly.`
+            : `Professional product photography. ${sizeDescription}. Garment displayed on elegant wooden hanger, turned to show BACK. Hanger hanging from small metal wall hook on dark walnut wood panel wall. Centered composition. Rear details clearly visible from shoulders to hem.`;
 
         // 🎯 Priority 3: DA ENVIRONMENT - wood panel wall is primary background
         const environmentPart = `Dark wooden wall panel backdrop with visible wood grain texture. Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. Soft diffused lighting.`;
