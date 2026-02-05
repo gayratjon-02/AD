@@ -857,9 +857,6 @@ export class GenerationsService {
 			await this.productsRepository.save(product);
 			this.logger.log(`📎 Assigned product ${product.id} to collection ${dto.collection_id}`);
 		} else if (product.collection_id !== dto.collection_id) {
-			// 🆕 NEW: For "Generate with New DA" - update product's collection instead of blocking
-			// This allows users to regenerate with different DA presets
-			this.logger.log(`🔄 Updating product ${product.id} collection: ${product.collection_id} → ${dto.collection_id}`);
 			product.collection_id = dto.collection_id;
 			await this.productsRepository.save(product);
 			this.logger.log(`✅ Product collection updated to support regeneration with new DA`);
