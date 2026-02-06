@@ -433,6 +433,43 @@ export class GenerationsService {
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════════
+	// PHASE 5: COMBINED FLOW (Create + Build + Generate)
+	// ═══════════════════════════════════════════════════════════════════════════
+
+	/**
+	 * A. generateWithNewDa(userId, productId, daPresetId, modelType)
+	 *
+	 * Combines create, build prompts, and start generation in a single flow.
+	 * Used for "Generate Images with New DA" feature.
+	 *
+	 * @param userId - User ID
+	 * @param productId - Product UUID
+	 * @param daPresetId - DA Preset UUID
+	 * @param modelType - 'adult' or 'kid'
+	 * @returns Generation with status PROCESSING
+	 */
+	async generateWithNewDa(
+		userId: string,
+		productId: string,
+		daPresetId: string,
+		modelType: 'adult' | 'kid' = 'adult'
+	): Promise<Generation> {
+		this.logger.log(`🚀 Starting combined generation flow: product=${productId}, da=${daPresetId}`);
+
+		// 1. Create Generation
+		const generation = await this.createGenerationSimple(userId, productId, daPresetId, modelType);
+
+		// 2. Build Prompts (Merge Logic)
+		await this.buildPrompts(generation.id, userId);
+
+		// 3. Start Generation (Generate Visuals)
+		// We re-fetch to ensure we have the latest state including merged_prompts
+		return this.generateVisuals(generation.id, userId, {
+			selected_shots: ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back']
+		});
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════════
 	// PHASE 4: SPLIT WORKFLOW (Build → Edit → Generate)
 	// ═══════════════════════════════════════════════════════════════════════════
 

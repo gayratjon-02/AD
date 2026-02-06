@@ -1149,12 +1149,33 @@ export class PromptBuilderService {
         // 🎨 COLOR WEIGHTING
         const weightedColor = this.applyColorWeighting(product.visual_specs.color_name, 'closeup_front');
 
+        // 🎯 NEW: Extract chest pocket details from pockets_array for precise rendering
+        const chestPocket = product.garment_details.pockets_array?.find(
+            (p) => p.position?.toLowerCase().includes('chest') ||
+                p.position?.toLowerCase().includes('left') ||
+                p.name?.toLowerCase().includes('chest')
+        );
+
+        // Build pocket-specific prompt with exact details (monogram, embossing, etc.)
+        let pocketDetails = '';
+        if (chestPocket) {
+            pocketDetails = `VISIBLE CHEST POCKET: ${chestPocket.material} ${chestPocket.shape} pocket, ${chestPocket.color} color, ${chestPocket.size}. `;
+            if (chestPocket.special_features) {
+                pocketDetails += `CRITICAL POCKET DETAIL: ${chestPocket.special_features}. `;
+            }
+            this.logger.log(`🎯 CloseUp Front: Extracted pocket details - ${chestPocket.material} ${chestPocket.shape}, special: ${chestPocket.special_features || 'none'}`);
+        }
+
+        // Include full front description with micro details
+        const frontDescription = product.design_front.description || '';
+        const microDetails = product.design_front.micro_details ? `Micro details: ${product.design_front.micro_details}. ` : '';
+
         // 🎯 Priority 1: SUBJECT - Model wearing garment, close-up on front chest/collar
         const subjectPart = `Young child model wearing ${weightedColor} ${product.general_info.product_name}. FULLY CLOTHED - complete outfit, no bare skin visible. CLOSE-UP SHOT framed from chin to chest area. Partial face visible showing lips and chin only. Camera focused on front collar, buttons, and chest details.`;
 
-        // Priority 2: Product Details - FRONT DETAILS on worn garment
+        // Priority 2: Product Details - FRONT DETAILS on worn garment with EXACT pocket/patch specs
         const productIdentity = this.buildProductIdentityBlock(product, true, false);
-        const productData = `FRONT GARMENT DETAILS IN FOCUS: Collar shape clearly visible. ${productIdentity}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp focus on buttons, zipper, pocket patches, embossing patterns, and embroidery while worn on model.`;
+        const productData = `FRONT GARMENT DETAILS IN FOCUS: ${frontDescription}. ${pocketDetails}${microDetails}Collar shape clearly visible. ${productIdentity}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp focus on buttons, zipper, pocket patches, embossing patterns, and embroidery while worn on model. CRITICAL: Pocket patch must EXACTLY match reference images with correct material, shape, and embossed pattern.`;
 
         // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred background
         const environmentPart = `${da.background.type} backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}. Shallow depth of field keeping garment details sharp.`;
@@ -1195,22 +1216,40 @@ export class PromptBuilderService {
         );
         const texturePhrase = textureReinforcement ? `. ${textureReinforcement}` : '';
 
+        // 🎯 NEW: Extract EXACT patch specifications from product JSON
+        const patchShape = product.design_back.patch_shape || 'square';
+        const patchColor = product.design_back.patch_color || '';
+        const yokeMaterial = product.design_back.yoke_material || '';
+
+        // Build yoke description for leather yoke panels
+        let yokeDescription = '';
+        if (yokeMaterial) {
+            yokeDescription = `Leather yoke panel across upper back/shoulders in ${weightedColor}. `;
+        }
+
+        // Build EXACT patch specification string
+        let exactPatchSpec = '';
+        if (patchColor || patchShape) {
+            exactPatchSpec = `PATCH SPECIFICATION: ${patchShape.toUpperCase()} shape, ${patchColor.toUpperCase()} color. `;
+            this.logger.log(`🎯 CloseUp Back: Extracted patch specs - shape: ${patchShape}, color: ${patchColor}, yoke: ${yokeMaterial || 'none'}`);
+        }
+
         // 🚀 GEOMETRY ENFORCEMENT: Detect explicit shape keywords
         const combinedText = (patchDetail + ' ' + (product.design_back.description || '')).toLowerCase();
         let geometryPhrase = '';
 
-        if (combinedText.includes('square')) {
+        if (combinedText.includes('square') || patchShape.toLowerCase() === 'square') {
             geometryPhrase = 'Focus on the SQUARE leather patch with sharp corners. ';
-        } else if (combinedText.includes('rectang')) {
+        } else if (combinedText.includes('rectang') || patchShape.toLowerCase().includes('rectang')) {
             geometryPhrase = 'Focus on the RECTANGULAR leather patch with sharp corners. ';
         }
 
         // 🎯 Priority 1: SUBJECT - Model from behind, close-up on upper back/shoulders - FULLY CLOTHED
         const subjectPart = `Young child model photographed from behind wearing ${weightedColor} ${product.general_info.product_name}. FULLY CLOTHED - complete outfit with shirt/top underneath, no bare skin visible. CLOSE-UP SHOT of upper back and shoulders area. Back of head with curly hair visible at top of frame. Camera focused on collar and upper back where patch/logo is located.`;
 
-        // Priority 2: Product Details - BACK DETAILS on worn garment
+        // Priority 2: Product Details - BACK DETAILS with EXACT patch specifications
         const productIdentity = this.buildProductIdentityBlock(product, false, true);
-        const productData = `BACK GARMENT DETAILS IN FOCUS: ${geometryPhrase}${patchDetail} prominently visible and sharp. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}.${techniqueText} ${productIdentity}. Shoulder seams, collar back, and stitching details visible while worn on model.`;
+        const productData = `BACK GARMENT DETAILS IN FOCUS: ${yokeDescription}${geometryPhrase}${exactPatchSpec}${patchDetail} prominently visible and sharp. CRITICAL: Patch must be ${patchColor.toUpperCase() || 'exact color from reference'}, ${patchShape.toUpperCase()} shaped, centered on leather yoke. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}.${techniqueText} ${productIdentity}. Shoulder seams, collar back, and stitching details visible while worn on model.`;
 
         // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred background
         const environmentPart = `${da.background.type} backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}. Shallow depth of field keeping back details sharp.`;

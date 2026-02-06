@@ -59,6 +59,44 @@ export class GenerationsController {
 			message: 'Generation created successfully',
 			next_step: 'POST /api/generations/:id/execute to start image generation',
 		};
+
+	}
+
+	/**
+	 * POST /api/generations/generate-with-new-da
+	 *
+	 * Combined flow: Create -> Build Prompts -> Start Generation
+	 * Used for "One Click" generation from library/DA selection.
+	 */
+	@Post('generate-with-new-da')
+	async generateWithNewDa(
+		@CurrentUser() user: User,
+		@Body() body: { product_id: string; da_preset_id: string; model_type?: 'adult' | 'kid' },
+	): Promise<{
+		success: boolean;
+		generation: Generation;
+		message: string;
+	}> {
+		if (!body.product_id) {
+			throw new BadRequestException('product_id is required');
+		}
+		if (!body.da_preset_id) {
+			throw new BadRequestException('da_preset_id is required');
+		}
+
+		// Combined flow: Create -> Build -> Generate
+		const generation = await this.generationsService.generateWithNewDa(
+			user.id,
+			body.product_id,
+			body.da_preset_id,
+			body.model_type || 'adult',
+		);
+
+		return {
+			success: true,
+			generation,
+			message: 'Generation started successfully (Create + Build + Generate)',
+		};
 	}
 
 	/**
