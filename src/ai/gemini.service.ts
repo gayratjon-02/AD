@@ -460,11 +460,19 @@ High quality studio lighting, sharp details, clean background.`;
 		const ratioText = this.mapAspectRatioToGemini(aspectRatio ?? '4:5');
 		const resolutionText = this.mapResolutionToGemini(resolution);
 
-		// Enhanced prompt with reference instruction - STRONGER LOGO EMPHASIS
+		// Enhanced prompt with reference instruction - EXACT PRODUCT REPRODUCTION
 		const referencePrompt = `🎯 CRITICAL: Use the provided reference images as EXACT VISUAL GUIDE.
 You MUST match ALL details from reference images precisely:
 
-🏷️ LOGO/BRANDING (HIGHEST PRIORITY):
+🎨 POCKET PATCHES & DESIGN ELEMENTS (HIGHEST PRIORITY):
+- EXACT pocket patch pattern, embossing, and monogram from reference images
+- EXACT pocket patch material appearance (leather, fabric), color, and texture
+- EXACT pocket patch shape, size, and position on the garment
+- Embossed/debossed patterns must match PRECISELY - same motif, same density, same depth
+- Every distinctive design element (patches, panels, overlays) must be reproduced IDENTICALLY
+- The pocket patch must look THE SAME in every shot - no variation allowed
+
+🏷️ LOGO/BRANDING:
 - EXACT logo text, font, and typography from reference
 - EXACT logo position, size, and proportions
 - EXACT logo colors and contrast
@@ -482,11 +490,13 @@ You MUST match ALL details from reference images precisely:
 
 Generate a NEW professional product photography based on these references.
 The generated image must be VISUALLY IDENTICAL to the reference product.
+Every design element, patch, pocket, embossing, and detail must match the reference EXACTLY.
+The product must look IDENTICAL across all generated shots - same patches, same patterns, same details.
 
 PHOTOGRAPHY REQUIREMENTS:
 ${this.sanitizePromptForImageGeneration(prompt)}
 
-HIGH QUALITY OUTPUT: Professional e-commerce photography, studio lighting, sharp details. Crisp logo rendering.`;
+HIGH QUALITY OUTPUT: Professional e-commerce photography, studio lighting, sharp details. Crisp detail rendering on all patches and embossing.`;
 
 		console.log('🔧 ENHANCED PROMPT (sent to Gemini):');
 		console.log('─────────────────────────────────────────────────────────────────────');

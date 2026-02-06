@@ -852,6 +852,49 @@ export class PromptBuilderService {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // PRODUCT IDENTITY BLOCK (Consistency across all shots)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Build a product identity block that describes ALL distinctive design elements.
+     * This MUST be included in every shot prompt to ensure consistency.
+     * Covers: pocket patches, embossing, monograms, panels, overlays, etc.
+     */
+    private buildProductIdentityBlock(product: AnalyzeProductDirectResponse, includeFront = true, includeBack = false): string {
+        const parts: string[] = [];
+
+        if (includeFront) {
+            // Front design description (pocket details, panels, overlays)
+            if (product.design_front.description) {
+                parts.push(product.design_front.description);
+            }
+            // Micro details (embossing, stitching patterns, monograms)
+            if (product.design_front.micro_details) {
+                parts.push(`Details: ${product.design_front.micro_details}`);
+            }
+        }
+
+        if (includeBack) {
+            if (product.design_back.has_patch && product.design_back.patch_detail) {
+                parts.push(`Back: ${product.design_back.patch_detail}`);
+            }
+            if (product.design_back.technique) {
+                parts.push(`Technique: ${product.design_back.technique}`);
+            }
+        }
+
+        // Construction details
+        if (product.garment_details.seam_architecture) {
+            parts.push(`Construction: ${product.garment_details.seam_architecture}`);
+        }
+
+        const details = parts.filter(Boolean).join('. ');
+        if (!details) return '';
+
+        return `${details}. CRITICAL: All pocket patches, embossing patterns, monograms, and design details must EXACTLY match the reference product images.`;
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // PROMPT BUILDERS (6 Shot Types)
     // ═══════════════════════════════════════════════════════════
 
@@ -880,12 +923,9 @@ export class PromptBuilderService {
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 2: APPAREL (What they're wearing) - USE baseAttire (includes t-shirt when product is bottom!)
         // ═══════════════════════════════════════════════════════════
-        const detailsPart = [
-            product.design_front.micro_details ? `Details: ${product.design_front.micro_details}` : '',
-            product.garment_details.seam_architecture ? `Construction: ${product.garment_details.seam_architecture}` : ''
-        ].filter(Boolean).join('. ');
+        const productIdentity = this.buildProductIdentityBlock(product, true, false);
 
-        const apparelPart = `Both ${baseAttire}. Fabric: ${product.visual_specs.fabric_texture}. ${product.design_front.description}. ${detailsPart}. ${zipperText}. Fully clothed, shirts on, no bare chest.`;
+        const apparelPart = `Both ${baseAttire}. Fabric: ${product.visual_specs.fabric_texture}. ${productIdentity}. ${zipperText}. Fully clothed, shirts on, no bare chest.`;
 
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 3: ENVIRONMENT (Where)
@@ -939,13 +979,10 @@ export class PromptBuilderService {
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 2: APPAREL (What they're wearing)
         // ═══════════════════════════════════════════════════════════
-        const detailsPart = [
-            product.design_front.micro_details ? `Details: ${product.design_front.micro_details}` : '',
-            product.garment_details.seam_architecture ? `Construction: ${product.garment_details.seam_architecture}` : ''
-        ].filter(Boolean).join('. ');
+        const productIdentity = this.buildProductIdentityBlock(product, true, false);
 
         const apparelPart = `${baseAttire}. ` +
-            `Fabric: ${product.visual_specs.fabric_texture}. ${product.design_front.description}. ${detailsPart}. ${logoTextFront}. ${zipperText}. Fully clothed, never shirtless.`;
+            `Fabric: ${product.visual_specs.fabric_texture}. ${productIdentity}. ${logoTextFront}. ${zipperText}. Fully clothed, never shirtless.`;
 
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 3: ENVIRONMENT (Where)
@@ -1003,9 +1040,10 @@ export class PromptBuilderService {
             productName.includes('short') ||
             productName.includes('bottom');
 
-        // Priority 1: Client Data
+        // Priority 1: Client Data + Product Identity
+        const productIdentity = this.buildProductIdentityBlock(product, true, false);
         const productData = `Product: ${weightedColor} ${product.general_info.product_name}. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
-            `${product.design_front.description}. ${logoTextFront}.`;
+            `${productIdentity}. ${logoTextFront}.`;
 
         // Priority 2: Shot - Different display for pants vs tops
         // 🎯 Use DA background instead of hardcoded wood - matches collection's artistic direction
@@ -1069,9 +1107,10 @@ export class PromptBuilderService {
             productName.includes('short') ||
             productName.includes('bottom');
 
-        // Priority 1: Client Data
+        // Priority 1: Client Data + Product Identity (back details)
+        const productIdentity = this.buildProductIdentityBlock(product, false, true);
         const productData = `Product: BACK VIEW of ${weightedColor} ${product.general_info.product_name}. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
-            `${product.design_back.description}. ${patchDetail}${technique}`;
+            `${product.design_back.description}. ${patchDetail}${technique} ${productIdentity}.`;
 
         // Priority 2: Shot - Different display for pants vs tops
         // 🎯 Use DA background instead of hardcoded wood - matches collection's artistic direction
@@ -1114,7 +1153,8 @@ export class PromptBuilderService {
         const subjectPart = `Young child model wearing ${weightedColor} ${product.general_info.product_name}. FULLY CLOTHED - complete outfit, no bare skin visible. CLOSE-UP SHOT framed from chin to chest area. Partial face visible showing lips and chin only. Camera focused on front collar, buttons, and chest details.`;
 
         // Priority 2: Product Details - FRONT DETAILS on worn garment
-        const productData = `FRONT GARMENT DETAILS IN FOCUS: Collar shape clearly visible. ${product.design_front.description}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp focus on buttons, zipper, pocket details, and embroidery while worn on model.`;
+        const productIdentity = this.buildProductIdentityBlock(product, true, false);
+        const productData = `FRONT GARMENT DETAILS IN FOCUS: Collar shape clearly visible. ${productIdentity}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp focus on buttons, zipper, pocket patches, embossing patterns, and embroidery while worn on model.`;
 
         // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred background
         const environmentPart = `${da.background.type} backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}. Shallow depth of field keeping garment details sharp.`;
@@ -1169,7 +1209,8 @@ export class PromptBuilderService {
         const subjectPart = `Young child model photographed from behind wearing ${weightedColor} ${product.general_info.product_name}. FULLY CLOTHED - complete outfit with shirt/top underneath, no bare skin visible. CLOSE-UP SHOT of upper back and shoulders area. Back of head with curly hair visible at top of frame. Camera focused on collar and upper back where patch/logo is located.`;
 
         // Priority 2: Product Details - BACK DETAILS on worn garment
-        const productData = `BACK GARMENT DETAILS IN FOCUS: ${geometryPhrase}${patchDetail} prominently visible and sharp. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}.${techniqueText} Shoulder seams, collar back, and stitching details visible while worn on model.`;
+        const productIdentity = this.buildProductIdentityBlock(product, false, true);
+        const productData = `BACK GARMENT DETAILS IN FOCUS: ${geometryPhrase}${patchDetail} prominently visible and sharp. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}.${techniqueText} ${productIdentity}. Shoulder seams, collar back, and stitching details visible while worn on model.`;
 
         // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred background
         const environmentPart = `${da.background.type} backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}. Shallow depth of field keeping back details sharp.`;
