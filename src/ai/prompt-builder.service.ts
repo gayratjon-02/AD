@@ -859,6 +859,9 @@ export class PromptBuilderService {
      * Build a product identity block that describes ALL distinctive design elements.
      * This MUST be included in every shot prompt to ensure consistency.
      * Covers: pocket patches, embossing, monograms, panels, overlays, etc.
+     * 
+     * 🎯 KEY FIX: Now includes chest pocket pattern details from pockets_array
+     * to ensure consistent pocket embossing patterns across ALL shot types.
      */
     private buildProductIdentityBlock(product: AnalyzeProductDirectResponse, includeFront = true, includeBack = false): string {
         const parts: string[] = [];
@@ -871,6 +874,32 @@ export class PromptBuilderService {
             // Micro details (embossing, stitching patterns, monograms)
             if (product.design_front.micro_details) {
                 parts.push(`Details: ${product.design_front.micro_details}`);
+            }
+
+            // 🎯 NEW: Extract chest pocket with EXACT pattern details for consistent rendering
+            const chestPocket = product.garment_details?.pockets_array?.find(
+                (p) => p.position?.toLowerCase().includes('chest') ||
+                    p.position?.toLowerCase().includes('left') ||
+                    p.name?.toLowerCase().includes('chest')
+            );
+
+            if (chestPocket) {
+                // Build comprehensive pocket description with all details
+                const pocketMaterial = chestPocket.material || 'leather';
+                const pocketShape = chestPocket.shape || 'square';
+                const pocketColor = chestPocket.color || '';
+                const pocketSpecialFeatures = chestPocket.special_features || '';
+
+                let pocketDescription = `CHEST POCKET: ${pocketMaterial} ${pocketShape} pocket`;
+                if (pocketColor) pocketDescription += ` in ${pocketColor}`;
+
+                // 🎯 CRITICAL: Add embossing/monogram pattern details
+                if (pocketSpecialFeatures) {
+                    pocketDescription += `. POCKET PATTERN: ${pocketSpecialFeatures}`;
+                    this.logger.log(`🎯 ProductIdentity: Adding pocket pattern - ${pocketSpecialFeatures}`);
+                }
+
+                parts.push(pocketDescription);
             }
         }
 
@@ -891,7 +920,7 @@ export class PromptBuilderService {
         const details = parts.filter(Boolean).join('. ');
         if (!details) return '';
 
-        return `${details}. CRITICAL: All pocket patches, embossing patterns, monograms, and design details must EXACTLY match the reference product images.`;
+        return `${details}. CRITICAL: All pocket patches, embossing patterns, monograms, and design details must EXACTLY match the reference product images. Copy the EXACT pattern from reference - do not invent new patterns.`;
     }
 
     // ═══════════════════════════════════════════════════════════
