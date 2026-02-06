@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { DAPreset } from '../entities/da-preset.entity';
+import { DAPreset } from '../entities/Product-Visuals/da-preset.entity';
 
 /**
  * Default DA Presets - "Gold Standard" Art Direction configurations

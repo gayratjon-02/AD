@@ -10,7 +10,7 @@ import {
 import { Product } from './product.entity';
 import { Collection } from './collection.entity';
 import { DAPreset } from './da-preset.entity';
-import { GenerationType, GenerationStatus } from '../../libs/enums';
+import { GenerationType, GenerationStatus } from '../../../libs/enums';
 
 @Entity('generations')
 export class Generation {

@@ -2,9 +2,9 @@
 // RESPONSE INTERFACES - Consistent API Response Format
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { AnalyzedProductJSON } from "src/common/interfaces/product-json.interface";
-import { Product } from "src/database/entities/product.entity";
-import { AnalyzeProductDirectResponse } from "src/libs/dto/analyze/analyze-product-direct.dto";
+import { AnalyzedProductJSON } from "../../../common/interfaces/product-json.interface";
+import { Product } from "../../../database/entities/Product-Visuals/product.entity";
+import { AnalyzeProductDirectResponse } from "../../../libs/dto/analyze/analyze-product-direct.dto";
 
 export interface ProductResponse {
 	success: boolean;

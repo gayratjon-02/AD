@@ -11,32 +11,9 @@ import { User } from '../Product-Visuals/user.entity';
 import { AdBrand } from './ad-brand.entity';
 import { AdConcept } from './ad-concept.entity';
 
-// ═══════════════════════════════════════════════════════════
-// ENUM: AdGenerationStatus
-// ═══════════════════════════════════════════════════════════
-
-export enum AdGenerationStatus {
-    PENDING = 'PENDING',
-    PROCESSING = 'PROCESSING',
-    COMPLETED = 'COMPLETED',
-    FAILED = 'FAILED',
-}
-
-// ═══════════════════════════════════════════════════════════
-// JSONB INTERFACES (Type Safety)
-// ═══════════════════════════════════════════════════════════
-
-/**
- * Generated Image Result
- */
-export interface GeneratedAdImage {
-    id: string;
-    url: string;
-    format: string; // e.g., "9:16", "1:1"
-    angle?: string;
-    variation_index: number;
-    generated_at: string;
-}
+// Import types and enums from centralized locations
+import { GeneratedAdImage } from '../../../libs/types/AdRecreation';
+import { AdGenerationStatus } from '../../../libs/enums/AdRecreationEnums';
 
 // ═══════════════════════════════════════════════════════════
 // ENTITY: AdGeneration (Phase 2 - P0 MVP)
@@ -117,3 +94,4 @@ export class AdGeneration {
     @Column({ type: 'timestamp', nullable: true })
     completed_at: Date;
 }
+

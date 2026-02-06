@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Product } from '../../database/entities/product.entity';
-import { Collection } from '../../database/entities/collection.entity';
-import { Generation } from '../../database/entities/generation.entity';
+import { Product } from '../../database/entities/Product-Visuals/product.entity';
+import { Collection } from '../../database/entities/Product-Visuals/collection.entity';
+import { Generation } from '../../database/entities/Product-Visuals/generation.entity';
 import { ClaudeService } from '../../ai/claude.service';
 import { CreateProductDto, UpdateProductDto } from '../../libs/dto';
 import {

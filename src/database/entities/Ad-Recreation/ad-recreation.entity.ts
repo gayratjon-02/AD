@@ -10,15 +10,8 @@ import {
 import { User } from '../Product-Visuals/user.entity';
 import { Brand } from '../Product-Visuals/brand.entity';
 
-export enum AdRecreationStatus {
-	PENDING = 'pending',
-	UPLOADED = 'uploaded',
-	ANALYZING = 'analyzing',
-	ANALYZED = 'analyzed',
-	GENERATING = 'generating',
-	COMPLETED = 'completed',
-	FAILED = 'failed',
-}
+// Import enum from centralized location
+import { AdRecreationStatus } from '../../../libs/enums/AdRecreationEnums';
 
 @Entity('ad_recreations')
 export class AdRecreation {
