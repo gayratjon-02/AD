@@ -8,7 +8,7 @@ import {
     OneToMany,
     JoinColumn,
 } from 'typeorm';
-import { User } from './user.entity';
+import { User } from '../Product-Visuals/user.entity';
 
 // ═══════════════════════════════════════════════════════════
 // JSONB INTERFACES (Type Safety for Playbooks)

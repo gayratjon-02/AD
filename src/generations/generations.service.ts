@@ -14,10 +14,10 @@ import { Queue } from 'bull';
 import { Subject } from 'rxjs';
 import * as archiver from 'archiver';
 
-import { Generation } from '../database/entities/generation.entity';
-import { Product } from '../database/entities/product.entity';
-import { Collection } from '../database/entities/collection.entity';
-import { DAPreset } from '../database/entities/da-preset.entity';
+import { Generation } from '../database/entities/Product-Visuals/generation.entity';
+import { Product } from '../database/entities/Product-Visuals/product.entity';
+import { Collection } from '../database/entities/Product-Visuals/collection.entity';
+import { DAPreset } from '../database/entities/Product-Visuals/da-preset.entity';
 
 import { CreateGenerationDto, GenerateDto, UpdateGenerationDto } from '../libs/dto';
 import { ErrorMessage, GenerationMessage, GenerationStatus, NotFoundMessage, PermissionMessage } from '../libs/enums';

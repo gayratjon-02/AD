@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ClaudeService } from '../ai/claude.service';
 import { FilesService } from '../files/files.service';
-import { DAPreset, DAPresetConfig } from '../database/entities/da-preset.entity';
+import { DAPreset, DAPresetConfig } from '../database/entities/Product-Visuals/da-preset.entity';
 import { AnalyzeDAPresetResponse } from '../libs/dto/analyze/analyze-da-preset.dto';
 
 @Injectable()

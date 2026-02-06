@@ -6,8 +6,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Collection } from '../database/entities/collection.entity';
-import { Brand } from '../database/entities/brand.entity';
+import { Collection } from '../database/entities/Product-Visuals/collection.entity';
+import { Brand } from '../database/entities/Product-Visuals/brand.entity';
 import {
 	CreateCollectionDto,
 	UpdateCollectionDto,

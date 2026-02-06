@@ -7,7 +7,7 @@ import {
     ManyToOne,
     JoinColumn,
 } from 'typeorm';
-import { User } from './user.entity';
+import { User } from '../Product-Visuals/user.entity';
 import { AdBrand } from './ad-brand.entity';
 import { AdConcept } from './ad-concept.entity';
 

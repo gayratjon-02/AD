@@ -2,8 +2,8 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CollectionsService } from './collections.service';
 import { CollectionsController } from './collections.controller';
-import { Collection } from '../database/entities/collection.entity';
-import { Brand } from '../database/entities/brand.entity';
+import { Collection } from '../database/entities/Product-Visuals/collection.entity';
+import { Brand } from '../database/entities/Product-Visuals/brand.entity';
 import { AiModule } from '../ai/ai.module';
 import { FilesModule } from '../files/files.module';
 

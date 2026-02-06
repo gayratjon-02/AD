@@ -7,8 +7,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { CreateCollectionDto, UpdateCollectionDto, FixedElementsDto, UpdatePromptTemplatesDto, UpdateDAJsonDto } from '../libs/dto';
-import { User } from '../database/entities/user.entity';
-import { Collection } from '../database/entities/collection.entity';
+import { User } from '../database/entities/Product-Visuals/user.entity';
+import { Collection } from '../database/entities/Product-Visuals/collection.entity';
 import { AnalyzedDAJSON, FixedElements } from '../common/interfaces/da-json.interface';
 
 // Predefined DA (Direction Artistique) Templates - Decorators for visual generation

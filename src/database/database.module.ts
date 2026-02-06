@@ -3,18 +3,23 @@ import { Module, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { User } from './entities/user.entity';
-import { Brand } from './entities/brand.entity';
-import { Collection } from './entities/collection.entity';
-import { Product } from './entities/product.entity';
-import { Generation } from './entities/generation.entity';
-import { AdRecreation } from './entities/ad-recreation.entity';
-import { DAPreset } from './entities/da-preset.entity';
+// ═══════════════════════════════════════════════════════════
+// Phase 1: Product Visuals Entities
+// ═══════════════════════════════════════════════════════════
+import { User } from './entities/Product-Visuals/user.entity';
+import { Brand } from './entities/Product-Visuals/brand.entity';
+import { Collection } from './entities/Product-Visuals/collection.entity';
+import { Product } from './entities/Product-Visuals/product.entity';
+import { Generation } from './entities/Product-Visuals/generation.entity';
+import { DAPreset } from './entities/Product-Visuals/da-preset.entity';
 
-// Phase 2: Ad Recreation Module Entities
-import { AdBrand } from './entities/ad-brand.entity';
-import { AdConcept } from './entities/ad-concept.entity';
-import { AdGeneration } from './entities/ad-generation.entity';
+// ═══════════════════════════════════════════════════════════
+// Phase 2: Ad Recreation Entities
+// ═══════════════════════════════════════════════════════════
+import { AdRecreation } from './entities/Ad-Recreation/ad-recreation.entity';
+import { AdBrand } from './entities/Ad-Recreation/ad-brand.entity';
+import { AdConcept } from './entities/Ad-Recreation/ad-concept.entity';
+import { AdGeneration } from './entities/Ad-Recreation/ad-generation.entity';
 
 @Module({
     imports: [
@@ -36,14 +41,13 @@ import { AdGeneration } from './entities/ad-generation.entity';
                 return {
                     ...dbConfig,
                     entities: [
-                        // Phase 1 Entities
-                        User, Brand, Collection, Product, Generation, AdRecreation, DAPreset,
-                        // Phase 2 Entities (Ad Recreation Module)
-                        AdBrand, AdConcept, AdGeneration,
+                        // Phase 1: Product Visuals
+                        User, Brand, Collection, Product, Generation, DAPreset,
+                        // Phase 2: Ad Recreation
+                        AdRecreation, AdBrand, AdConcept, AdGeneration,
                     ],
                     autoLoadEntities: false,
-                    maxQueryExecutionTime: 30000, // Increased from 10s to 30s
-                    // Merge extra settings from config
+                    maxQueryExecutionTime: 30000,
                     extra: {
                         ...dbConfig?.extra,
                     },
@@ -52,10 +56,10 @@ import { AdGeneration } from './entities/ad-generation.entity';
         }),
 
         TypeOrmModule.forFeature([
-            // Phase 1 Entities
-            User, Brand, Collection, Product, Generation, AdRecreation, DAPreset,
-            // Phase 2 Entities (Ad Recreation Module)
-            AdBrand, AdConcept, AdGeneration,
+            // Phase 1: Product Visuals
+            User, Brand, Collection, Product, Generation, DAPreset,
+            // Phase 2: Ad Recreation
+            AdRecreation, AdBrand, AdConcept, AdGeneration,
         ]),
     ],
     exports: [TypeOrmModule],

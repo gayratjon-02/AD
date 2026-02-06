@@ -3,8 +3,8 @@ import { BrandsService } from './brands.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateBrandDto, UpdateBrandDto } from '../libs/dto';
-import { User } from '../database/entities/user.entity';
-import { Brand } from '../database/entities/brand.entity';
+import { User } from '../database/entities/Product-Visuals/user.entity';
+import { Brand } from '../database/entities/Product-Visuals/brand.entity';
 
 @Controller('brands')
 @UseGuards(JwtAuthGuard)

@@ -3,7 +3,7 @@ import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdateUserDto } from '../libs/dto';
-import { User } from '../database/entities/user.entity';
+import { User } from '../database/entities/Product-Visuals/user.entity';
 import { ClaudeService } from '../ai/claude.service';
 import { GeminiService } from '../ai/gemini.service';
 

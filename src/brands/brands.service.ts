@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Brand } from '../database/entities/brand.entity';
+import { Brand } from '../database/entities/Product-Visuals/brand.entity';
 import { CreateBrandDto, UpdateBrandDto } from '../libs/dto';
 import { NotFoundMessage, PermissionMessage } from '../libs/enums';
 

@@ -7,8 +7,8 @@ import {
 	ManyToOne,
 	JoinColumn,
 } from 'typeorm';
-import { User } from './user.entity';
-import { Brand } from './brand.entity';
+import { User } from '../Product-Visuals/user.entity';
+import { Brand } from '../Product-Visuals/brand.entity';
 
 export enum AdRecreationStatus {
 	PENDING = 'pending',

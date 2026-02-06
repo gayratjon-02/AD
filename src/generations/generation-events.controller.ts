@@ -3,7 +3,7 @@ import { Observable, Subject, filter, map } from 'rxjs';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
-import { User } from '../database/entities/user.entity';
+import { User } from '../database/entities/Product-Visuals/user.entity';
 import { GenerationsService } from './generations.service';
 import { JwtService } from '@nestjs/jwt';
 

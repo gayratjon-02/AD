@@ -5,8 +5,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 import { CreateGenerationDto, GenerateDto, UpdateGenerationDto, MergePromptsDto, UpdateMergedPromptsDto } from '../libs/dto';
-import { User } from '../database/entities/user.entity';
-import { Generation } from '../database/entities/generation.entity';
+import { User } from '../database/entities/Product-Visuals/user.entity';
+import { Generation } from '../database/entities/Product-Visuals/generation.entity';
 import { MergedPrompts } from '../common/interfaces/merged-prompts.interface';
 
 @Controller('generations')

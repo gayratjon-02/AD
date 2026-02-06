@@ -17,8 +17,8 @@ import { DAService } from './da.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
-import { User } from '../database/entities/user.entity';
-import { DAPreset, DAPresetConfig } from '../database/entities/da-preset.entity';
+import { User } from '../database/entities/Product-Visuals/user.entity';
+import { DAPreset, DAPresetConfig } from '../database/entities/Product-Visuals/da-preset.entity';
 import { FilesService } from '../files/files.service';
 import { AnalyzeDAPresetDto, AnalyzeDAPresetResponse } from '../libs/dto/analyze/analyze-da-preset.dto';
 

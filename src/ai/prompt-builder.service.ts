@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AnalyzeProductDirectResponse } from '../libs/dto/analyze/analyze-product-direct.dto';
 import { AnalyzeDAPresetResponse } from '../libs/dto/analyze/analyze-da-preset.dto';
-import { DAPreset, DAPresetConfig } from '../database/entities/da-preset.entity';
-import { Product } from '../database/entities/product.entity';
+import { DAPreset, DAPresetConfig } from '../database/entities/Product-Visuals/da-preset.entity';
+import { Product } from '../database/entities/Product-Visuals/product.entity';
 import { ShotOptions, createDefaultShotOptions } from '../common/interfaces/shot-options.interface';
 import {
     MergedPrompts,
