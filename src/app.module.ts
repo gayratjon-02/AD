@@ -15,7 +15,7 @@ import { UsersModule } from './users/users.module';
 import { BrandsModule } from './brands/brands.module';
 import { CollectionsModule } from './collections/collections.module';
 import { FilesModule } from './files/files.module';
-import { ProductsModule } from './products/products.module';
+import { ProductsModule } from './modules/product-visuals/products.module';
 import { AiModule } from './ai/ai.module';
 import { GenerationsModule } from './generations/generations.module';
 import { AdRecreationModule } from './ad-recreation/ad-recreation.module';
@@ -63,4 +63,4 @@ import { AppService } from './app.service';
 		},
 	],
 })
-export class AppModule {}
+export class AppModule { }

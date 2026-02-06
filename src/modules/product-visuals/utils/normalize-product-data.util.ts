@@ -12,7 +12,7 @@ import {
 	AnalyzedProductJSON,
 	LogoInfo,
 	ProductDetails,
-} from '../../common/interfaces/product-json.interface';
+} from '../../../common/interfaces/product-json.interface';
 
 interface LogoField {
 	type?: string;
