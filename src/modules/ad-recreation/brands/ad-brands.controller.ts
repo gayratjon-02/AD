@@ -15,27 +15,27 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { AdBrandsService } from './ad-brands.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { User } from '../database/entities/Product-Visuals/user.entity';
-import { AdBrand } from '../database/entities/Ad-Recreation/ad-brand.entity';
+import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import { User } from '../../../database/entities/Product-Visuals/user.entity';
+import { AdBrand } from '../../../database/entities/Ad-Recreation/ad-brand.entity';
 import {
     CreateAdBrandDto,
     BrandAssetsResponseDto,
     AnalyzeBrandPlaybookResponseDto,
-} from '../libs/dto/AdRecreation/brands';
+} from '../../../libs/dto/AdRecreation/brands';
 
 /**
  * Ad Brands Controller
  * 
  * Phase 2: Ad Recreation - Brand Foundation APIs
- * Separate from Phase 1 BrandsController to avoid route conflicts.
  * 
  * Endpoints:
  * - POST /ad-brands           → Create brand
+ * - GET  /ad-brands/:id       → Get brand details
+ * - GET  /ad-brands           → Get all brands
  * - POST /ad-brands/:id/assets → Upload brand assets (logos)
  * - POST /ad-brands/:id/playbook → Analyze brand playbook PDF
- * - GET  /ad-brands/:id       → Get brand details
  */
 @Controller('ad-brands')
 @UseGuards(JwtAuthGuard)
@@ -117,7 +117,6 @@ export class AdBrandsController {
                     },
                 }),
                 fileFilter: (req, file, cb) => {
-                    // Accept only images
                     if (file.mimetype.match(/\/(jpg|jpeg|png|gif|svg\+xml|webp)$/)) {
                         cb(null, true);
                     } else {
@@ -125,7 +124,7 @@ export class AdBrandsController {
                     }
                 },
                 limits: {
-                    fileSize: 5 * 1024 * 1024, // 5MB max
+                    fileSize: 5 * 1024 * 1024,
                 },
             },
         ),
@@ -137,7 +136,6 @@ export class AdBrandsController {
     ): Promise<BrandAssetsResponseDto> {
         this.logger.log(`Uploading assets for Ad Brand ${id}`);
 
-        // Build file URLs (in production, these would be S3 URLs)
         const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
         const logoLightUrl = files.logo_light?.[0]
             ? `${baseUrl}/uploads/ad-brands/assets/${files.logo_light[0].filename}`
@@ -172,7 +170,6 @@ export class AdBrandsController {
                     },
                 }),
                 fileFilter: (req, file, cb) => {
-                    // Accept only PDF files
                     if (file.mimetype === 'application/pdf') {
                         cb(null, true);
                     } else {
@@ -180,7 +177,7 @@ export class AdBrandsController {
                     }
                 },
                 limits: {
-                    fileSize: 20 * 1024 * 1024, // 20MB max for PDFs
+                    fileSize: 20 * 1024 * 1024,
                 },
             },
         ),
@@ -196,7 +193,6 @@ export class AdBrandsController {
             throw new Error('PDF file is required');
         }
 
-        // Build file URL
         const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
         const pdfUrl = `${baseUrl}/uploads/ad-brands/playbooks/${files.file[0].filename}`;
 

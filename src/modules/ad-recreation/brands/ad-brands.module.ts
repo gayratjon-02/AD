@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdBrandsService } from './ad-brands.service';
 import { AdBrandsController } from './ad-brands.controller';
-import { AdBrand } from '../database/entities/Ad-Recreation/ad-brand.entity';
+import { AdBrand } from '../../../database/entities/Ad-Recreation/ad-brand.entity';
 
 /**
  * Ad Brands Module

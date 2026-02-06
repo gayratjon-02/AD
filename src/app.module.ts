@@ -24,7 +24,6 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AdRecreationModule } from './modules/ad-recreation/ad-recreation.module';
-import { AdBrandsModule } from './ad-brands/ad-brands.module';
 
 @Module({
 	imports: [
@@ -52,8 +51,7 @@ import { AdBrandsModule } from './ad-brands/ad-brands.module';
 		ProductsModule,
 		AiModule,
 		GenerationsModule,
-		AdRecreationModule,
-		AdBrandsModule,
+		AdRecreationModule, // Phase 2: Includes all Ad Recreation submodules (brands, concepts, etc.)
 		DAModule,
 	],
 	controllers: [AppController],

@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { AdBrand } from '../database/entities/Ad-Recreation/ad-brand.entity';
-import { CreateAdBrandDto } from '../libs/dto/AdRecreation/brands';
-import { BrandPlaybook, BrandAssets } from '../libs/types/AdRecreation';
+import { AdBrand } from '../../../database/entities/Ad-Recreation/ad-brand.entity';
+import { CreateAdBrandDto } from '../../../libs/dto/AdRecreation/brands';
+import { BrandPlaybook, BrandAssets } from '../../../libs/types/AdRecreation';
 
 /**
  * Ad Brands Service
@@ -87,10 +87,6 @@ export class AdBrandsService {
 
     /**
      * Upload and save brand assets (logos)
-     * @param id Brand ID
-     * @param userId User ID for ownership check
-     * @param logoLightUrl URL of light mode logo (after upload)
-     * @param logoDarkUrl URL of dark mode logo (after upload)
      */
     async uploadAssets(
         id: string,
@@ -100,7 +96,6 @@ export class AdBrandsService {
     ): Promise<AdBrand> {
         const brand = await this.findOne(id, userId);
 
-        // Merge with existing assets
         const currentAssets = brand.assets || {};
         const updatedAssets: BrandAssets = {
             ...currentAssets,
@@ -121,9 +116,6 @@ export class AdBrandsService {
 
     /**
      * Analyze uploaded PDF and save brand playbook
-     * @param id Brand ID
-     * @param userId User ID for ownership check
-     * @param pdfUrl URL of uploaded PDF file
      */
     async analyzePlaybook(
         id: string,
@@ -146,16 +138,13 @@ export class AdBrandsService {
 
     /**
      * Mock Claude PDF Analysis
-     * Returns a sample brand playbook structure
      * TODO: Replace with actual ClaudeService.analyzePdf() call
      */
     private async mockClaudeAnalyzePdf(pdfUrl: string): Promise<BrandPlaybook> {
         this.logger.log(`[MOCK] Analyzing PDF: ${pdfUrl}`);
 
-        // Simulate processing delay
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        // Return mock brand playbook
         return {
             colors: {
                 primary: '#1E3A5F',
