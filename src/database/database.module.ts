@@ -11,6 +11,11 @@ import { Generation } from './entities/generation.entity';
 import { AdRecreation } from './entities/ad-recreation.entity';
 import { DAPreset } from './entities/da-preset.entity';
 
+// Phase 2: Ad Recreation Module Entities
+import { AdBrand } from './entities/ad-brand.entity';
+import { AdConcept } from './entities/ad-concept.entity';
+import { AdGeneration } from './entities/ad-generation.entity';
+
 @Module({
     imports: [
         TypeOrmModule.forRootAsync({
@@ -30,7 +35,12 @@ import { DAPreset } from './entities/da-preset.entity';
 
                 return {
                     ...dbConfig,
-                    entities: [User, Brand, Collection, Product, Generation, AdRecreation, DAPreset],
+                    entities: [
+                        // Phase 1 Entities
+                        User, Brand, Collection, Product, Generation, AdRecreation, DAPreset,
+                        // Phase 2 Entities (Ad Recreation Module)
+                        AdBrand, AdConcept, AdGeneration,
+                    ],
                     autoLoadEntities: false,
                     maxQueryExecutionTime: 30000, // Increased from 10s to 30s
                     // Merge extra settings from config
@@ -41,8 +51,14 @@ import { DAPreset } from './entities/da-preset.entity';
             },
         }),
 
-        TypeOrmModule.forFeature([User, Brand, Collection, Product, Generation, AdRecreation, DAPreset]),
+        TypeOrmModule.forFeature([
+            // Phase 1 Entities
+            User, Brand, Collection, Product, Generation, AdRecreation, DAPreset,
+            // Phase 2 Entities (Ad Recreation Module)
+            AdBrand, AdConcept, AdGeneration,
+        ]),
     ],
     exports: [TypeOrmModule],
 })
 export class DatabaseModule { }
+
