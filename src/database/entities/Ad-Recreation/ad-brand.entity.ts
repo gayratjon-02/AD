@@ -9,7 +9,6 @@ import {
 } from 'typeorm';
 import { User } from '../Product-Visuals/user.entity';
 
-// Import types from centralized location
 import {
     BrandPlaybook,
     AdsPlaybook,
@@ -17,15 +16,11 @@ import {
     BrandAssets,
 } from '../../../libs/types/AdRecreation';
 
-// ═══════════════════════════════════════════════════════════
-// ENTITY: AdBrand (Phase 2 - P0 MVP)
-// ═══════════════════════════════════════════════════════════
-
 /**
- * AdBrand Entity
- * 
- * Stores brand identity and playbooks for Ad Recreation Module.
- * Separate from Phase 1 `brands` table to avoid conflicts.
+ * AdBrand Entity - Phase 2 Ad Recreation
+ *
+ * Stores brand identity, assets, and playbooks.
+ * Matches the "Brand Assets" table in the PDF specification.
  */
 @Entity('ad_brands')
 export class AdBrand {
@@ -44,11 +39,15 @@ export class AdBrand {
     @Column({ type: 'varchar', length: 255 })
     name: string;
 
-    @Column({ type: 'varchar', length: 100, nullable: true })
+    @Column({ type: 'varchar', length: 100 })
     industry: string;
 
     @Column({ type: 'varchar', length: 500, nullable: true })
     website: string;
+
+    // ─── Assets (Logo URLs: { logo_light, logo_dark }) ───────
+    @Column({ type: 'jsonb', nullable: true })
+    assets: BrandAssets;
 
     // ─── Playbooks (JSONB) ───────────────────────────────────
     @Column({ type: 'jsonb', nullable: true })
@@ -60,9 +59,9 @@ export class AdBrand {
     @Column({ type: 'jsonb', nullable: true })
     copy_playbook: CopyPlaybook;
 
-    // ─── Assets (Logo URLs) ──────────────────────────────────
-    @Column({ type: 'jsonb', nullable: true })
-    assets: BrandAssets;
+    // ─── Optional Extra PDF ──────────────────────────────────
+    @Column({ type: 'varchar', length: 500, nullable: true })
+    style_guide_url: string;
 
     // ─── Timestamps ──────────────────────────────────────────
     @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
@@ -75,4 +74,3 @@ export class AdBrand {
     })
     updated_at: Date;
 }
-

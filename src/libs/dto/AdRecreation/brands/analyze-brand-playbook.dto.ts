@@ -1,11 +1,34 @@
-import { BrandPlaybook } from '../../../types/AdRecreation';
+import { IsEnum, IsOptional } from 'class-validator';
+import { BrandPlaybook, AdsPlaybook, CopyPlaybook } from '../../../types/AdRecreation';
 
 /**
- * Analyze Brand Playbook Response DTO
- * Returned after Claude analyzes the uploaded PDF
+ * Playbook type enum for validation
  */
-export class AnalyzeBrandPlaybookResponseDto {
+export enum PlaybookType {
+    BRAND = 'brand',
+    ADS = 'ads',
+    COPY = 'copy',
+}
+
+/**
+ * Analyze Playbook DTO
+ * Used for POST /ad-brands/:id/playbook endpoint
+ *
+ * Rule: If type is 'brand', the PDF file is MANDATORY.
+ * For 'ads' and 'copy', the file is optional but recommended.
+ */
+export class AnalyzePlaybookDto {
+    @IsEnum(PlaybookType)
+    @IsOptional()
+    type?: PlaybookType = PlaybookType.BRAND;
+}
+
+/**
+ * Response after playbook analysis
+ */
+export class AnalyzePlaybookResponseDto {
     success: boolean;
     message: string;
-    brand_playbook: BrandPlaybook;
+    playbook_type: PlaybookType;
+    data: BrandPlaybook | AdsPlaybook | CopyPlaybook;
 }

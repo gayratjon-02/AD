@@ -7,14 +7,20 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AdBrand } from '../../../database/entities/Ad-Recreation/ad-brand.entity';
-import { CreateAdBrandDto } from '../../../libs/dto/AdRecreation/brands';
-import { BrandPlaybook, BrandAssets } from '../../../libs/types/AdRecreation';
+import { CreateAdBrandDto, PlaybookType } from '../../../libs/dto/AdRecreation/brands';
+import {
+    BrandPlaybook,
+    AdsPlaybook,
+    CopyPlaybook,
+    BrandAssets,
+} from '../../../libs/types/AdRecreation';
+import { AdBrandMessage } from '../../../libs/messages';
 
 /**
- * Ad Brands Service
- * 
- * Handles all business logic for Phase 2 Ad Recreation brands.
- * Separate from Phase 1 BrandsService to avoid conflicts.
+ * Ad Brands Service - Phase 2: Ad Recreation
+ *
+ * Handles all business logic for brand creation, asset uploads,
+ * and playbook analysis (brand / ads / copy).
  */
 @Injectable()
 export class AdBrandsService {
@@ -23,15 +29,12 @@ export class AdBrandsService {
     constructor(
         @InjectRepository(AdBrand)
         private adBrandsRepository: Repository<AdBrand>,
-    ) { }
+    ) {}
 
     // ═══════════════════════════════════════════════════════════
     // CREATE BRAND
     // ═══════════════════════════════════════════════════════════
 
-    /**
-     * Create a new Ad Brand for the user
-     */
     async create(userId: string, dto: CreateAdBrandDto): Promise<AdBrand> {
         this.logger.log(`Creating Ad Brand: ${dto.name} for user ${userId}`);
 
@@ -47,12 +50,9 @@ export class AdBrandsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GET BRAND BY ID
+    // GET BRAND BY ID (with ownership check)
     // ═══════════════════════════════════════════════════════════
 
-    /**
-     * Get Ad Brand by ID with ownership check
-     */
     async findOne(id: string, userId: string): Promise<AdBrand> {
         const brand = await this.adBrandsRepository.findOne({
             where: { id },
@@ -60,20 +60,20 @@ export class AdBrandsService {
         });
 
         if (!brand) {
-            throw new NotFoundException(`Ad Brand with ID ${id} not found`);
+            throw new NotFoundException(AdBrandMessage.BRAND_NOT_FOUND);
         }
 
-        // Check ownership
         if (brand.user_id !== userId) {
-            throw new ForbiddenException('You do not have access to this brand');
+            throw new ForbiddenException(AdBrandMessage.BRAND_ACCESS_DENIED);
         }
 
         return brand;
     }
 
-    /**
-     * Get all Ad Brands for a user
-     */
+    // ═══════════════════════════════════════════════════════════
+    // GET ALL BRANDS
+    // ═══════════════════════════════════════════════════════════
+
     async findAll(userId: string): Promise<AdBrand[]> {
         return this.adBrandsRepository.find({
             where: { user_id: userId },
@@ -82,25 +82,20 @@ export class AdBrandsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // UPLOAD BRAND ASSETS
+    // UPLOAD BRAND ASSETS (both logos required)
     // ═══════════════════════════════════════════════════════════
 
-    /**
-     * Upload and save brand assets (logos)
-     */
     async uploadAssets(
         id: string,
         userId: string,
-        logoLightUrl?: string,
-        logoDarkUrl?: string,
+        logoLightUrl: string,
+        logoDarkUrl: string,
     ): Promise<AdBrand> {
         const brand = await this.findOne(id, userId);
 
-        const currentAssets = brand.assets || {};
         const updatedAssets: BrandAssets = {
-            ...currentAssets,
-            ...(logoLightUrl && { logo_light_mode: logoLightUrl }),
-            ...(logoDarkUrl && { logo_dark_mode: logoDarkUrl }),
+            logo_light: logoLightUrl,
+            logo_dark: logoDarkUrl,
         };
 
         brand.assets = updatedAssets;
@@ -111,38 +106,53 @@ export class AdBrandsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ANALYZE BRAND PLAYBOOK (PDF)
+    // ANALYZE PLAYBOOK (brand / ads / copy)
+    // Saves to the correct column based on type.
     // ═══════════════════════════════════════════════════════════
 
-    /**
-     * Analyze uploaded PDF and save brand playbook
-     */
     async analyzePlaybook(
         id: string,
         userId: string,
-        pdfUrl: string,
+        type: PlaybookType,
+        pdfUrl?: string,
     ): Promise<AdBrand> {
         const brand = await this.findOne(id, userId);
 
-        this.logger.log(`Analyzing playbook PDF for Ad Brand ${id}: ${pdfUrl}`);
+        this.logger.log(`Analyzing ${type} playbook for Ad Brand ${id}${pdfUrl ? `: ${pdfUrl}` : ''}`);
 
-        // Mock Claude PDF analysis - In production, call ClaudeService.analyzePdf(pdfUrl)
-        const analyzedPlaybook = await this.mockClaudeAnalyzePdf(pdfUrl);
+        // Mock analysis based on type
+        // TODO: Replace with actual ClaudeService.analyzePdf() call
+        switch (type) {
+            case PlaybookType.BRAND: {
+                const brandPlaybook = await this.mockBrandPlaybookAnalysis(pdfUrl!);
+                brand.brand_playbook = brandPlaybook;
+                break;
+            }
+            case PlaybookType.ADS: {
+                const adsPlaybook = await this.mockAdsPlaybookAnalysis(pdfUrl);
+                brand.ads_playbook = adsPlaybook;
+                break;
+            }
+            case PlaybookType.COPY: {
+                const copyPlaybook = await this.mockCopyPlaybookAnalysis(pdfUrl);
+                brand.copy_playbook = copyPlaybook;
+                break;
+            }
+        }
 
-        brand.brand_playbook = analyzedPlaybook;
         const saved = await this.adBrandsRepository.save(brand);
+        this.logger.log(`Saved ${type} playbook for Ad Brand ${id}`);
 
-        this.logger.log(`Saved brand playbook for Ad Brand ${id}`);
         return saved;
     }
 
-    /**
-     * Mock Claude PDF Analysis
-     * TODO: Replace with actual ClaudeService.analyzePdf() call
-     */
-    private async mockClaudeAnalyzePdf(pdfUrl: string): Promise<BrandPlaybook> {
-        this.logger.log(`[MOCK] Analyzing PDF: ${pdfUrl}`);
+    // ═══════════════════════════════════════════════════════════
+    // MOCK ANALYSIS METHODS
+    // TODO: Replace with real Claude integration
+    // ═══════════════════════════════════════════════════════════
 
+    private async mockBrandPlaybookAnalysis(pdfUrl: string): Promise<BrandPlaybook> {
+        this.logger.log(`[MOCK] Analyzing brand PDF: ${pdfUrl}`);
         await new Promise(resolve => setTimeout(resolve, 500));
 
         return {
@@ -166,6 +176,56 @@ export class AdBrandsService {
                 clear_space: '16px around logo',
                 forbidden_contexts: ['dark busy backgrounds', 'competitor logos nearby'],
             },
+        };
+    }
+
+    private async mockAdsPlaybookAnalysis(pdfUrl?: string): Promise<AdsPlaybook> {
+        this.logger.log(`[MOCK] Analyzing ads playbook${pdfUrl ? `: ${pdfUrl}` : ''}`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        return {
+            layout_rules: {
+                preferred_formats: ['9:16', '1:1', '4:5'],
+                grid_system: '12-column grid',
+                safe_zones: {
+                    top: '10%',
+                    bottom: '15%',
+                    left: '5%',
+                    right: '5%',
+                },
+            },
+            visual_style: {
+                image_treatment: 'high-contrast',
+                overlay_opacity: 0.3,
+                corner_radius: 12,
+            },
+        };
+    }
+
+    private async mockCopyPlaybookAnalysis(pdfUrl?: string): Promise<CopyPlaybook> {
+        this.logger.log(`[MOCK] Analyzing copy playbook${pdfUrl ? `: ${pdfUrl}` : ''}`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        return {
+            hooks: [
+                'Tired of {{pain_point}}?',
+                'What if you could {{desired_outcome}}?',
+                'Stop {{bad_habit}}. Start {{good_habit}}.',
+            ],
+            angles: [
+                {
+                    name: 'Problem-Solution',
+                    description: 'Lead with the pain point, then present the product as the solution',
+                    example_headlines: ['Still struggling with X?', 'The #1 solution for Y'],
+                },
+                {
+                    name: 'Social Proof',
+                    description: 'Leverage testimonials and numbers to build trust',
+                    example_headlines: ['Join 10,000+ happy customers', 'Rated #1 by experts'],
+                },
+            ],
+            cta_variations: ['Shop Now', 'Get Started', 'Try Free', 'Learn More'],
+            forbidden_words: ['cheap', 'guarantee', 'best ever', 'miracle'],
         };
     }
 }

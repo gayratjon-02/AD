@@ -77,12 +77,11 @@ export interface CopyPlaybook {
 // ═══════════════════════════════════════════════════════════
 
 /**
- * Brand Assets - Logo URLs
+ * Brand Assets - Logo URLs (matches PDF spec)
+ * logo_light and logo_dark are REQUIRED at upload time,
+ * but nullable in the DB until first upload.
  */
 export interface BrandAssets {
-    logo_light_mode?: string;
-    logo_dark_mode?: string;
-    favicon?: string;
-    brand_mark?: string;
-    additional_assets?: string[];
+    logo_light?: string;
+    logo_dark?: string;
 }

@@ -4,6 +4,7 @@ import {
     Post,
     Body,
     Param,
+    Query,
     UseGuards,
     UseInterceptors,
     UploadedFiles,
@@ -25,27 +26,27 @@ import { AdBrand } from '../../../database/entities/Ad-Recreation/ad-brand.entit
 import {
     CreateAdBrandDto,
     BrandAssetsResponseDto,
-    AnalyzeBrandPlaybookResponseDto,
+    PlaybookType,
+    AnalyzePlaybookResponseDto,
 } from '../../../libs/dto/AdRecreation/brands';
+import { AdBrandMessage } from '../../../libs/messages';
 
 /**
- * Ad Brands Controller
- * 
- * Phase 2: Ad Recreation - Brand Foundation APIs
- * 
+ * Ad Brands Controller - Phase 2: Ad Recreation
+ *
  * Endpoints:
- * - POST /ad-brands           → Create brand
- * - GET  /ad-brands/:id       → Get brand details
- * - GET  /ad-brands           → Get all brands
- * - POST /ad-brands/:id/assets → Upload brand assets (logos)
- * - POST /ad-brands/:id/playbook → Analyze brand playbook PDF
+ * - POST /ad-brands                → Create brand
+ * - GET  /ad-brands/:id            → Get brand details
+ * - GET  /ad-brands                → Get all brands
+ * - POST /ad-brands/:id/assets     → Upload brand assets (logos)
+ * - POST /ad-brands/:id/playbook   → Analyze playbook PDF (brand/ads/copy)
  */
 @Controller('ad-brands')
 @UseGuards(JwtAuthGuard)
 export class AdBrandsController {
     private readonly logger = new Logger(AdBrandsController.name);
 
-    constructor(private readonly adBrandsService: AdBrandsService) { }
+    constructor(private readonly adBrandsService: AdBrandsService) {}
 
     // ═══════════════════════════════════════════════════════════
     // POST /ad-brands - Create Brand
@@ -62,7 +63,7 @@ export class AdBrandsController {
 
         return {
             success: true,
-            message: 'Brand created successfully',
+            message: AdBrandMessage.BRAND_CREATED,
             brand,
         };
     }
@@ -102,6 +103,7 @@ export class AdBrandsController {
 
     // ═══════════════════════════════════════════════════════════
     // POST /ad-brands/:id/assets - Upload Brand Assets
+    // Both logo_light and logo_dark are MANDATORY.
     // ═══════════════════════════════════════════════════════════
 
     @Post(':id/assets')
@@ -114,16 +116,16 @@ export class AdBrandsController {
             {
                 storage: diskStorage({
                     destination: './uploads/ad-brands/assets',
-                    filename: (req, file, cb) => {
+                    filename: (_req, file, cb) => {
                         const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
                         cb(null, uniqueName);
                     },
                 }),
-                fileFilter: (req, file, cb) => {
+                fileFilter: (_req, file, cb) => {
                     if (file.mimetype.match(/\/(jpg|jpeg|png|gif|svg\+xml|webp)$/)) {
                         cb(null, true);
                     } else {
-                        cb(new Error('Only image files are allowed'), false);
+                        cb(new BadRequestException(AdBrandMessage.ONLY_IMAGES_ALLOWED), false);
                     }
                 },
                 limits: {
@@ -139,62 +141,61 @@ export class AdBrandsController {
     ): Promise<BrandAssetsResponseDto> {
         this.logger.log(`Uploading assets for Ad Brand ${id}`);
 
-        // Validate: At least one logo file is required
-        if (!files?.logo_light?.[0] && !files?.logo_dark?.[0]) {
-            throw new BadRequestException('At least one logo file is required');
+        // Strict validation: BOTH logos are required
+        if (!files?.logo_light?.[0]) {
+            throw new BadRequestException(AdBrandMessage.LOGO_LIGHT_REQUIRED);
+        }
+        if (!files?.logo_dark?.[0]) {
+            throw new BadRequestException(AdBrandMessage.LOGO_DARK_REQUIRED);
         }
 
         const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-        const logoLightUrl = files.logo_light?.[0]
-            ? `${baseUrl}/uploads/ad-brands/assets/${files.logo_light[0].filename}`
-            : undefined;
-        const logoDarkUrl = files.logo_dark?.[0]
-            ? `${baseUrl}/uploads/ad-brands/assets/${files.logo_dark[0].filename}`
-            : undefined;
+        const logoLightUrl = `${baseUrl}/uploads/ad-brands/assets/${files.logo_light[0].filename}`;
+        const logoDarkUrl = `${baseUrl}/uploads/ad-brands/assets/${files.logo_dark[0].filename}`;
 
         const brand = await this.adBrandsService.uploadAssets(id, user.id, logoLightUrl, logoDarkUrl);
 
         return {
             success: true,
-            message: 'Brand assets uploaded successfully',
+            message: AdBrandMessage.ASSETS_UPLOADED,
             assets: brand.assets,
         };
     }
 
     // ═══════════════════════════════════════════════════════════
-    // POST /ad-brands/:id/playbook - Analyze Brand Playbook
+    // POST /ad-brands/:id/playbook - Analyze Playbook PDF
+    // Query param: ?type=brand|ads|copy (default: brand)
+    // If type is 'brand', the file is MANDATORY.
     // ═══════════════════════════════════════════════════════════
 
     @Post(':id/playbook')
     @UseInterceptors(
         FileInterceptor('file', {
             storage: diskStorage({
-                destination: (req, file, cb) => {
-                    // Create brand-specific directory: uploads/brands/:id/playbooks/
+                destination: (req, _file, cb) => {
                     const brandId = req.params.id as string;
                     const uploadPath = join('./uploads/brands', brandId, 'playbooks');
 
-                    // Ensure directory exists
                     if (!existsSync(uploadPath)) {
                         mkdirSync(uploadPath, { recursive: true });
                     }
 
                     cb(null, uploadPath);
                 },
-                filename: (req, file, cb) => {
+                filename: (_req, file, cb) => {
                     const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
                     cb(null, uniqueName);
                 },
             }),
-            fileFilter: (req, file, cb) => {
+            fileFilter: (_req, file, cb) => {
                 if (file.mimetype === 'application/pdf') {
                     cb(null, true);
                 } else {
-                    cb(new Error('Only PDF files are allowed'), false);
+                    cb(new BadRequestException(AdBrandMessage.ONLY_PDF_ALLOWED), false);
                 }
             },
             limits: {
-                fileSize: 20 * 1024 * 1024, // 20 MB
+                fileSize: 20 * 1024 * 1024,
             },
         }),
     )
@@ -202,23 +203,42 @@ export class AdBrandsController {
         @Param('id', ParseUUIDPipe) id: string,
         @CurrentUser() user: User,
         @UploadedFile() file: Express.Multer.File,
-    ): Promise<AnalyzeBrandPlaybookResponseDto> {
-        this.logger.log(`Analyzing playbook for Ad Brand ${id}`);
+        @Query('type') type?: string,
+    ): Promise<AnalyzePlaybookResponseDto> {
+        // Validate playbook type
+        const validTypes = Object.values(PlaybookType);
+        const playbookType = (type as PlaybookType) || PlaybookType.BRAND;
 
-        // Validate: PDF file is required
-        if (!file) {
-            throw new BadRequestException('PDF file is required');
+        if (!validTypes.includes(playbookType)) {
+            throw new BadRequestException(AdBrandMessage.INVALID_PLAYBOOK_TYPE);
+        }
+
+        this.logger.log(`Analyzing ${playbookType} playbook for Ad Brand ${id}`);
+
+        // If type is 'brand', file is mandatory
+        if (playbookType === PlaybookType.BRAND && !file) {
+            throw new BadRequestException(AdBrandMessage.PLAYBOOK_FILE_REQUIRED);
         }
 
         const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-        const pdfUrl = `${baseUrl}/uploads/brands/${id}/playbooks/${file.filename}`;
+        const pdfUrl = file
+            ? `${baseUrl}/uploads/brands/${id}/playbooks/${file.filename}`
+            : undefined;
 
-        const brand = await this.adBrandsService.analyzePlaybook(id, user.id, pdfUrl);
+        const brand = await this.adBrandsService.analyzePlaybook(id, user.id, playbookType, pdfUrl);
+
+        // Return the correct playbook data based on type
+        const dataMap: Record<PlaybookType, any> = {
+            [PlaybookType.BRAND]: brand.brand_playbook,
+            [PlaybookType.ADS]: brand.ads_playbook,
+            [PlaybookType.COPY]: brand.copy_playbook,
+        };
 
         return {
             success: true,
-            message: 'Brand playbook analyzed successfully',
-            brand_playbook: brand.brand_playbook,
+            message: AdBrandMessage.PLAYBOOK_ANALYZED,
+            playbook_type: playbookType,
+            data: dataMap[playbookType],
         };
     }
 }

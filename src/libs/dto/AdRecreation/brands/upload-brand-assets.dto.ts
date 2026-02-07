@@ -1,31 +1,15 @@
-import { IsString, IsOptional, IsUrl, MaxLength } from 'class-validator';
 import { BrandAssets } from '../../../types/AdRecreation';
 
 /**
  * Upload Brand Assets DTO
  * Used for POST /ad-brands/:id/assets endpoint
- * Files are handled via multipart/form-data interceptor
+ *
+ * File validation is handled in the controller via multipart/form-data.
+ * Rule: Both logo_light and logo_dark are MANDATORY.
  */
 export class UploadBrandAssetsDto {
-    @IsString()
-    @IsOptional()
-    @IsUrl()
-    logo_light_mode?: string;
-
-    @IsString()
-    @IsOptional()
-    @IsUrl()
-    logo_dark_mode?: string;
-
-    @IsString()
-    @IsOptional()
-    @IsUrl()
-    favicon?: string;
-
-    @IsString()
-    @IsOptional()
-    @IsUrl()
-    brand_mark?: string;
+    // Files are validated in the controller interceptor.
+    // This DTO documents the expected structure.
 }
 
 /**

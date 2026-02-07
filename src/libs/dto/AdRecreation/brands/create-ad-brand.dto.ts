@@ -11,13 +11,12 @@ export class CreateAdBrandDto {
     name: string;
 
     @IsString()
-    @IsOptional()
+    @IsNotEmpty()
     @MaxLength(100)
-    industry?: string;
+    industry: string;
 
-    @IsString()
-    @IsOptional()
     @IsUrl()
+    @IsOptional()
     @MaxLength(500)
     website?: string;
 }
