@@ -3,9 +3,14 @@ import {
     Logger,
     NotFoundException,
     ForbiddenException,
+    BadRequestException,
+    InternalServerErrorException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { readFileSync } from 'fs';
+import Anthropic from '@anthropic-ai/sdk';
 import { AdBrand } from '../../../database/entities/Ad-Recreation/ad-brand.entity';
 import { CreateAdBrandDto, PlaybookType } from '../../../libs/dto/AdRecreation/brands';
 import {
@@ -16,20 +21,68 @@ import {
 } from '../../../libs/types/AdRecreation';
 import { AdBrandMessage } from '../../../libs/messages';
 
+// ═══════════════════════════════════════════════════════════
+// PROMPT CONSTANTS
+// ═══════════════════════════════════════════════════════════
+
+const BRAND_ANALYSIS_SYSTEM_PROMPT = `You are a Senior Brand Strategist with 15+ years of experience extracting visual identity systems from brand guideline documents.
+
+Your job: Analyze the attached Brand Guidelines PDF and extract strict, structured visual identity rules.
+
+RULES:
+- Return ONLY valid JSON. No markdown, no explanation, no conversational text.
+- If a value is not found in the PDF, make your best professional inference based on the visual design shown.
+- All color values must be valid hex codes (e.g., "#1E3A5F").
+- Font names should be as specific as possible (e.g., "Montserrat Bold", not just "Montserrat").`;
+
+const BRAND_ANALYSIS_USER_PROMPT = `Analyze this Brand Guidelines PDF and extract the following structured data.
+
+Return EXACTLY this JSON structure (no extra keys, no missing keys):
+
+{
+  "colors": {
+    "primary": "#HEXCODE",
+    "secondary": "#HEXCODE",
+    "accent": "#HEXCODE",
+    "palette": ["#HEX1", "#HEX2", "#HEX3"]
+  },
+  "fonts": {
+    "heading": "Font Name (e.g., Montserrat Bold)",
+    "body": "Font Name (e.g., Open Sans Regular)",
+    "usage_rules": "Summary of when/how to use each font"
+  },
+  "tone_of_voice": {
+    "style": "e.g., Professional, Playful, Luxury",
+    "keywords": ["word1", "word2", "word3"],
+    "donts": ["avoid this", "never say that"]
+  },
+  "logo_rules": {
+    "clear_space": "e.g., Minimum 16px around logo",
+    "forbidden_usage": ["don't rotate", "don't change color", "don't place on busy backgrounds"]
+  }
+}
+
+Return ONLY the JSON object. No markdown code fences. No explanation.`;
+
 /**
  * Ad Brands Service - Phase 2: Ad Recreation
  *
- * Handles all business logic for brand creation, asset uploads,
- * and playbook analysis (brand / ads / copy).
+ * Handles brand creation, asset uploads, and AI-powered playbook analysis.
+ * Uses Anthropic Claude API for real PDF analysis.
  */
 @Injectable()
 export class AdBrandsService {
     private readonly logger = new Logger(AdBrandsService.name);
+    private readonly model: string;
+    private anthropicClient: Anthropic | null = null;
 
     constructor(
         @InjectRepository(AdBrand)
         private adBrandsRepository: Repository<AdBrand>,
-    ) {}
+        private readonly configService: ConfigService,
+    ) {
+        this.model = this.configService.get<string>('CLAUDE_MODEL') || 'claude-sonnet-4-20250514';
+    }
 
     // ═══════════════════════════════════════════════════════════
     // CREATE BRAND
@@ -107,24 +160,23 @@ export class AdBrandsService {
 
     // ═══════════════════════════════════════════════════════════
     // ANALYZE PLAYBOOK (brand / ads / copy)
-    // Saves to the correct column based on type.
+    // Brand type uses real Claude AI; ads/copy use mocks for now.
     // ═══════════════════════════════════════════════════════════
 
     async analyzePlaybook(
         id: string,
         userId: string,
         type: PlaybookType,
+        filePath?: string,
         pdfUrl?: string,
     ): Promise<AdBrand> {
         const brand = await this.findOne(id, userId);
 
-        this.logger.log(`Analyzing ${type} playbook for Ad Brand ${id}${pdfUrl ? `: ${pdfUrl}` : ''}`);
+        this.logger.log(`Analyzing ${type} playbook for Ad Brand ${id}`);
 
-        // Mock analysis based on type
-        // TODO: Replace with actual ClaudeService.analyzePdf() call
         switch (type) {
             case PlaybookType.BRAND: {
-                const brandPlaybook = await this.mockBrandPlaybookAnalysis(pdfUrl!);
+                const brandPlaybook = await this.analyzeBrandPlaybookWithClaude(filePath!);
                 brand.brand_playbook = brandPlaybook;
                 break;
             }
@@ -147,37 +199,168 @@ export class AdBrandsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // MOCK ANALYSIS METHODS
-    // TODO: Replace with real Claude integration
+    // REAL CLAUDE AI PIPELINE - Brand Playbook Analysis
     // ═══════════════════════════════════════════════════════════
 
-    private async mockBrandPlaybookAnalysis(pdfUrl: string): Promise<BrandPlaybook> {
-        this.logger.log(`[MOCK] Analyzing brand PDF: ${pdfUrl}`);
-        await new Promise(resolve => setTimeout(resolve, 500));
+    /**
+     * Analyzes a Brand Guidelines PDF using Claude API.
+     *
+     * Pipeline:
+     * 1. Read PDF file → Buffer → Base64
+     * 2. Send to Claude as document content block
+     * 3. Parse and validate JSON response
+     * 4. Return typed BrandPlaybook
+     */
+    private async analyzeBrandPlaybookWithClaude(filePath: string): Promise<BrandPlaybook> {
+        this.logger.log(`Analyzing brand playbook PDF with Claude: ${filePath}`);
 
-        return {
-            colors: {
-                primary: '#1E3A5F',
-                secondary: '#F5A623',
-                accent: '#00D4AA',
-                palette: ['#1E3A5F', '#F5A623', '#00D4AA', '#FFFFFF', '#1A1A1A'],
-            },
-            fonts: {
-                heading: 'Montserrat Bold',
-                body: 'Inter Regular',
-                accent: 'Playfair Display',
-            },
-            tone: {
-                voice: 'professional',
-                keywords: ['premium', 'innovative', 'trusted', 'elegant'],
-            },
-            logo_usage: {
-                min_size: '24px',
-                clear_space: '16px around logo',
-                forbidden_contexts: ['dark busy backgrounds', 'competitor logos nearby'],
-            },
-        };
+        // Step 1: Read file and convert to Base64
+        let pdfBase64: string;
+        try {
+            const fileBuffer = readFileSync(filePath);
+            pdfBase64 = fileBuffer.toString('base64');
+            this.logger.log(`PDF loaded: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+        } catch (error) {
+            this.logger.error(`Failed to read PDF file: ${error.message}`);
+            throw new BadRequestException(AdBrandMessage.AI_PDF_UNREADABLE);
+        }
+
+        // Step 2: Initialize Anthropic client
+        const client = this.getAnthropicClient();
+
+        // Step 3: Send to Claude with prompt engineering
+        let responseText: string;
+        try {
+            const message = await client.messages.create({
+                model: this.model,
+                max_tokens: 4096,
+                system: BRAND_ANALYSIS_SYSTEM_PROMPT,
+                messages: [
+                    {
+                        role: 'user',
+                        content: [
+                            {
+                                type: 'document',
+                                source: {
+                                    type: 'base64',
+                                    media_type: 'application/pdf',
+                                    data: pdfBase64,
+                                },
+                            },
+                            {
+                                type: 'text',
+                                text: BRAND_ANALYSIS_USER_PROMPT,
+                            },
+                        ],
+                    },
+                ],
+            });
+
+            // Extract text from response
+            const textBlock = message.content.find((block) => block.type === 'text');
+            if (!textBlock || textBlock.type !== 'text') {
+                throw new Error('No text response from Claude');
+            }
+            responseText = textBlock.text;
+
+            this.logger.log(`Claude response received (${message.usage?.input_tokens} in / ${message.usage?.output_tokens} out tokens)`);
+        } catch (error) {
+            if (error instanceof BadRequestException) throw error;
+            this.logger.error(`Claude API call failed: ${error.message}`);
+            throw new InternalServerErrorException(AdBrandMessage.AI_ANALYSIS_FAILED);
+        }
+
+        // Step 4: Parse JSON and validate
+        const playbook = this.parseAndValidatePlaybook(responseText);
+
+        this.logger.log(`Brand playbook extracted: ${playbook.colors.primary} primary, ${playbook.fonts.heading} heading`);
+        return playbook;
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // JSON PARSING & VALIDATION
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Parse Claude's response text into a validated BrandPlaybook.
+     * Strips markdown code fences if present.
+     */
+    private parseAndValidatePlaybook(responseText: string): BrandPlaybook {
+        // Strip markdown code fences if Claude wrapped the JSON
+        let cleaned = responseText.trim();
+        if (cleaned.startsWith('```json')) {
+            cleaned = cleaned.slice(7);
+        } else if (cleaned.startsWith('```')) {
+            cleaned = cleaned.slice(3);
+        }
+        if (cleaned.endsWith('```')) {
+            cleaned = cleaned.slice(0, -3);
+        }
+        cleaned = cleaned.trim();
+
+        let parsed: any;
+        try {
+            parsed = JSON.parse(cleaned);
+        } catch {
+            this.logger.error(`Failed to parse Claude response as JSON: ${cleaned.substring(0, 200)}...`);
+            throw new InternalServerErrorException(AdBrandMessage.AI_INVALID_JSON);
+        }
+
+        // Validate required top-level keys
+        const requiredKeys = ['colors', 'fonts', 'tone_of_voice', 'logo_rules'];
+        for (const key of requiredKeys) {
+            if (!parsed[key]) {
+                this.logger.error(`Missing required key in playbook: ${key}`);
+                throw new InternalServerErrorException(AdBrandMessage.AI_INVALID_JSON);
+            }
+        }
+
+        // Validate colors structure
+        if (!parsed.colors.primary || !parsed.colors.secondary) {
+            this.logger.error('Missing primary/secondary colors in playbook');
+            throw new InternalServerErrorException(AdBrandMessage.AI_INVALID_JSON);
+        }
+
+        // Ensure palette is an array
+        if (!Array.isArray(parsed.colors.palette)) {
+            parsed.colors.palette = [parsed.colors.primary, parsed.colors.secondary];
+        }
+
+        // Ensure arrays exist
+        if (!Array.isArray(parsed.tone_of_voice.keywords)) {
+            parsed.tone_of_voice.keywords = [];
+        }
+        if (!Array.isArray(parsed.tone_of_voice.donts)) {
+            parsed.tone_of_voice.donts = [];
+        }
+        if (!Array.isArray(parsed.logo_rules.forbidden_usage)) {
+            parsed.logo_rules.forbidden_usage = [];
+        }
+
+        return parsed as BrandPlaybook;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ANTHROPIC CLIENT (lazy init, cached)
+    // ═══════════════════════════════════════════════════════════
+
+    private getAnthropicClient(): Anthropic {
+        if (this.anthropicClient) return this.anthropicClient;
+
+        const apiKey = this.configService.get<string>('CLAUDE_API_KEY');
+        if (!apiKey) {
+            throw new InternalServerErrorException(AdBrandMessage.AI_API_KEY_MISSING);
+        }
+
+        this.anthropicClient = new Anthropic({ apiKey });
+        this.logger.log('Anthropic client initialized');
+
+        return this.anthropicClient;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // MOCK ANALYSIS METHODS (ads / copy - to be replaced later)
+    // ═══════════════════════════════════════════════════════════
 
     private async mockAdsPlaybookAnalysis(pdfUrl?: string): Promise<AdsPlaybook> {
         this.logger.log(`[MOCK] Analyzing ads playbook${pdfUrl ? `: ${pdfUrl}` : ''}`);

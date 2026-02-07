@@ -195,7 +195,7 @@ export class AdBrandsController {
                 }
             },
             limits: {
-                fileSize: 20 * 1024 * 1024,
+                fileSize: 10 * 1024 * 1024,
             },
         }),
     )
@@ -225,7 +225,13 @@ export class AdBrandsController {
             ? `${baseUrl}/uploads/brands/${id}/playbooks/${file.filename}`
             : undefined;
 
-        const brand = await this.adBrandsService.analyzePlaybook(id, user.id, playbookType, pdfUrl);
+        const brand = await this.adBrandsService.analyzePlaybook(
+            id,
+            user.id,
+            playbookType,
+            file?.path,
+            pdfUrl,
+        );
 
         // Return the correct playbook data based on type
         const dataMap: Record<PlaybookType, any> = {

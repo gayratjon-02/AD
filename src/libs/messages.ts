@@ -34,6 +34,12 @@ export enum AdBrandMessage {
     // File Validation
     ONLY_IMAGES_ALLOWED = 'Only image files are allowed (jpg, jpeg, png, gif, svg, webp)',
     ONLY_PDF_ALLOWED = 'Only PDF files are allowed',
+
+    // AI Pipeline
+    AI_API_KEY_MISSING = 'Anthropic API key is not configured',
+    AI_ANALYSIS_FAILED = 'AI failed to analyze the playbook PDF',
+    AI_INVALID_JSON = 'AI returned invalid JSON structure for playbook analysis',
+    AI_PDF_UNREADABLE = 'The uploaded PDF could not be processed by AI',
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -9,28 +9,29 @@
 // ═══════════════════════════════════════════════════════════
 
 /**
- * Brand Playbook - Contains visual identity guidelines
+ * Brand Playbook - Visual identity guidelines extracted by Claude from PDF
+ * This is the exact schema enforced on Claude's JSON output.
  */
 export interface BrandPlaybook {
-    colors?: {
+    colors: {
         primary: string;
         secondary: string;
-        accent?: string;
-        palette?: string[];
+        accent: string;
+        palette: string[];
     };
-    fonts?: {
+    fonts: {
         heading: string;
         body: string;
-        accent?: string;
+        usage_rules: string;
     };
-    tone?: {
-        voice: string; // e.g., "professional", "playful", "luxury"
-        keywords?: string[];
+    tone_of_voice: {
+        style: string;
+        keywords: string[];
+        donts: string[];
     };
-    logo_usage?: {
-        min_size?: string;
-        clear_space?: string;
-        forbidden_contexts?: string[];
+    logo_rules: {
+        clear_space: string;
+        forbidden_usage: string[];
     };
 }
 
