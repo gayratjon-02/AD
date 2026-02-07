@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { AdConcept } from '../database/entities/Ad-Recreation/ad-concept.entity';
-import { AdConceptAnalysis } from '../libs/types/AdRecreation';
-import { AdConceptMessage } from '../libs/messages';
+import { AdConcept } from '../../../database/entities/Ad-Recreation/ad-concept.entity';
+import { AdConceptAnalysis } from '../../../libs/types/AdRecreation';
+import { AdConceptMessage } from '../../../libs/messages';
 
 /**
  * Ad Concepts Service - Phase 2: Ad Recreation
@@ -23,7 +23,7 @@ export class AdConceptsService {
     constructor(
         @InjectRepository(AdConcept)
         private adConceptsRepository: Repository<AdConcept>,
-    ) {}
+    ) { }
 
     // ═══════════════════════════════════════════════════════════
     // ANALYZE CONCEPT

@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdConceptsService } from './ad-concepts.service';
 import { AdConceptsController } from './ad-concepts.controller';
-import { AdConcept } from '../database/entities/Ad-Recreation/ad-concept.entity';
+import { AdConcept } from '../../../database/entities/Ad-Recreation/ad-concept.entity';
 
 /**
  * Ad Concepts Module
@@ -16,4 +16,4 @@ import { AdConcept } from '../database/entities/Ad-Recreation/ad-concept.entity'
     providers: [AdConceptsService],
     exports: [AdConceptsService],
 })
-export class AdConceptsModule {}
+export class AdConceptsModule { }

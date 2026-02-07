@@ -15,12 +15,12 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { AdConceptsService } from './ad-concepts.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { User } from '../database/entities/Product-Visuals/user.entity';
-import { AdConcept } from '../database/entities/Ad-Recreation/ad-concept.entity';
-import { AnalyzeConceptResponseDto } from '../libs/dto/AdRecreation/ad-concepts';
-import { AdConceptMessage } from '../libs/messages';
+import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
+import { User } from '../../../database/entities/Product-Visuals/user.entity';
+import { AdConcept } from '../../../database/entities/Ad-Recreation/ad-concept.entity';
+import { AnalyzeConceptResponseDto } from '../../../libs/dto/AdRecreation/ad-concepts';
+import { AdConceptMessage } from '../../../libs/messages';
 
 /**
  * Ad Concepts Controller - Phase 2: Ad Recreation
@@ -35,7 +35,7 @@ import { AdConceptMessage } from '../libs/messages';
 export class AdConceptsController {
     private readonly logger = new Logger(AdConceptsController.name);
 
-    constructor(private readonly adConceptsService: AdConceptsService) {}
+    constructor(private readonly adConceptsService: AdConceptsService) { }
 
     // ═══════════════════════════════════════════════════════════
     // POST /ad-concepts/analyze - Upload & Analyze

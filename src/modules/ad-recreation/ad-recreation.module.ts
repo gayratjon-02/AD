@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AdBrandsModule } from './brands/ad-brands.module';
-import { AdConceptsModule } from '../../ad-concepts/ad-concepts.module';
+import { AdConceptsModule } from './ad-concepts/ad-concepts.module';
 
 /**
  * Ad Recreation Module
@@ -24,4 +24,4 @@ import { AdConceptsModule } from '../../ad-concepts/ad-concepts.module';
         AdConceptsModule,
     ],
 })
-export class AdRecreationModule {}
+export class AdRecreationModule { }
