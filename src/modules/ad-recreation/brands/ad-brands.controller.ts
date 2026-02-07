@@ -7,12 +7,15 @@ import {
     UseGuards,
     UseInterceptors,
     UploadedFiles,
+    UploadedFile,
     Logger,
     ParseUUIDPipe,
+    BadRequestException,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { extname, join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { AdBrandsService } from './ad-brands.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
@@ -136,6 +139,11 @@ export class AdBrandsController {
     ): Promise<BrandAssetsResponseDto> {
         this.logger.log(`Uploading assets for Ad Brand ${id}`);
 
+        // Validate: At least one logo file is required
+        if (!files?.logo_light?.[0] && !files?.logo_dark?.[0]) {
+            throw new BadRequestException('At least one logo file is required');
+        }
+
         const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
         const logoLightUrl = files.logo_light?.[0]
             ? `${baseUrl}/uploads/ad-brands/assets/${files.logo_light[0].filename}`
@@ -159,42 +167,51 @@ export class AdBrandsController {
 
     @Post(':id/playbook')
     @UseInterceptors(
-        FileFieldsInterceptor(
-            [{ name: 'file', maxCount: 1 }],
-            {
-                storage: diskStorage({
-                    destination: './uploads/ad-brands/playbooks',
-                    filename: (req, file, cb) => {
-                        const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
-                        cb(null, uniqueName);
-                    },
-                }),
-                fileFilter: (req, file, cb) => {
-                    if (file.mimetype === 'application/pdf') {
-                        cb(null, true);
-                    } else {
-                        cb(new Error('Only PDF files are allowed'), false);
+        FileInterceptor('file', {
+            storage: diskStorage({
+                destination: (req, file, cb) => {
+                    // Create brand-specific directory: uploads/brands/:id/playbooks/
+                    const brandId = req.params.id as string;
+                    const uploadPath = join('./uploads/brands', brandId, 'playbooks');
+
+                    // Ensure directory exists
+                    if (!existsSync(uploadPath)) {
+                        mkdirSync(uploadPath, { recursive: true });
                     }
+
+                    cb(null, uploadPath);
                 },
-                limits: {
-                    fileSize: 20 * 1024 * 1024,
+                filename: (req, file, cb) => {
+                    const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
+                    cb(null, uniqueName);
                 },
+            }),
+            fileFilter: (req, file, cb) => {
+                if (file.mimetype === 'application/pdf') {
+                    cb(null, true);
+                } else {
+                    cb(new Error('Only PDF files are allowed'), false);
+                }
             },
-        ),
+            limits: {
+                fileSize: 20 * 1024 * 1024, // 20 MB
+            },
+        }),
     )
     async analyzePlaybook(
         @Param('id', ParseUUIDPipe) id: string,
         @CurrentUser() user: User,
-        @UploadedFiles() files: { file?: Express.Multer.File[] },
+        @UploadedFile() file: Express.Multer.File,
     ): Promise<AnalyzeBrandPlaybookResponseDto> {
         this.logger.log(`Analyzing playbook for Ad Brand ${id}`);
 
-        if (!files.file?.[0]) {
-            throw new Error('PDF file is required');
+        // Validate: PDF file is required
+        if (!file) {
+            throw new BadRequestException('PDF file is required');
         }
 
         const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-        const pdfUrl = `${baseUrl}/uploads/ad-brands/playbooks/${files.file[0].filename}`;
+        const pdfUrl = `${baseUrl}/uploads/brands/${id}/playbooks/${file.filename}`;
 
         const brand = await this.adBrandsService.analyzePlaybook(id, user.id, pdfUrl);
 
