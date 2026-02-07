@@ -60,4 +60,10 @@ export enum AdConceptMessage {
     // Validation
     IMAGE_FILE_REQUIRED = 'Image file is required for concept analysis',
     ONLY_IMAGES_ALLOWED = 'Only image files are allowed (jpg, jpeg, png, webp)',
+
+    // AI Pipeline
+    AI_API_KEY_MISSING = 'Anthropic API key is not configured',
+    AI_ANALYSIS_FAILED = 'AI failed to analyze the ad concept image',
+    AI_INVALID_JSON = 'AI returned invalid JSON structure for concept analysis',
+    AI_IMAGE_UNREADABLE = 'The uploaded image could not be processed by AI',
 }

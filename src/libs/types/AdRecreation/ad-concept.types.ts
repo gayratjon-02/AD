@@ -2,7 +2,7 @@
  * AdConcept Types
  *
  * Type definitions for competitor ad analysis in Ad Recreation Module.
- * Matches the Claude Vision output structure from the spec.
+ * This is the exact schema enforced on Claude Vision's JSON output.
  */
 
 // ═══════════════════════════════════════════════════════════
@@ -10,14 +10,15 @@
 // ═══════════════════════════════════════════════════════════
 
 /**
- * ConceptZone - Simplified zone extracted by Claude Vision
+ * ConceptZone - A spatial zone extracted by Claude Vision
+ * Coordinates are 0-100% relative to the image dimensions.
  */
 export interface ConceptZone {
     id: string;
-    type: 'headline' | 'subheadline' | 'body' | 'cta' | 'visual' | 'logo' | 'background';
     y_start: number;
     y_end: number;
-    content_description: string;
+    content_type: 'text' | 'image' | 'video' | 'cta';
+    description: string;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -25,7 +26,8 @@ export interface ConceptZone {
 // ═══════════════════════════════════════════════════════════
 
 /**
- * AdConceptAnalysis - Full structure extracted by Claude Vision
+ * AdConceptAnalysis - Layout pattern extracted by Claude Vision
+ * Used to recreate the ad structure for a different brand.
  */
 export interface AdConceptAnalysis {
     layout: {
@@ -35,11 +37,7 @@ export interface AdConceptAnalysis {
     };
     visual_style: {
         mood: string;
-        background_code: string;
-        lighting: string;
-    };
-    typography: {
-        primary_font_style: string;
-        secondary_font_style: string;
+        background_hex: string;
+        font_color_primary: string;
     };
 }

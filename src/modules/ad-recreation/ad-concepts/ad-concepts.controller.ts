@@ -26,7 +26,7 @@ import { AdConceptMessage } from '../../../libs/messages';
  * Ad Concepts Controller - Phase 2: Ad Recreation
  *
  * Endpoints:
- * - POST /ad-concepts/analyze   → Upload image and analyze ad concept
+ * - POST /ad-concepts/analyze   → Upload image and analyze with Claude Vision
  * - GET  /ad-concepts/:id       → Get concept by ID
  * - GET  /ad-concepts           → Get all concepts for user
  */
@@ -35,10 +35,10 @@ import { AdConceptMessage } from '../../../libs/messages';
 export class AdConceptsController {
     private readonly logger = new Logger(AdConceptsController.name);
 
-    constructor(private readonly adConceptsService: AdConceptsService) { }
+    constructor(private readonly adConceptsService: AdConceptsService) {}
 
     // ═══════════════════════════════════════════════════════════
-    // POST /ad-concepts/analyze - Upload & Analyze
+    // POST /ad-concepts/analyze - Upload & Analyze with Claude Vision
     // ═══════════════════════════════════════════════════════════
 
     @Post('analyze')
@@ -59,7 +59,7 @@ export class AdConceptsController {
                 }
             },
             limits: {
-                fileSize: 10 * 1024 * 1024,
+                fileSize: 20 * 1024 * 1024,
             },
         }),
     )
@@ -67,7 +67,6 @@ export class AdConceptsController {
         @CurrentUser() user: User,
         @UploadedFile() file: Express.Multer.File,
     ): Promise<AnalyzeConceptResponseDto> {
-        // Validate: Image file is mandatory
         if (!file) {
             throw new BadRequestException(AdConceptMessage.IMAGE_FILE_REQUIRED);
         }
@@ -77,7 +76,11 @@ export class AdConceptsController {
         const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
         const imageUrl = `${baseUrl}/uploads/concepts/${file.filename}`;
 
-        const concept = await this.adConceptsService.analyze(user.id, imageUrl);
+        const concept = await this.adConceptsService.analyze(
+            user.id,
+            imageUrl,
+            file.path,
+        );
 
         return {
             success: true,
