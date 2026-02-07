@@ -35,3 +35,23 @@ export enum AdBrandMessage {
     ONLY_IMAGES_ALLOWED = 'Only image files are allowed (jpg, jpeg, png, gif, svg, webp)',
     ONLY_PDF_ALLOWED = 'Only PDF files are allowed',
 }
+
+// ═══════════════════════════════════════════════════════════
+// AD CONCEPT MESSAGES
+// ═══════════════════════════════════════════════════════════
+
+export enum AdConceptMessage {
+    // Success
+    CONCEPT_ANALYZED = 'Ad concept analyzed successfully',
+    CONCEPT_FOUND = 'Ad concept retrieved successfully',
+
+    // Not Found
+    CONCEPT_NOT_FOUND = 'Ad Concept not found',
+
+    // Permission
+    CONCEPT_ACCESS_DENIED = 'You do not have access to this concept',
+
+    // Validation
+    IMAGE_FILE_REQUIRED = 'Image file is required for concept analysis',
+    ONLY_IMAGES_ALLOWED = 'Only image files are allowed (jpg, jpeg, png, webp)',
+}

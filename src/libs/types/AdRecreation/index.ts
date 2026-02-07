@@ -14,7 +14,7 @@ export {
 
 // AdConcept Types
 export {
-    LayoutZone,
+    ConceptZone,
     AdConceptAnalysis,
 } from './ad-concept.types';
 
