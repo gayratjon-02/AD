@@ -218,9 +218,19 @@ export class AdBrandsService {
         let pdfBase64: string;
         try {
             const fileBuffer = readFileSync(filePath);
+
+            // Validate PDF header: Must allow %PDF
+            // Checks if first 4 bytes are %PDF
+            const header = fileBuffer.subarray(0, 4).toString('utf8');
+            if (header !== '%PDF') {
+                this.logger.error(`Invalid PDF header: ${header}`);
+                throw new BadRequestException('Invalid PDF file: usage of a real PDF is required');
+            }
+
             pdfBase64 = fileBuffer.toString('base64');
             this.logger.log(`PDF loaded: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB`);
         } catch (error) {
+            if (error instanceof BadRequestException) throw error;
             this.logger.error(`Failed to read PDF file: ${error.message}`);
             throw new BadRequestException(AdBrandMessage.AI_PDF_UNREADABLE);
         }
