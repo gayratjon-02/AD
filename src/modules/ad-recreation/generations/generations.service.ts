@@ -110,10 +110,24 @@ export class GenerationsService {
         const brand = await this.adBrandsService.findOne(dto.brand_id, userId);
         const concept = await this.adConceptsService.findOne(dto.concept_id, userId);
 
-        // Step 3: Verify brand has a playbook
-        if (!brand.brand_playbook) {
-            throw new BadRequestException(AdGenerationMessage.BRAND_PLAYBOOK_REQUIRED);
-        }
+        // Step 3: Get playbook (use default if not set)
+        const playbook = brand.brand_playbook || {
+            tone_of_voice: {
+                style: 'Professional',
+                keywords: ['quality', 'trust', 'innovation'],
+                donts: [],
+            },
+            colors: {
+                primary: '#000000',
+                secondary: '#FFFFFF',
+                accent: '#FF5733',
+            },
+            fonts: {
+                heading: 'Inter',
+                body: 'Inter',
+            },
+        };
+        this.logger.log(`Using playbook for brand "${brand.name}": ${brand.brand_playbook ? 'custom' : 'default'}`);
 
         // Step 4: Create generation record (STATUS: PROCESSING)
         const generation = this.generationsRepository.create({
@@ -133,7 +147,7 @@ export class GenerationsService {
         try {
             const userPrompt = this.buildUserPrompt(
                 brand.name,
-                brand.brand_playbook,
+                playbook, // Use the playbook variable (with default fallback)
                 concept.analysis_json,
                 angle,
                 format,
