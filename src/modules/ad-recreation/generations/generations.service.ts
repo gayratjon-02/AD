@@ -34,6 +34,17 @@ interface AdCopyResult {
 }
 
 // ═══════════════════════════════════════════════════════════
+// PRODUCT DATA TYPE (Phase 1 schema)
+// ═══════════════════════════════════════════════════════════
+
+interface ProductData {
+    product_name: string;
+    colors: Record<string, string>;
+    key_features: string[];
+    visual_description: string;
+}
+
+// ═══════════════════════════════════════════════════════════
 // FORMAT RATIO MAP
 // ═══════════════════════════════════════════════════════════
 
@@ -42,6 +53,19 @@ const FORMAT_RATIO_MAP: Record<string, string> = {
     square: '1:1',
     portrait: '4:5',
     landscape: '16:9',
+};
+
+// ═══════════════════════════════════════════════════════════
+// HARDCODED PRODUCT DATA (P0 MVP)
+// ═══════════════════════════════════════════════════════════
+
+const BRAND_PRODUCT_MAP: Record<string, ProductData> = {
+    pilanova: {
+        product_name: 'Foldable Pilates Reformer',
+        colors: { board: '#B8A9D9', metal: '#000000' },
+        key_features: ['Two center track rails', 'Grey foot pedals', 'Foldable design', 'Resistance bands included'],
+        visual_description: 'A flat, foldable board with resistance bands, featuring a lavender-colored surface with black metal frame, grey foot pedals, and two center track rails for smooth carriage movement.',
+    },
 };
 
 // ═══════════════════════════════════════════════════════════
@@ -64,7 +88,7 @@ RULES:
  * Generations Service - Phase 2: Ad Recreation
  *
  * Orchestrates the full ad generation pipeline using GEMINI ONLY:
- * 1. generateAd: Brand + Concept + Angle → Gemini Pro → Ad Copy → Gemini Image → Complete Ad
+ * 1. generateAd: Brand + Concept + Angle → Auto-fetch Product → Gemini Pro → Ad Copy → Gemini Image → Complete Ad
  */
 @Injectable()
 export class GenerationsService {
@@ -95,7 +119,6 @@ export class GenerationsService {
         this.logger.log(`📌 Concept ID: ${dto.concept_id}`);
         this.logger.log(`📌 Marketing Angle: ${dto.marketing_angle_id}`);
         this.logger.log(`📌 Format: ${dto.format_id}`);
-        this.logger.log(`📌 Product Input: ${dto.product_input.substring(0, 100)}...`);
 
         // Step 1: Validate marketing angle and format
         this.logger.log(`\n[STEP 1] 🔍 Validating marketing angle and format...`);
@@ -141,6 +164,11 @@ export class GenerationsService {
         };
         this.logger.log(`✅ Using ${brand.brand_playbook ? 'CUSTOM' : 'DEFAULT'} playbook`);
 
+        // Step 3.5: Auto-fetch product data by brand name
+        this.logger.log(`\n[STEP 3.5] 📦 Fetching product data for brand "${brand.name}"...`);
+        const productData = this.getProductByBrand(brand.name);
+        this.logger.log(`✅ Product: "${productData.product_name}" (${productData.key_features.length} features)`);
+
         // Step 4: Create generation record (STATUS: PROCESSING)
         this.logger.log(`\n[STEP 4] 💾 Creating generation record...`);
         const generation = this.generationsRepository.create({
@@ -164,7 +192,7 @@ export class GenerationsService {
             concept.analysis_json,
             angle,
             format,
-            dto.product_input,
+            productData,
         );
         this.logger.log(`✅ Prompt built (${userPrompt.length} chars)`);
 
@@ -284,6 +312,34 @@ export class GenerationsService {
         this.logger.log(`═══════════════════════════════════════════════════════════\n`);
 
         return { generation: updatedGeneration, ad_copy: adCopy };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // GET PRODUCT BY BRAND (P0 MVP - Hardcoded lookup)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Returns the Product JSON for a given brand name.
+     * P0 MVP: Uses hardcoded map. Future: DB lookup from Phase 1 data.
+     */
+    private getProductByBrand(brandName: string): ProductData {
+        // Normalize brand name for lookup (lowercase, trimmed)
+        const normalized = brandName.toLowerCase().trim();
+
+        // Check hardcoded map
+        if (BRAND_PRODUCT_MAP[normalized]) {
+            this.logger.log(`📦 Found hardcoded product for brand: "${brandName}"`);
+            return BRAND_PRODUCT_MAP[normalized];
+        }
+
+        // Default fallback for unknown brands
+        this.logger.warn(`⚠️ No product data found for brand "${brandName}" - using generic fallback`);
+        return {
+            product_name: `${brandName} Product`,
+            colors: { primary: '#000000', accent: '#FFFFFF' },
+            key_features: ['Premium quality', 'Modern design', 'Best in class'],
+            visual_description: `A premium product by ${brandName} with modern design and high-quality materials.`,
+        };
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -496,10 +552,27 @@ ${userPrompt}`;
         conceptAnalysis: any,
         angle: { id: string; label: string; description: string },
         format: { id: string; label: string; ratio: string; dimensions: string },
-        productInput: string,
+        product: ProductData,
     ): string {
         const zones = conceptAnalysis?.layout?.zones || [];
         const zonesJson = JSON.stringify(zones, null, 2);
+
+        // Support both old flat visual_style and new nested background
+        const background = conceptAnalysis?.visual_style?.background;
+        const backgroundInfo = background && typeof background === 'object'
+            ? `${background.type || 'N/A'} (${background.hex || 'N/A'})`
+            : conceptAnalysis?.visual_style?.background_hex || 'N/A';
+        const overlayInfo = conceptAnalysis?.visual_style?.overlay || 'none';
+
+        // Content pattern info (from new Visual DNA schema)
+        const contentPattern = conceptAnalysis?.content_pattern;
+        const contentPatternSection = contentPattern
+            ? `\n=== CONTENT PATTERN (from ad analysis) ===
+- Hook Type: ${contentPattern.hook_type || 'N/A'}
+- Narrative Structure: ${contentPattern.narrative_structure || 'N/A'}
+- CTA Style: ${contentPattern.cta_style || 'N/A'}
+- Requires Product Image: ${contentPattern.requires_product_image ? 'Yes' : 'No'}`
+            : '';
 
         return `You are a professional copywriter for the brand "${brandName}".
 
@@ -516,10 +589,11 @@ ${userPrompt}`;
 === LAYOUT STRUCTURE (from competitor ad analysis) ===
 - Layout Type: ${conceptAnalysis?.layout?.type || 'N/A'}
 - Visual Mood: ${conceptAnalysis?.visual_style?.mood || 'N/A'}
-- Background Color: ${conceptAnalysis?.visual_style?.background_hex || 'N/A'}
-- Font Color: ${conceptAnalysis?.visual_style?.font_color_primary || 'N/A'}
+- Background: ${backgroundInfo}
+- Overlay: ${overlayInfo}
 - Zones:
 ${zonesJson}
+${contentPatternSection}
 
 === MARKETING ANGLE ===
 - Strategy: ${angle.label}
@@ -529,10 +603,13 @@ ${zonesJson}
 - Format: ${format.label} (${format.ratio}, ${format.dimensions})
 
 === PRODUCT INFO ===
-${productInput}
+- Product Name: ${product.product_name}
+- Colors: ${JSON.stringify(product.colors)}
+- Key Features: ${product.key_features.join(', ')}
+- Visual Description: ${product.visual_description}
 
 === YOUR TASK ===
-Generate ad copy for the product above using the "${angle.label}" marketing angle.
+Generate ad copy for the "${product.product_name}" using the "${angle.label}" marketing angle.
 The ad must follow the layout structure zones above and match the brand's tone of voice.
 
 Return ONLY this JSON object (no markdown, no explanation):
@@ -541,7 +618,7 @@ Return ONLY this JSON object (no markdown, no explanation):
   "headline": "A short, punchy headline (max 8 words) that fits the text zone",
   "subheadline": "A benefit-driven supporting statement (max 20 words)",
   "cta": "An action-oriented call-to-action button text (2-5 words)",
-  "image_prompt": "A highly detailed image generation prompt describing: composition, product placement, lighting, color palette (using brand colors), mood, background, and style. Must be optimized for ${format.label} format (${format.ratio}, ${format.dimensions})."
+  "image_prompt": "A highly detailed image generation prompt describing: composition, the ${product.product_name} with its specific colors and features, lighting, color palette (using brand colors), mood, background, and style. Must be optimized for ${format.label} format (${format.ratio}, ${format.dimensions})."
 }`;
     }
 }

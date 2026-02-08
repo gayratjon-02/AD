@@ -1,9 +1,10 @@
-import { IsString, IsNotEmpty, IsUUID, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsUUID } from 'class-validator';
 
 /**
  * Generate Ad DTO
  *
  * Request body for POST /ad-generations/generate
+ * Product data is auto-fetched from the brand on the backend.
  */
 export class GenerateAdDto {
     @IsUUID()
@@ -21,9 +22,4 @@ export class GenerateAdDto {
     @IsString()
     @IsNotEmpty()
     format_id: string;
-
-    @IsString()
-    @IsNotEmpty()
-    @MaxLength(2000)
-    product_input: string;
 }
