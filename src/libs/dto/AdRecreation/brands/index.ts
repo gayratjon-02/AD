@@ -9,3 +9,8 @@ export {
     AnalyzePlaybookDto,
     AnalyzePlaybookResponseDto,
 } from './analyze-brand-playbook.dto';
+export {
+    AnalyzeBrandDto,
+    AnalyzeBrandResponseDto,
+    BrandPlaybookJson,
+} from './analyze-brand.dto';

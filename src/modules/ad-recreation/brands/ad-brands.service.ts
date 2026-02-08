@@ -421,4 +421,182 @@ export class AdBrandsService {
             forbidden_words: ['cheap', 'guarantee', 'best ever', 'miracle'],
         };
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // ANALYZE AND CREATE BRAND (Combined wizard flow)
+    // Creates brand and analyzes playbook in one step
+    // ═══════════════════════════════════════════════════════════
+
+    async analyzeAndCreate(
+        userId: string,
+        name: string,
+        website: string,
+        filePath?: string,
+        textContent?: string,
+        industry?: string,
+    ): Promise<{ brand: AdBrand; playbook: any }> {
+        this.logger.log(`Analyze and Create Brand: ${name} for user ${userId}`);
+
+        // Step 1: Create the brand first
+        const brand = this.adBrandsRepository.create({
+            name,
+            website,
+            industry: industry || 'General',
+            user_id: userId,
+        });
+
+        const savedBrand = await this.adBrandsRepository.save(brand);
+        this.logger.log(`Created brand: ${savedBrand.id}`);
+
+        // Step 2: Analyze playbook (PDF or text)
+        let playbook: any;
+
+        if (filePath) {
+            // Analyze PDF file
+            playbook = await this.analyzeBrandPlaybookWithClaude(filePath);
+        } else if (textContent) {
+            // Analyze text content
+            playbook = await this.analyzeTextWithClaude(textContent, name, website);
+        } else {
+            // Generate default playbook based on name/website
+            playbook = this.generateDefaultPlaybook(name, website);
+        }
+
+        // Step 3: Save playbook to brand
+        savedBrand.brand_playbook = playbook;
+        await this.adBrandsRepository.save(savedBrand);
+
+        return { brand: savedBrand, playbook };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // UPDATE BRAND PLAYBOOK (for Step 2 - user edits JSON)
+    // ═══════════════════════════════════════════════════════════
+
+    async updatePlaybook(
+        brandId: string,
+        userId: string,
+        playbook: any,
+    ): Promise<AdBrand> {
+        const brand = await this.findOne(brandId, userId);
+
+        brand.brand_playbook = playbook;
+        const saved = await this.adBrandsRepository.save(brand);
+
+        this.logger.log(`Updated playbook for brand ${brandId}`);
+        return saved;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ANALYZE TEXT WITH CLAUDE (for manual text input)
+    // ═══════════════════════════════════════════════════════════
+
+    private async analyzeTextWithClaude(
+        textContent: string,
+        brandName: string,
+        website: string,
+    ): Promise<any> {
+        this.logger.log(`Analyzing brand from text input for: ${brandName}`);
+
+        const client = this.getAnthropicClient();
+
+        const systemPrompt = `You are a Senior Brand Strategist. Extract structured brand identity from the provided information.
+
+RULES:
+- Return ONLY valid JSON. No markdown, no explanation.
+- Make professional inferences for missing values.
+- All color values must be valid hex codes.`;
+
+        const userPrompt = `Based on this brand information, create a structured brand playbook:
+
+Brand Name: ${brandName}
+Website: ${website}
+
+Brand Description/Guidelines:
+${textContent}
+
+Return EXACTLY this JSON structure:
+{
+  "brand_name": "${brandName}",
+  "website": "${website}",
+  "brand_colors": {
+    "primary": "#HEXCODE",
+    "secondary": "#HEXCODE", 
+    "background": "#F5F5F5",
+    "text_dark": "#1a1a1e"
+  },
+  "typography": {
+    "headline": "Font Name",
+    "body": "Font Name"
+  },
+  "tone_of_voice": "describe the brand voice",
+  "target_audience": {
+    "gender": "male/female/all",
+    "age_range": "25-44"
+  }
 }
+
+Return ONLY the JSON object.`;
+
+        try {
+            const message = await client.messages.create({
+                model: this.model,
+                max_tokens: 2048,
+                system: systemPrompt,
+                messages: [
+                    {
+                        role: 'user',
+                        content: userPrompt,
+                    },
+                ],
+            });
+
+            const textBlock = message.content.find((block) => block.type === 'text');
+            if (!textBlock || textBlock.type !== 'text') {
+                throw new Error('No text response from Claude');
+            }
+
+            // Parse and return JSON
+            let cleaned = textBlock.text.trim();
+            if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+            if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+            if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
+            cleaned = cleaned.trim();
+
+            const parsed = JSON.parse(cleaned);
+            this.logger.log(`Text analysis complete for ${brandName}`);
+            return parsed;
+        } catch (error) {
+            this.logger.error(`Text analysis failed: ${error.message}`);
+            // Return default playbook on error
+            return this.generateDefaultPlaybook(brandName, website);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // GENERATE DEFAULT PLAYBOOK (fallback)
+    // ═══════════════════════════════════════════════════════════
+
+    private generateDefaultPlaybook(brandName: string, website: string): any {
+        return {
+            brand_name: brandName,
+            website: website,
+            brand_colors: {
+                primary: '#7c4dff',
+                secondary: '#9575cd',
+                background: '#f5f5f5',
+                text_dark: '#1a1a1e',
+            },
+            typography: {
+                headline: 'Inter',
+                body: 'Inter',
+            },
+            tone_of_voice: 'professional, friendly, trustworthy',
+            target_audience: {
+                gender: 'all',
+                age_range: '25-54',
+            },
+        };
+    }
+}
+

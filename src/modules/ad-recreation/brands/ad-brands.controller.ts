@@ -2,6 +2,7 @@ import {
     Controller,
     Get,
     Post,
+    Patch,
     Body,
     Param,
     Query,
@@ -28,6 +29,8 @@ import {
     BrandAssetsResponseDto,
     PlaybookType,
     AnalyzePlaybookResponseDto,
+    AnalyzeBrandDto,
+    AnalyzeBrandResponseDto,
 } from '../../../libs/dto/AdRecreation/brands';
 import { AdBrandMessage } from '../../../libs/messages';
 
@@ -46,7 +49,7 @@ import { AdBrandMessage } from '../../../libs/messages';
 export class AdBrandsController {
     private readonly logger = new Logger(AdBrandsController.name);
 
-    constructor(private readonly adBrandsService: AdBrandsService) {}
+    constructor(private readonly adBrandsService: AdBrandsService) { }
 
     // ═══════════════════════════════════════════════════════════
     // POST /ad-brands - Create Brand
@@ -64,6 +67,95 @@ export class AdBrandsController {
         return {
             success: true,
             message: AdBrandMessage.BRAND_CREATED,
+            brand,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // POST /ad-brands/analyze - Create Brand + Analyze Playbook (Wizard Flow)
+    // Accepts file (PDF) OR text_content for analysis
+    // ═══════════════════════════════════════════════════════════
+
+    @Post('analyze')
+    @UseInterceptors(
+        FileInterceptor('file', {
+            storage: diskStorage({
+                destination: './uploads/ad-brands/playbooks',
+                filename: (_req, file, cb) => {
+                    const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
+                    cb(null, uniqueName);
+                },
+            }),
+            fileFilter: (_req, file, cb) => {
+                // Accept PDF, DOCX, TXT
+                const allowedMimes = [
+                    'application/pdf',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'text/plain',
+                ];
+                if (allowedMimes.includes(file.mimetype)) {
+                    cb(null, true);
+                } else {
+                    cb(new BadRequestException('Only PDF, DOCX, or TXT files are allowed'), false);
+                }
+            },
+            limits: {
+                fileSize: 10 * 1024 * 1024, // 10MB
+            },
+        }),
+    )
+    async analyzeAndCreate(
+        @CurrentUser() user: User,
+        @UploadedFile() file: Express.Multer.File,
+        @Body() dto: AnalyzeBrandDto,
+    ): Promise<AnalyzeBrandResponseDto> {
+        this.logger.log(`Analyze and Create Brand: ${dto.name}`);
+
+        // Validation: must have file OR text_content
+        if (!file && !dto.text_content) {
+            throw new BadRequestException('Please provide either a file upload or text description of your brand');
+        }
+
+        const result = await this.adBrandsService.analyzeAndCreate(
+            user.id,
+            dto.name,
+            dto.website,
+            file?.path,
+            dto.text_content,
+            dto.industry,
+        );
+
+        return {
+            success: true,
+            message: 'Brand analyzed and created successfully',
+            brand_id: result.brand.id,
+            brand_name: result.brand.name,
+            playbook: result.playbook,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // PATCH /ad-brands/:id/playbook - Update Brand Playbook (Step 2)
+    // User can edit the JSON before confirming
+    // ═══════════════════════════════════════════════════════════
+
+    @Patch(':id/playbook')
+    async updatePlaybook(
+        @Param('id', ParseUUIDPipe) id: string,
+        @CurrentUser() user: User,
+        @Body() body: { playbook: any },
+    ): Promise<{ success: boolean; message: string; brand: AdBrand }> {
+        this.logger.log(`Updating playbook for brand ${id}`);
+
+        if (!body.playbook || typeof body.playbook !== 'object') {
+            throw new BadRequestException('playbook must be a valid JSON object');
+        }
+
+        const brand = await this.adBrandsService.updatePlaybook(id, user.id, body.playbook);
+
+        return {
+            success: true,
+            message: 'Brand playbook updated successfully',
             brand,
         };
     }
