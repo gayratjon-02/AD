@@ -6,8 +6,10 @@ import {
     BadRequestException,
     InternalServerErrorException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import Anthropic from '@anthropic-ai/sdk';
 import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-generation.entity';
 import { AdBrandsService } from '../brands/ad-brands.service';
 import { AdConceptsService } from '../ad-concepts/ad-concepts.service';
@@ -18,7 +20,7 @@ import { AdGenerationMessage } from '../../../libs/messages';
 import { GenerateAdDto } from './dto/generate-ad.dto';
 
 // ═══════════════════════════════════════════════════════════
-// MOCK AD COPY RESULT TYPE
+// AD COPY RESULT TYPE
 // ═══════════════════════════════════════════════════════════
 
 interface AdCopyResult {
@@ -28,22 +30,43 @@ interface AdCopyResult {
     image_prompt: string;
 }
 
+// ═══════════════════════════════════════════════════════════
+// PROMPT CONSTANTS
+// ═══════════════════════════════════════════════════════════
+
+const AD_GENERATION_SYSTEM_PROMPT = `You are a world-class Ad Copywriter and Creative Director with 15+ years of experience crafting high-converting advertisements.
+
+Your job: Generate ad copy that perfectly matches the provided brand identity, layout structure, and marketing angle.
+
+RULES:
+1. The headline must be punchy, attention-grabbing, and fit within the layout zone designated for text.
+2. The subheadline must expand on the headline with a benefit-driven statement.
+3. The CTA must be action-oriented and create urgency.
+4. The image_prompt must be a highly detailed description for an image generation AI (Midjourney/DALL-E style), including composition, lighting, color palette, mood, and product placement.
+5. Return ONLY valid JSON. No markdown, no explanation, no conversational text.
+6. All text must match the brand's tone of voice and style guidelines.`;
+
 /**
  * Generations Service - Phase 2: Ad Recreation
  *
- * Orchestrates the ad generation pipeline:
+ * Orchestrates the ad generation pipeline using real Claude AI:
  * Brand Playbook + Concept Layout + Marketing Angle → Ad Copy
  */
 @Injectable()
 export class GenerationsService {
     private readonly logger = new Logger(GenerationsService.name);
+    private readonly model: string;
+    private anthropicClient: Anthropic | null = null;
 
     constructor(
         @InjectRepository(AdGeneration)
         private generationsRepository: Repository<AdGeneration>,
         private readonly adBrandsService: AdBrandsService,
         private readonly adConceptsService: AdConceptsService,
-    ) {}
+        private readonly configService: ConfigService,
+    ) {
+        this.model = this.configService.get<string>('CLAUDE_MODEL') || 'claude-sonnet-4-20250514';
+    }
 
     // ═══════════════════════════════════════════════════════════
     // GENERATE AD (main entry point)
@@ -87,10 +110,11 @@ export class GenerationsService {
         });
         const saved = await this.generationsRepository.save(generation);
 
-        // Step 5: Build prompt and call AI (mock for now)
+        // Step 5: Build prompt and call real Claude AI
         let adCopy: AdCopyResult;
         try {
-            const prompt = this.buildPrompt(
+            const userPrompt = this.buildUserPrompt(
+                brand.name,
                 brand.brand_playbook,
                 concept.analysis_json,
                 angle,
@@ -98,9 +122,12 @@ export class GenerationsService {
                 dto.product_input,
             );
 
-            this.logger.log(`Prompt built (${prompt.length} chars), calling AI...`);
+            this.logger.log(`Prompt built (${userPrompt.length} chars), calling Claude AI...`);
+            saved.progress = 30;
+            await this.generationsRepository.save(saved);
 
-            adCopy = this.mockAiResponse(angle.label, format.label, dto.product_input);
+            // Real Claude AI call
+            adCopy = await this.callClaudeForAdCopy(userPrompt);
 
             // Update generation status to completed
             saved.status = AdGenerationStatus.COMPLETED;
@@ -153,10 +180,89 @@ export class GenerationsService {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // REAL CLAUDE AI CALL
+    // ═══════════════════════════════════════════════════════════
+
+    private async callClaudeForAdCopy(userPrompt: string): Promise<AdCopyResult> {
+        const client = this.getAnthropicClient();
+
+        let responseText: string;
+        try {
+            const message = await client.messages.create({
+                model: this.model,
+                max_tokens: 2048,
+                system: AD_GENERATION_SYSTEM_PROMPT,
+                messages: [
+                    {
+                        role: 'user',
+                        content: userPrompt,
+                    },
+                ],
+            });
+
+            // Extract text from response
+            const textBlock = message.content.find((block) => block.type === 'text');
+            if (!textBlock || textBlock.type !== 'text') {
+                throw new Error('No text response from Claude');
+            }
+            responseText = textBlock.text;
+
+            this.logger.log(`Claude response received (${message.usage?.input_tokens} in / ${message.usage?.output_tokens} out tokens)`);
+        } catch (error) {
+            if (error instanceof InternalServerErrorException) throw error;
+            this.logger.error(`Claude API call failed: ${error instanceof Error ? error.message : String(error)}`);
+            throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
+        }
+
+        // Parse and validate the JSON response
+        return this.parseAndValidateAdCopy(responseText);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // JSON PARSING & VALIDATION
+    // ═══════════════════════════════════════════════════════════
+
+    private parseAndValidateAdCopy(responseText: string): AdCopyResult {
+        // Strip markdown code fences if Claude wrapped the JSON
+        let cleaned = responseText.trim();
+        if (cleaned.startsWith('```json')) {
+            cleaned = cleaned.slice(7);
+        } else if (cleaned.startsWith('```')) {
+            cleaned = cleaned.slice(3);
+        }
+        if (cleaned.endsWith('```')) {
+            cleaned = cleaned.slice(0, -3);
+        }
+        cleaned = cleaned.trim();
+
+        let parsed: any;
+        try {
+            parsed = JSON.parse(cleaned);
+        } catch {
+            this.logger.error(`Failed to parse Claude response as JSON: ${cleaned.substring(0, 200)}...`);
+            throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
+        }
+
+        // Validate required keys
+        if (!parsed.headline || !parsed.subheadline || !parsed.cta || !parsed.image_prompt) {
+            this.logger.error('Missing required keys in AI response: headline, subheadline, cta, or image_prompt');
+            throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
+        }
+
+        return {
+            headline: String(parsed.headline),
+            subheadline: String(parsed.subheadline),
+            cta: String(parsed.cta),
+            image_prompt: String(parsed.image_prompt),
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // PROMPT BUILDER
     // ═══════════════════════════════════════════════════════════
 
-    private buildPrompt(
+    private buildUserPrompt(
+        brandName: string,
         playbook: any,
         conceptAnalysis: any,
         angle: { id: string; label: string; description: string },
@@ -164,56 +270,67 @@ export class GenerationsService {
         productInput: string,
     ): string {
         const zones = conceptAnalysis?.layout?.zones || [];
-        const zoneDescriptions = zones
-            .map((z: any) => `  - ${z.id}: ${z.content_type} (${z.y_start}%-${z.y_end}%) → ${z.description}`)
-            .join('\n');
+        const zonesJson = JSON.stringify(zones, null, 2);
 
-        return `
-=== AD GENERATION BRIEF ===
+        return `You are a professional copywriter for the brand "${brandName}".
 
-BRAND IDENTITY:
-- Tone: ${playbook.tone_of_voice?.style || 'N/A'}
-- Keywords: ${playbook.tone_of_voice?.keywords?.join(', ') || 'N/A'}
+=== BRAND IDENTITY ===
+- Tone Style: ${playbook.tone_of_voice?.style || 'Professional'}
+- Tone Keywords: ${playbook.tone_of_voice?.keywords?.join(', ') || 'N/A'}
+- Words to Avoid: ${playbook.tone_of_voice?.donts?.join(', ') || 'N/A'}
 - Primary Color: ${playbook.colors?.primary || 'N/A'}
 - Secondary Color: ${playbook.colors?.secondary || 'N/A'}
+- Accent Color: ${playbook.colors?.accent || 'N/A'}
 - Heading Font: ${playbook.fonts?.heading || 'N/A'}
+- Body Font: ${playbook.fonts?.body || 'N/A'}
 
-LAYOUT PATTERN (from competitor analysis):
-- Type: ${conceptAnalysis?.layout?.type || 'N/A'}
-- Format: ${format.label} (${format.ratio}, ${format.dimensions})
-- Mood: ${conceptAnalysis?.visual_style?.mood || 'N/A'}
+=== LAYOUT STRUCTURE (from competitor ad analysis) ===
+- Layout Type: ${conceptAnalysis?.layout?.type || 'N/A'}
+- Visual Mood: ${conceptAnalysis?.visual_style?.mood || 'N/A'}
+- Background Color: ${conceptAnalysis?.visual_style?.background_hex || 'N/A'}
+- Font Color: ${conceptAnalysis?.visual_style?.font_color_primary || 'N/A'}
 - Zones:
-${zoneDescriptions || '  (no zones detected)'}
+${zonesJson}
 
-MARKETING ANGLE:
+=== MARKETING ANGLE ===
 - Strategy: ${angle.label}
-- Description: ${angle.description}
+- Apply this approach: ${angle.description}
 
-PRODUCT INFO:
+=== AD FORMAT ===
+- Format: ${format.label} (${format.ratio}, ${format.dimensions})
+
+=== PRODUCT INFO ===
 ${productInput}
 
-TASK:
-Generate ad copy for this product using the above layout pattern and marketing angle.
-Return JSON with: headline, subheadline, cta, image_prompt.
-`.trim();
+=== YOUR TASK ===
+Generate ad copy for the product above using the "${angle.label}" marketing angle.
+The ad must follow the layout structure zones above and match the brand's tone of voice.
+
+Return ONLY this JSON object (no markdown, no explanation):
+
+{
+  "headline": "A short, punchy headline (max 8 words) that fits the text zone",
+  "subheadline": "A benefit-driven supporting statement (max 20 words)",
+  "cta": "An action-oriented call-to-action button text (2-5 words)",
+  "image_prompt": "A highly detailed image generation prompt describing: composition, product placement, lighting, color palette (using brand colors), mood, background, and style. Must be optimized for ${format.label} format (${format.ratio}, ${format.dimensions})."
+}`;
     }
 
     // ═══════════════════════════════════════════════════════════
-    // MOCK AI RESPONSE (will be replaced with real AI call)
+    // ANTHROPIC CLIENT (lazy init, cached)
     // ═══════════════════════════════════════════════════════════
 
-    private mockAiResponse(
-        angleLabel: string,
-        formatLabel: string,
-        productInput: string,
-    ): AdCopyResult {
-        const productName = productInput.split(' ').slice(0, 3).join(' ');
+    private getAnthropicClient(): Anthropic {
+        if (this.anthropicClient) return this.anthropicClient;
 
-        return {
-            headline: `Transform Your Life with ${productName}`,
-            subheadline: `Using the ${angleLabel} approach — designed for ${formatLabel} format. See why thousands are switching today.`,
-            cta: 'Get Started Now',
-            image_prompt: `A professional ${formatLabel} ad featuring a modern, clean design showcasing ${productInput}. High-end product photography with soft lighting, minimalist background, bold typography for the headline area.`,
-        };
+        const apiKey = this.configService.get<string>('CLAUDE_API_KEY');
+        if (!apiKey) {
+            throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
+        }
+
+        this.anthropicClient = new Anthropic({ apiKey });
+        this.logger.log('Anthropic client initialized for ad generation');
+
+        return this.anthropicClient;
     }
 }
