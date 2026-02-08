@@ -115,7 +115,7 @@ export class GenerationsService {
             throw new BadRequestException(AdGenerationMessage.BRAND_PLAYBOOK_REQUIRED);
         }
 
-        // Step 4: Create generation record
+        // Step 4: Create generation record (STATUS: PROCESSING)
         const generation = this.generationsRepository.create({
             user_id: userId,
             brand_id: dto.brand_id,
@@ -126,6 +126,7 @@ export class GenerationsService {
             progress: 10,
         });
         const saved = await this.generationsRepository.save(generation);
+        const generationId = saved.id;
 
         // Step 5: Build prompt and call real Claude AI
         let adCopy: AdCopyResult;
@@ -140,30 +141,45 @@ export class GenerationsService {
             );
 
             this.logger.log(`Prompt built (${userPrompt.length} chars), calling Claude AI...`);
-            saved.progress = 30;
-            await this.generationsRepository.save(saved);
+
+            // Update progress to 30%
+            await this.generationsRepository.update(generationId, { progress: 30 });
 
             // Real Claude AI call
             adCopy = await this.callClaudeForAdCopy(userPrompt);
 
-            // Save generated copy to entity (persists image_prompt for render step)
-            saved.generated_copy = adCopy;
-            saved.status = AdGenerationStatus.COMPLETED;
-            saved.progress = 100;
-            saved.completed_at = new Date();
-            await this.generationsRepository.save(saved);
+            this.logger.log(`AI returned ad copy: headline="${adCopy.headline}", image_prompt length=${adCopy.image_prompt.length}`);
 
-            this.logger.log(`Ad generation completed: ${saved.id}`);
+            // CRITICAL: Persist AI results to database using explicit update()
+            await this.generationsRepository.update(generationId, {
+                generated_copy: adCopy,
+                status: AdGenerationStatus.COMPLETED,
+                progress: 100,
+                completed_at: new Date(),
+            });
+
+            this.logger.log(`Ad generation saved to DB: ${generationId}`);
         } catch (error) {
-            saved.status = AdGenerationStatus.FAILED;
-            saved.failure_reason = error instanceof Error ? error.message : String(error);
-            await this.generationsRepository.save(saved);
+            // Mark as failed
+            await this.generationsRepository.update(generationId, {
+                status: AdGenerationStatus.FAILED,
+                failure_reason: error instanceof Error ? error.message : String(error),
+            });
 
             this.logger.error(`Ad generation failed: ${error instanceof Error ? error.message : String(error)}`);
             throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
         }
 
-        return { generation: saved, ad_copy: adCopy };
+        // Step 6: Fetch fresh entity from DB to return (ensures consistency)
+        const updatedGeneration = await this.generationsRepository.findOne({
+            where: { id: generationId },
+        });
+
+        if (!updatedGeneration) {
+            throw new InternalServerErrorException('Failed to fetch updated generation');
+        }
+
+        return { generation: updatedGeneration, ad_copy: adCopy };
     }
 
     // ═══════════════════════════════════════════════════════════
