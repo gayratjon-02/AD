@@ -530,7 +530,8 @@ export class AdBrandsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ANALYZE TEXT WITH CLAUDE (for manual text input)
+    // ANALYZE TEXT WITH CLAUDE (for manual text input or TXT files)
+    // Uses enhanced prompt for strict JSON output with all required fields
     // ═══════════════════════════════════════════════════════════
 
     private async analyzeTextWithClaude(
@@ -542,48 +543,75 @@ export class AdBrandsService {
 
         const client = this.getAnthropicClient();
 
-        const systemPrompt = `You are a Senior Brand Strategist. Extract structured brand identity from the provided information.
+        const systemPrompt = `Role: You are an expert Brand Strategist and Creative Director. Your task is to analyze raw brand documents (PDF text, website copy, or manual descriptions) and extract a strictly structured JSON Playbook.
 
-RULES:
-- Return ONLY valid JSON. No markdown, no explanation.
-- Make professional inferences for missing values.
-- All color values must be valid hex codes.`;
+Objective: Extract specific brand details to ensure future AI-generated ads are on-brand and legally compliant. You must not summarize vaguely; be specific.
 
-        const userPrompt = `Based on this brand information, create a structured brand playbook:
+Strict JSON Output Schema: You must return ONLY a valid JSON object matching this exact structure. Do not include markdown formatting (like \`\`\`json).
+
+{
+  "brand_name": "String",
+  "website": "String",
+  "industry": "String (e.g., Fitness, SaaS, E-commerce)",
+  "brand_colors": {
+    "primary": "Hex Code (e.g., #000000)",
+    "secondary": "Hex Code",
+    "background": "Hex Code",
+    "accent": "Hex Code (optional, null if not found)",
+    "text_dark": "Hex Code",
+    "text_light": "Hex Code"
+  },
+  "typography": {
+    "headline": "Font Name (e.g., Playfair Display)",
+    "body": "Font Name (e.g., Inter)"
+  },
+  "tone_of_voice": "String (List 3-5 key adjectives, e.g., Warm, Empowering, Relatable)",
+  "target_audience": {
+    "gender": "String (e.g., Female, Male, All)",
+    "age_range": "String (e.g., 25-45)",
+    "personas": [
+      "String (e.g., Busy mums)",
+      "String (e.g., Office workers with back pain)"
+    ]
+  },
+  "compliance": {
+    "region": "String (e.g., UK, USA, Global)",
+    "rules": [
+      "String (e.g., No weight loss claims)",
+      "String (e.g., No before/after images)"
+    ]
+  },
+  "usp_offers": {
+    "key_benefits": ["String", "String"],
+    "current_offer": "String (e.g., 50% off, Free Shipping)"
+  }
+}
+
+Instructions:
+
+1. Analyze Deeply: Read the input text thoroughly. Look for explicit mentions of colors, fonts, and rules.
+
+2. Infer if Necessary:
+   - If Colors are named (e.g., "Lavender") but no Hex is provided, provide a standard Hex code for that color (e.g., #E6E6FA).
+   - If Compliance is not explicitly stated, infer standard rules based on the industry (e.g., for "Supplements" or "Fitness", add "No unrealistic claims").
+   - If Personas are described in a paragraph, extract them into the list.
+
+3. Formatting: Ensure all Hex codes start with #. Ensure specific fields like compliance and personas are NEVER empty arrays if context allows inference.
+
+CRITICAL: Return ONLY the JSON object. No explanation, no markdown.`;
+
+        const userPrompt = `Input Text to Analyze:
 
 Brand Name: ${brandName}
 Website: ${website}
 
 Brand Description/Guidelines:
-${textContent}
-
-Return EXACTLY this JSON structure:
-{
-  "brand_name": "${brandName}",
-  "website": "${website}",
-  "brand_colors": {
-    "primary": "#HEXCODE",
-    "secondary": "#HEXCODE", 
-    "background": "#F5F5F5",
-    "text_dark": "#1a1a1e"
-  },
-  "typography": {
-    "headline": "Font Name",
-    "body": "Font Name"
-  },
-  "tone_of_voice": "describe the brand voice",
-  "target_audience": {
-    "gender": "male/female/all",
-    "age_range": "25-44"
-  }
-}
-
-Return ONLY the JSON object.`;
+${textContent}`;
 
         try {
             const message = await client.messages.create({
                 model: this.model,
-                max_tokens: 2048,
+                max_tokens: 4096,
                 system: systemPrompt,
                 messages: [
                     {
@@ -617,26 +645,39 @@ Return ONLY the JSON object.`;
 
     // ═══════════════════════════════════════════════════════════
     // GENERATE DEFAULT PLAYBOOK (fallback)
+    // Matches the comprehensive schema with all required fields
     // ═══════════════════════════════════════════════════════════
 
     private generateDefaultPlaybook(brandName: string, website: string): any {
         return {
             brand_name: brandName,
             website: website,
+            industry: 'General',
             brand_colors: {
                 primary: '#7c4dff',
                 secondary: '#9575cd',
                 background: '#f5f5f5',
+                accent: '#ff6b6b',
                 text_dark: '#1a1a1e',
+                text_light: '#ffffff',
             },
             typography: {
                 headline: 'Inter',
                 body: 'Inter',
             },
-            tone_of_voice: 'professional, friendly, trustworthy',
+            tone_of_voice: 'Professional, Friendly, Trustworthy',
             target_audience: {
-                gender: 'all',
+                gender: 'All',
                 age_range: '25-54',
+                personas: ['General consumers', 'Quality-conscious buyers'],
+            },
+            compliance: {
+                region: 'Global',
+                rules: ['No misleading claims', 'Honest advertising'],
+            },
+            usp_offers: {
+                key_benefits: ['Quality product', 'Great value'],
+                current_offer: 'Shop now',
             },
         };
     }
