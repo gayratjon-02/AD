@@ -67,3 +67,27 @@ export enum AdConceptMessage {
     AI_INVALID_JSON = 'AI returned invalid JSON structure for concept analysis',
     AI_IMAGE_UNREADABLE = 'The uploaded image could not be processed by AI',
 }
+
+// ═══════════════════════════════════════════════════════════
+// AD GENERATION MESSAGES
+// ═══════════════════════════════════════════════════════════
+
+export enum AdGenerationMessage {
+    // Success
+    GENERATION_CREATED = 'Ad generation started successfully',
+    GENERATION_FOUND = 'Ad generation retrieved successfully',
+
+    // Not Found
+    GENERATION_NOT_FOUND = 'Ad Generation not found',
+
+    // Permission
+    GENERATION_ACCESS_DENIED = 'You do not have access to this generation',
+
+    // Validation
+    INVALID_MARKETING_ANGLE = 'Invalid marketing angle ID',
+    INVALID_AD_FORMAT = 'Invalid ad format ID',
+    BRAND_PLAYBOOK_REQUIRED = 'Brand must have a brand playbook before generating ads',
+
+    // AI Pipeline
+    AI_GENERATION_FAILED = 'AI failed to generate ad copy',
+}
