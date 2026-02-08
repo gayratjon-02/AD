@@ -87,7 +87,7 @@ export class AdConceptsService {
         @InjectRepository(AdConcept)
         private adConceptsRepository: Repository<AdConcept>,
         private readonly configService: ConfigService,
-    ) {}
+    ) { }
 
     // ═══════════════════════════════════════════════════════════
     // ANALYZE CONCEPT (main entry point)
@@ -151,6 +151,24 @@ export class AdConceptsService {
             order: { created_at: 'DESC' },
         });
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // UPDATE CONCEPT ANALYSIS JSON
+    // ═══════════════════════════════════════════════════════════
+
+    async updateAnalysis(id: string, userId: string, analysisJson: object): Promise<AdConcept> {
+        // First verify ownership
+        const concept = await this.findOne(id, userId);
+
+        // Update the analysis_json
+        concept.analysis_json = analysisJson as any;
+
+        const saved = await this.adConceptsRepository.save(concept);
+        this.logger.log(`Updated Ad Concept analysis_json: ${id}`);
+
+        return saved;
+    }
+
 
     // ═══════════════════════════════════════════════════════════
     // REAL CLAUDE VISION PIPELINE

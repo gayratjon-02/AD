@@ -2,6 +2,8 @@ import {
     Controller,
     Get,
     Post,
+    Patch,
+    Body,
     Param,
     UseGuards,
     UseInterceptors,
@@ -35,7 +37,7 @@ import { AdConceptMessage } from '../../../libs/messages';
 export class AdConceptsController {
     private readonly logger = new Logger(AdConceptsController.name);
 
-    constructor(private readonly adConceptsService: AdConceptsService) {}
+    constructor(private readonly adConceptsService: AdConceptsService) { }
 
     // ═══════════════════════════════════════════════════════════
     // POST /ad-concepts/analyze - Upload & Analyze with Claude Vision
@@ -121,4 +123,34 @@ export class AdConceptsController {
             concepts,
         };
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // PATCH /ad-concepts/:id - Update Concept Analysis JSON
+    // ═══════════════════════════════════════════════════════════
+
+    @Patch(':id')
+    async updateConcept(
+        @Param('id', ParseUUIDPipe) id: string,
+        @Body() body: { analysis_json: object },
+        @CurrentUser() user: User,
+    ): Promise<{ success: boolean; message: string; concept: AdConcept }> {
+        if (!body.analysis_json || typeof body.analysis_json !== 'object') {
+            throw new BadRequestException('analysis_json must be a valid object');
+        }
+
+        this.logger.log(`Updating concept ${id} analysis_json`);
+
+        const concept = await this.adConceptsService.updateAnalysis(
+            id,
+            user.id,
+            body.analysis_json,
+        );
+
+        return {
+            success: true,
+            message: 'Ad concept updated successfully',
+            concept,
+        };
+    }
 }
+
