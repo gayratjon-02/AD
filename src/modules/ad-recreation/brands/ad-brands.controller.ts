@@ -72,8 +72,8 @@ export class AdBrandsController {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // POST /ad-brands/analyze - Create Brand + Analyze Playbook (Wizard Flow)
-    // Accepts file (PDF) OR text_content for analysis
+    // POST /ad-brands/analyze - ONLY Analyze Playbook (NO brand creation)
+    // Returns analyzed JSON for user to review/edit
     // ═══════════════════════════════════════════════════════════
 
     @Post('analyze')
@@ -104,39 +104,70 @@ export class AdBrandsController {
             },
         }),
     )
-    async analyzeAndCreate(
+    async analyzeOnly(
         @CurrentUser() user: User,
         @UploadedFile() file: Express.Multer.File,
         @Body() dto: AnalyzeBrandDto,
-    ): Promise<AnalyzeBrandResponseDto> {
-        this.logger.log(`Analyze and Create Brand: ${dto.name}`);
+    ): Promise<{ success: boolean; message: string; playbook: any }> {
+        this.logger.log(`Analyze Only (no brand creation): ${dto.name}`);
 
         // Validation: must have file OR text_content
         if (!file && !dto.text_content) {
             throw new BadRequestException('Please provide either a file upload or text description of your brand');
         }
 
-        const result = await this.adBrandsService.analyzeAndCreate(
-            user.id,
+        // Only analyze - don't create brand
+        const playbook = await this.adBrandsService.analyzeOnly(
             dto.name,
             dto.website,
             file?.path,
             dto.text_content,
-            dto.industry,
         );
 
         return {
             success: true,
-            message: 'Brand analyzed and created successfully',
-            brand_id: result.brand.id,
-            brand_name: result.brand.name,
-            playbook: result.playbook,
+            message: 'Brand playbook analyzed successfully. Review and save to create brand.',
+            playbook,
         };
     }
 
     // ═══════════════════════════════════════════════════════════
-    // PATCH /ad-brands/:id/playbook - Update Brand Playbook (Step 2)
-    // User can edit the JSON before confirming
+    // POST /ad-brands/confirm - Create Brand with Edited Playbook
+    // Called when user clicks "Save Brand" after reviewing JSON
+    // ═══════════════════════════════════════════════════════════
+
+    @Post('confirm')
+    async confirmAndCreate(
+        @CurrentUser() user: User,
+        @Body() body: { name: string; website: string; playbook: any },
+    ): Promise<{ success: boolean; message: string; brand: AdBrand }> {
+        this.logger.log(`Confirm and Create Brand: ${body.name}`);
+
+        if (!body.name || !body.website || !body.playbook) {
+            throw new BadRequestException('name, website, and playbook are required');
+        }
+
+        if (typeof body.playbook !== 'object') {
+            throw new BadRequestException('playbook must be a valid JSON object');
+        }
+
+        const brand = await this.adBrandsService.createWithPlaybook(
+            user.id,
+            body.name,
+            body.website,
+            body.playbook,
+        );
+
+        return {
+            success: true,
+            message: 'Brand created successfully',
+            brand,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // PATCH /ad-brands/:id/playbook - Update Brand Playbook
+    // For editing existing brand playbook
     // ═══════════════════════════════════════════════════════════
 
     @Patch(':id/playbook')

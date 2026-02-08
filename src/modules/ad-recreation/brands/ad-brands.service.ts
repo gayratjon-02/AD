@@ -423,32 +423,18 @@ export class AdBrandsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ANALYZE AND CREATE BRAND (Combined wizard flow)
-    // Creates brand and analyzes playbook in one step
+    // ANALYZE ONLY (No brand creation)
+    // Returns analyzed playbook JSON for user to review/edit
     // ═══════════════════════════════════════════════════════════
 
-    async analyzeAndCreate(
-        userId: string,
+    async analyzeOnly(
         name: string,
         website: string,
         filePath?: string,
         textContent?: string,
-        industry?: string,
-    ): Promise<{ brand: AdBrand; playbook: any }> {
-        this.logger.log(`Analyze and Create Brand: ${name} for user ${userId}`);
+    ): Promise<any> {
+        this.logger.log(`Analyze Only (no brand creation): ${name}`);
 
-        // Step 1: Create the brand first
-        const brand = this.adBrandsRepository.create({
-            name,
-            website,
-            industry: industry || 'General',
-            user_id: userId,
-        });
-
-        const savedBrand = await this.adBrandsRepository.save(brand);
-        this.logger.log(`Created brand: ${savedBrand.id}`);
-
-        // Step 2: Analyze playbook (PDF, text file, or manual text)
         let playbook: any;
 
         if (filePath) {
@@ -475,6 +461,67 @@ export class AdBrandsService {
             // Generate default playbook based on name/website
             playbook = this.generateDefaultPlaybook(name, website);
         }
+
+        this.logger.log(`Analysis complete for ${name}`);
+        return playbook;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // CREATE WITH PLAYBOOK (User-edited playbook)
+    // Called when user clicks "Save Brand" after reviewing JSON
+    // ═══════════════════════════════════════════════════════════
+
+    async createWithPlaybook(
+        userId: string,
+        name: string,
+        website: string,
+        playbook: any,
+    ): Promise<AdBrand> {
+        this.logger.log(`Create brand with playbook: ${name} for user ${userId}`);
+
+        // Create brand with the user-edited playbook
+        const brand = this.adBrandsRepository.create({
+            name,
+            website,
+            industry: playbook.industry || 'General',
+            user_id: userId,
+            brand_playbook: playbook,
+        });
+
+        const savedBrand = await this.adBrandsRepository.save(brand);
+        this.logger.log(`Brand created with playbook: ${savedBrand.id}`);
+
+        return savedBrand;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // LEGACY: ANALYZE AND CREATE BRAND (Combined wizard flow)
+    // Kept for backward compatibility - consider deprecating
+    // ═══════════════════════════════════════════════════════════
+
+    async analyzeAndCreate(
+        userId: string,
+        name: string,
+        website: string,
+        filePath?: string,
+        textContent?: string,
+        industry?: string,
+    ): Promise<{ brand: AdBrand; playbook: any }> {
+        this.logger.log(`[LEGACY] Analyze and Create Brand: ${name} for user ${userId}`);
+
+        // Step 1: Create the brand first
+        const brand = this.adBrandsRepository.create({
+            name,
+            website,
+            industry: industry || 'General',
+            user_id: userId,
+        });
+
+        const savedBrand = await this.adBrandsRepository.save(brand);
+        this.logger.log(`Created brand: ${savedBrand.id}`);
+
+        // Step 2: Analyze playbook (PDF, text file, or manual text)
+        const playbook = await this.analyzeOnly(name, website, filePath, textContent);
 
         // Step 3: Save playbook to brand
         savedBrand.brand_playbook = playbook;
