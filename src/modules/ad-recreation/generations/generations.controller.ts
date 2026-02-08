@@ -20,9 +20,10 @@ import { GenerateAdDto } from './dto/generate-ad.dto';
  * Generations Controller - Phase 2: Ad Recreation
  *
  * Endpoints:
- * - POST /ad-generations/generate  → Generate ad from brand + concept + angle
- * - GET  /ad-generations/:id       → Get generation by ID
- * - GET  /ad-generations           → Get all generations for user
+ * - POST /ad-generations/generate    → Generate ad copy from brand + concept + angle
+ * - POST /ad-generations/:id/render  → Render ad image from generated image_prompt
+ * - GET  /ad-generations/:id         → Get generation by ID
+ * - GET  /ad-generations             → Get all generations for user
  */
 @Controller('ad-generations')
 @UseGuards(JwtAuthGuard)
@@ -49,6 +50,26 @@ export class GenerationsController {
             message: AdGenerationMessage.GENERATION_CREATED,
             generation: result.generation,
             ad_copy: result.ad_copy,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // POST /ad-generations/:id/render - Render Ad Image
+    // ═══════════════════════════════════════════════════════════
+
+    @Post(':id/render')
+    async renderAdImage(
+        @Param('id', ParseUUIDPipe) id: string,
+        @CurrentUser() user: User,
+    ): Promise<{ success: boolean; message: string; generation: AdGeneration }> {
+        this.logger.log(`Rendering image for generation ${id}`);
+
+        const generation = await this.generationsService.renderAdImage(id, user.id);
+
+        return {
+            success: true,
+            message: AdGenerationMessage.RENDER_COMPLETED,
+            generation,
         };
     }
 

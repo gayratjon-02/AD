@@ -72,6 +72,15 @@ export class AdGeneration {
     @Column({ type: 'jsonb', nullable: true })
     selected_formats: string[]; // e.g., ["9:16", "1:1"]
 
+    // ─── AI Generated Copy (JSONB) ───────────────────────────
+    @Column({ type: 'jsonb', nullable: true })
+    generated_copy: {
+        headline: string;
+        subheadline: string;
+        cta: string;
+        image_prompt: string;
+    };
+
     // ─── Results (JSONB) ─────────────────────────────────────
     @Column({ type: 'jsonb', nullable: true })
     result_images: GeneratedAdImage[];

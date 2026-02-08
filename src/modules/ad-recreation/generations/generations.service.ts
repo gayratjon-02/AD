@@ -9,10 +9,14 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { writeFileSync, existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import Anthropic from '@anthropic-ai/sdk';
 import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-generation.entity';
 import { AdBrandsService } from '../brands/ad-brands.service';
 import { AdConceptsService } from '../ad-concepts/ad-concepts.service';
+import { ImageGenerationService } from './image-generation.service';
 import { MARKETING_ANGLES } from '../configurations/constants/marketing-angles';
 import { AD_FORMATS } from '../configurations/constants/ad-formats';
 import { AdGenerationStatus } from '../../../libs/enums/AdRecreationEnums';
@@ -29,6 +33,17 @@ interface AdCopyResult {
     cta: string;
     image_prompt: string;
 }
+
+// ═══════════════════════════════════════════════════════════
+// FORMAT RATIO MAP
+// ═══════════════════════════════════════════════════════════
+
+const FORMAT_RATIO_MAP: Record<string, string> = {
+    story: '9:16',
+    square: '1:1',
+    portrait: '4:5',
+    landscape: '16:9',
+};
 
 // ═══════════════════════════════════════════════════════════
 // PROMPT CONSTANTS
@@ -49,8 +64,9 @@ RULES:
 /**
  * Generations Service - Phase 2: Ad Recreation
  *
- * Orchestrates the ad generation pipeline using real Claude AI:
- * Brand Playbook + Concept Layout + Marketing Angle → Ad Copy
+ * Orchestrates the full ad generation pipeline:
+ * 1. generateAd: Brand + Concept + Angle → Claude AI → Ad Copy (saved to DB)
+ * 2. renderAdImage: image_prompt → Gemini Imagen → PNG file → URL
  */
 @Injectable()
 export class GenerationsService {
@@ -63,13 +79,14 @@ export class GenerationsService {
         private generationsRepository: Repository<AdGeneration>,
         private readonly adBrandsService: AdBrandsService,
         private readonly adConceptsService: AdConceptsService,
+        private readonly imageGenerationService: ImageGenerationService,
         private readonly configService: ConfigService,
     ) {
         this.model = this.configService.get<string>('CLAUDE_MODEL') || 'claude-sonnet-4-20250514';
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GENERATE AD (main entry point)
+    // GENERATE AD (Step 1: Claude AI → Ad Copy)
     // ═══════════════════════════════════════════════════════════
 
     async generateAd(
@@ -129,7 +146,8 @@ export class GenerationsService {
             // Real Claude AI call
             adCopy = await this.callClaudeForAdCopy(userPrompt);
 
-            // Update generation status to completed
+            // Save generated copy to entity (persists image_prompt for render step)
+            saved.generated_copy = adCopy;
             saved.status = AdGenerationStatus.COMPLETED;
             saved.progress = 100;
             saved.completed_at = new Date();
@@ -146,6 +164,85 @@ export class GenerationsService {
         }
 
         return { generation: saved, ad_copy: adCopy };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // RENDER AD IMAGE (Step 2: Imagen → PNG file)
+    // ═══════════════════════════════════════════════════════════
+
+    async renderAdImage(id: string, userId: string): Promise<AdGeneration> {
+        this.logger.log(`Starting image render for generation ${id}`);
+
+        // Step 1: Find generation and verify ownership
+        const generation = await this.findOne(id, userId);
+
+        // Step 2: Ensure ad copy exists (must run generate first)
+        if (!generation.generated_copy?.image_prompt) {
+            throw new BadRequestException(AdGenerationMessage.RENDER_NO_COPY);
+        }
+
+        // Step 3: Determine aspect ratio from format
+        const formatId = generation.selected_formats?.[0] || 'square';
+        const aspectRatio = FORMAT_RATIO_MAP[formatId] || '1:1';
+
+        // Step 4: Update status to processing
+        generation.status = AdGenerationStatus.PROCESSING;
+        generation.progress = 20;
+        await this.generationsRepository.save(generation);
+
+        try {
+            // Step 5: Call Gemini Imagen API
+            this.logger.log(`Calling Imagen API (ratio: ${aspectRatio})...`);
+            generation.progress = 40;
+            await this.generationsRepository.save(generation);
+
+            const imageBuffer = await this.imageGenerationService.generateImageFromPrompt(
+                generation.generated_copy.image_prompt,
+                aspectRatio,
+            );
+
+            // Step 6: Save image to disk
+            const uploadsDir = join(process.cwd(), 'uploads', 'generations');
+            if (!existsSync(uploadsDir)) {
+                mkdirSync(uploadsDir, { recursive: true });
+            }
+
+            const fileName = `${uuidv4()}.png`;
+            const filePath = join(uploadsDir, fileName);
+            writeFileSync(filePath, imageBuffer);
+
+            this.logger.log(`Image saved: ${filePath} (${(imageBuffer.length / 1024).toFixed(1)} KB)`);
+
+            // Step 7: Update entity with result
+            const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+            const imageUrl = `${baseUrl}/uploads/generations/${fileName}`;
+
+            generation.result_images = [
+                ...(generation.result_images || []),
+                {
+                    id: uuidv4(),
+                    url: imageUrl,
+                    format: aspectRatio,
+                    angle: generation.selected_angles?.[0],
+                    variation_index: (generation.result_images?.length || 0) + 1,
+                    generated_at: new Date().toISOString(),
+                },
+            ];
+            generation.status = AdGenerationStatus.COMPLETED;
+            generation.progress = 100;
+            generation.completed_at = new Date();
+            await this.generationsRepository.save(generation);
+
+            this.logger.log(`Image render completed: ${generation.id}`);
+            return generation;
+        } catch (error) {
+            generation.status = AdGenerationStatus.FAILED;
+            generation.failure_reason = error instanceof Error ? error.message : String(error);
+            await this.generationsRepository.save(generation);
+
+            this.logger.error(`Image render failed: ${error instanceof Error ? error.message : String(error)}`);
+            throw new InternalServerErrorException(AdGenerationMessage.RENDER_FAILED);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
