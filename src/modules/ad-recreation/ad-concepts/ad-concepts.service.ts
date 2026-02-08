@@ -20,39 +20,54 @@ import { AdConceptMessage } from '../../../libs/messages';
 // PROMPT CONSTANTS
 // ═══════════════════════════════════════════════════════════
 
-const CONCEPT_ANALYSIS_SYSTEM_PROMPT = `You are an expert Ad Creative Director with 15+ years of experience deconstructing ad layouts for recreation.
+const CONCEPT_ANALYSIS_SYSTEM_PROMPT = `Role: You are an expert Ad Creative Director and Technical Analyst. Your goal is to reverse-engineer the "Visual DNA" of an uploaded advertisement image so it can be recreated for a different brand.
 
-Your job: Analyze this ad image to extract its "Layout Pattern" — the structural skeleton that can be cloned for a different brand.
+Task: Analyze the provided image and extract a strictly structured JSON object describing its Layout Pattern, Visual Style, and Content Strategy.
 
-RULES:
-1. IGNORE specific brand text, logos, and product names (e.g., if it says "Nike", ignore "Nike").
-2. FOCUS on the spatial structure: Where is the headline zone? Where is the product/hero image? Where is the CTA button?
-3. Zone coordinates (y_start, y_end) must be percentages from 0 to 100 (top to bottom of the image).
-4. Return ONLY valid JSON. No markdown, no explanation, no conversational text.
-5. All hex color codes must be valid (e.g., "#1E3A5F").`;
+Critical Rules:
 
-const CONCEPT_ANALYSIS_USER_PROMPT = `Analyze this ad image and extract its layout pattern for recreation.
+1. Ignore Brand Content: Do not output the specific text found in the image (e.g., do not write "Nike" or "Just Do It"). Instead, describe the type of content (e.g., "Short inspirational hook").
 
-Return EXACTLY this JSON structure (no extra keys, no missing keys):
+2. Precise Coordinates: For zones, provide accurate y_start and y_end (0-100 scale) to map where elements are placed vertically.
+
+3. Typography & Style: You MUST describe the font style (Serif/Sans, Bold/Thin) and the CTA button style.
+
+4. Content Pattern: You MUST identify the "Marketing Angle" structure (e.g., Question -> Solution -> CTA).
+
+5. Return ONLY valid JSON. No markdown, no explanation, no conversational text. No code fences.`;
+
+const CONCEPT_ANALYSIS_USER_PROMPT = `Analyze this ad image and extract its Visual DNA for recreation.
+
+Output Schema (Strict JSON): Return ONLY valid JSON matching this structure exactly:
 
 {
   "layout": {
-    "type": "layout_name (e.g., split_screen_vertical, centered_hero, z_pattern, full_bleed)",
-    "format": "aspect_ratio (e.g., 9:16, 1:1, 4:5, 16:9)",
+    "type": "String (Select one: split_screen, centered_hero, notes_app, tweet_style, text_overlay, product_showcase)",
+    "format": "String (e.g., 1:1, 9:16, 4:5)",
     "zones": [
       {
-        "id": "zone_1",
-        "y_start": 0,
-        "y_end": 20,
-        "content_type": "text | image | video | cta",
-        "description": "What occupies this zone (e.g., Large bold headline at top)"
+        "id": "String (e.g., headline, body, cta, image_main, ui_status_bar)",
+        "y_start": "Number (0-100)",
+        "y_end": "Number (0-100)",
+        "content_type": "String (headline | body | cta_button | image | logo | ui_element)",
+        "typography_style": "String (e.g., Sans-Serif Bold Caps, Handwritten, Minimalist Serif)",
+        "description": "String (e.g., 'Centered white text with drop shadow')"
       }
     ]
   },
   "visual_style": {
-    "mood": "e.g., minimalist_clean, bold_vibrant, luxury_dark, playful_colorful",
-    "background_hex": "#HEXCODE",
-    "font_color_primary": "#HEXCODE"
+    "mood": "String (e.g., energetic, calm, luxury, native_ugc)",
+    "background": {
+      "type": "String (solid_color | image | gradient)",
+      "hex": "String (dominant hex code, or null if image)"
+    },
+    "overlay": "String (e.g., dark_dim_layer, white_box_opacity, none)"
+  },
+  "content_pattern": {
+    "hook_type": "String (e.g., question, direct_benefit, controversial_statement)",
+    "narrative_structure": "String (e.g., problem_solution, feature_highlight, storytelling)",
+    "cta_style": "String (e.g., pill_button, text_link_with_arrow, swipe_up_icon)",
+    "requires_product_image": "Boolean (true if the layout clearly shows a product)"
   }
 }
 
@@ -75,7 +90,7 @@ const MEDIA_TYPE_MAP: Record<string, ClaudeImageMediaType> = {
  * Ad Concepts Service - Phase 2: Ad Recreation
  *
  * Handles real Claude Vision analysis of uploaded ad images.
- * Extracts layout patterns for ad recreation.
+ * Extracts Visual DNA (layout patterns, visual style, content strategy) for ad recreation.
  */
 @Injectable()
 export class AdConceptsService {
@@ -99,7 +114,7 @@ export class AdConceptsService {
      * Pipeline:
      * 1. Read image file → Buffer → Base64
      * 2. Detect media type from file extension
-     * 3. Send to Claude Vision with layout extraction prompt
+     * 3. Send to Claude Vision with Visual DNA extraction prompt
      * 4. Parse and validate JSON response
      * 5. Save to ad_concepts table
      */
@@ -238,7 +253,7 @@ export class AdConceptsService {
         // Step 4: Parse JSON and validate
         const analysis = this.parseAndValidateAnalysis(responseText);
 
-        this.logger.log(`Concept extracted: ${analysis.layout.type} (${analysis.layout.format}), ${analysis.layout.zones.length} zones, mood: ${analysis.visual_style.mood}`);
+        this.logger.log(`Concept extracted: ${analysis.layout.type} (${analysis.layout.format}), ${analysis.layout.zones.length} zones, mood: ${analysis.visual_style.mood}, hook: ${analysis.content_pattern.hook_type}`);
         return analysis;
     }
 
@@ -284,19 +299,47 @@ export class AdConceptsService {
             parsed.layout.zones = [];
         }
 
-        // Validate each zone has required fields
+        // Validate each zone has required fields (new schema)
         for (const zone of parsed.layout.zones) {
             if (!zone.id) zone.id = `zone_${parsed.layout.zones.indexOf(zone) + 1}`;
             if (zone.y_start === undefined) zone.y_start = 0;
             if (zone.y_end === undefined) zone.y_end = 100;
-            if (!zone.content_type) zone.content_type = 'text';
+            if (!zone.content_type) zone.content_type = 'headline';
+            if (!zone.typography_style) zone.typography_style = 'Sans-Serif Regular';
             if (!zone.description) zone.description = '';
         }
 
-        // Validate visual_style
+        // Validate visual_style (new nested background structure)
         if (!parsed.visual_style.mood) parsed.visual_style.mood = 'neutral';
-        if (!parsed.visual_style.background_hex) parsed.visual_style.background_hex = '#FFFFFF';
-        if (!parsed.visual_style.font_color_primary) parsed.visual_style.font_color_primary = '#000000';
+        if (!parsed.visual_style.background || typeof parsed.visual_style.background !== 'object') {
+            // Migrate from old flat structure if needed
+            const oldHex = parsed.visual_style.background_hex;
+            parsed.visual_style.background = {
+                type: 'solid_color',
+                hex: oldHex || '#FFFFFF',
+            };
+        }
+        if (!parsed.visual_style.background.type) parsed.visual_style.background.type = 'solid_color';
+        if (parsed.visual_style.background.hex === undefined) parsed.visual_style.background.hex = '#FFFFFF';
+        if (!parsed.visual_style.overlay) parsed.visual_style.overlay = 'none';
+
+        // Validate content_pattern (new section)
+        if (!parsed.content_pattern || typeof parsed.content_pattern !== 'object') {
+            parsed.content_pattern = {
+                hook_type: 'direct_benefit',
+                narrative_structure: 'feature_highlight',
+                cta_style: 'pill_button',
+                requires_product_image: false,
+            };
+        }
+        if (!parsed.content_pattern.hook_type) parsed.content_pattern.hook_type = 'direct_benefit';
+        if (!parsed.content_pattern.narrative_structure) parsed.content_pattern.narrative_structure = 'feature_highlight';
+        if (!parsed.content_pattern.cta_style) parsed.content_pattern.cta_style = 'pill_button';
+        if (parsed.content_pattern.requires_product_image === undefined) parsed.content_pattern.requires_product_image = false;
+
+        // Clean up old flat fields that are no longer needed
+        delete parsed.visual_style.background_hex;
+        delete parsed.visual_style.font_color_primary;
 
         return parsed as AdConceptAnalysis;
     }

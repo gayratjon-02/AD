@@ -17,8 +17,29 @@ export interface ConceptZone {
     id: string;
     y_start: number;
     y_end: number;
-    content_type: 'text' | 'image' | 'video' | 'cta';
+    content_type: 'headline' | 'body' | 'cta_button' | 'image' | 'logo' | 'ui_element';
+    typography_style: string;
     description: string;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Visual Style - Background configuration
+// ═══════════════════════════════════════════════════════════
+
+export interface VisualBackground {
+    type: 'solid_color' | 'image' | 'gradient';
+    hex: string | null;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Content Pattern - Marketing angle structure
+// ═══════════════════════════════════════════════════════════
+
+export interface ContentPattern {
+    hook_type: string;
+    narrative_structure: string;
+    cta_style: string;
+    requires_product_image: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -26,7 +47,7 @@ export interface ConceptZone {
 // ═══════════════════════════════════════════════════════════
 
 /**
- * AdConceptAnalysis - Layout pattern extracted by Claude Vision
+ * AdConceptAnalysis - Visual DNA extracted by Claude Vision
  * Used to recreate the ad structure for a different brand.
  */
 export interface AdConceptAnalysis {
@@ -37,7 +58,8 @@ export interface AdConceptAnalysis {
     };
     visual_style: {
         mood: string;
-        background_hex: string;
-        font_color_primary: string;
+        background: VisualBackground;
+        overlay: string;
     };
+    content_pattern: ContentPattern;
 }

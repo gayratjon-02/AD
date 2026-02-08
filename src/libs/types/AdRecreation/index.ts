@@ -15,6 +15,8 @@ export {
 // AdConcept Types
 export {
     ConceptZone,
+    VisualBackground,
+    ContentPattern,
     AdConceptAnalysis,
 } from './ad-concept.types';
 
