@@ -12,7 +12,6 @@ import { Repository } from 'typeorm';
 import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import Anthropic from '@anthropic-ai/sdk';
 import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-generation.entity';
 import { AdBrandsService } from '../brands/ad-brands.service';
 import { AdConceptsService } from '../ad-concepts/ad-concepts.service';
@@ -57,22 +56,19 @@ RULES:
 1. The headline must be punchy, attention-grabbing, and fit within the layout zone designated for text.
 2. The subheadline must expand on the headline with a benefit-driven statement.
 3. The CTA must be action-oriented and create urgency.
-4. The image_prompt must be a highly detailed description for an image generation AI (Midjourney/DALL-E style), including composition, lighting, color palette, mood, and product placement.
+4. The image_prompt must be a highly detailed description for an image generation AI, including composition, lighting, color palette, mood, and product placement.
 5. Return ONLY valid JSON. No markdown, no explanation, no conversational text.
 6. All text must match the brand's tone of voice and style guidelines.`;
 
 /**
  * Generations Service - Phase 2: Ad Recreation
  *
- * Orchestrates the full ad generation pipeline:
- * 1. generateAd: Brand + Concept + Angle → Claude AI → Ad Copy (saved to DB)
- * 2. renderAdImage: image_prompt → Gemini Imagen → PNG file → URL
+ * Orchestrates the full ad generation pipeline using GEMINI ONLY:
+ * 1. generateAd: Brand + Concept + Angle → Gemini Pro → Ad Copy → Gemini Image → Complete Ad
  */
 @Injectable()
 export class GenerationsService {
     private readonly logger = new Logger(GenerationsService.name);
-    private readonly model: string;
-    private anthropicClient: Anthropic | null = null;
 
     constructor(
         @InjectRepository(AdGeneration)
@@ -81,36 +77,52 @@ export class GenerationsService {
         private readonly adConceptsService: AdConceptsService,
         private readonly geminiService: GeminiService,
         private readonly configService: ConfigService,
-    ) {
-        this.model = this.configService.get<string>('CLAUDE_MODEL') || 'claude-sonnet-4-20250514';
-    }
+    ) { }
 
     // ═══════════════════════════════════════════════════════════
-    // GENERATE AD (Step 1: Claude AI → Ad Copy)
+    // GENERATE AD (Complete Pipeline: Text + Image)
     // ═══════════════════════════════════════════════════════════
 
     async generateAd(
         userId: string,
         dto: GenerateAdDto,
     ): Promise<{ generation: AdGeneration; ad_copy: AdCopyResult }> {
-        this.logger.log(`Starting ad generation for user ${userId}`);
+        this.logger.log(`═══════════════════════════════════════════════════════════`);
+        this.logger.log(`🚀 STARTING AD GENERATION`);
+        this.logger.log(`═══════════════════════════════════════════════════════════`);
+        this.logger.log(`📌 User ID: ${userId}`);
+        this.logger.log(`📌 Brand ID: ${dto.brand_id}`);
+        this.logger.log(`📌 Concept ID: ${dto.concept_id}`);
+        this.logger.log(`📌 Marketing Angle: ${dto.marketing_angle_id}`);
+        this.logger.log(`📌 Format: ${dto.format_id}`);
+        this.logger.log(`📌 Product Input: ${dto.product_input.substring(0, 100)}...`);
 
         // Step 1: Validate marketing angle and format
+        this.logger.log(`\n[STEP 1] 🔍 Validating marketing angle and format...`);
         const angle = MARKETING_ANGLES.find((a) => a.id === dto.marketing_angle_id);
         if (!angle) {
+            this.logger.error(`❌ Invalid marketing angle: ${dto.marketing_angle_id}`);
             throw new BadRequestException(AdGenerationMessage.INVALID_MARKETING_ANGLE);
         }
+        this.logger.log(`✅ Marketing angle valid: ${angle.label}`);
 
         const format = AD_FORMATS.find((f) => f.id === dto.format_id);
         if (!format) {
+            this.logger.error(`❌ Invalid ad format: ${dto.format_id}`);
             throw new BadRequestException(AdGenerationMessage.INVALID_AD_FORMAT);
         }
+        this.logger.log(`✅ Ad format valid: ${format.label} (${format.ratio})`);
 
         // Step 2: Fetch brand and concept (with ownership checks)
+        this.logger.log(`\n[STEP 2] 📚 Fetching brand and concept from database...`);
         const brand = await this.adBrandsService.findOne(dto.brand_id, userId);
+        this.logger.log(`✅ Brand fetched: "${brand.name}" (ID: ${brand.id})`);
+
         const concept = await this.adConceptsService.findOne(dto.concept_id, userId);
+        this.logger.log(`✅ Concept fetched: "${concept.name || 'Unnamed'}" (ID: ${concept.id})`);
 
         // Step 3: Get playbook (use default if not set)
+        this.logger.log(`\n[STEP 3] 📖 Getting brand playbook...`);
         const playbook = brand.brand_playbook || {
             tone_of_voice: {
                 style: 'Professional',
@@ -127,9 +139,10 @@ export class GenerationsService {
                 body: 'Inter',
             },
         };
-        this.logger.log(`Using playbook for brand "${brand.name}": ${brand.brand_playbook ? 'custom' : 'default'}`);
+        this.logger.log(`✅ Using ${brand.brand_playbook ? 'CUSTOM' : 'DEFAULT'} playbook`);
 
         // Step 4: Create generation record (STATUS: PROCESSING)
+        this.logger.log(`\n[STEP 4] 💾 Creating generation record...`);
         const generation = this.generationsRepository.create({
             user_id: userId,
             brand_id: dto.brand_id,
@@ -141,50 +154,120 @@ export class GenerationsService {
         });
         const saved = await this.generationsRepository.save(generation);
         const generationId = saved.id;
+        this.logger.log(`✅ Generation record created: ${generationId}`);
 
-        // Step 5: Build prompt and call real Claude AI
+        // Step 5: Build prompt for text generation
+        this.logger.log(`\n[STEP 5] 📝 Building text generation prompt...`);
+        const userPrompt = this.buildUserPrompt(
+            brand.name,
+            playbook,
+            concept.analysis_json,
+            angle,
+            format,
+            dto.product_input,
+        );
+        this.logger.log(`✅ Prompt built (${userPrompt.length} chars)`);
+
+        // Step 6: Call Gemini for Ad Copy (TEXT)
+        this.logger.log(`\n[STEP 6] 🤖 Calling GEMINI for text generation (ad copy)...`);
+        await this.generationsRepository.update(generationId, { progress: 30 });
+
         let adCopy: AdCopyResult;
         try {
-            const userPrompt = this.buildUserPrompt(
-                brand.name,
-                playbook, // Use the playbook variable (with default fallback)
-                concept.analysis_json,
-                angle,
-                format,
-                dto.product_input,
-            );
-
-            this.logger.log(`Prompt built (${userPrompt.length} chars), calling Claude AI...`);
-
-            // Update progress to 30%
-            await this.generationsRepository.update(generationId, { progress: 30 });
-
-            // Real Claude AI call
-            adCopy = await this.callClaudeForAdCopy(userPrompt);
-
-            this.logger.log(`AI returned ad copy: headline="${adCopy.headline}", image_prompt length=${adCopy.image_prompt.length}`);
-
-            // CRITICAL: Persist AI results to database using explicit update()
-            await this.generationsRepository.update(generationId, {
-                generated_copy: adCopy,
-                status: AdGenerationStatus.COMPLETED,
-                progress: 100,
-                completed_at: new Date(),
-            });
-
-            this.logger.log(`Ad generation saved to DB: ${generationId}`);
+            adCopy = await this.callGeminiForAdCopy(userPrompt);
+            this.logger.log(`✅ GEMINI TEXT GENERATION COMPLETED`);
+            this.logger.log(`   📌 Headline: "${adCopy.headline}"`);
+            this.logger.log(`   📌 Subheadline: "${adCopy.subheadline}"`);
+            this.logger.log(`   📌 CTA: "${adCopy.cta}"`);
+            this.logger.log(`   📌 Image Prompt (${adCopy.image_prompt.length} chars): ${adCopy.image_prompt.substring(0, 150)}...`);
         } catch (error) {
-            // Mark as failed
+            this.logger.error(`❌ Gemini text generation failed: ${error instanceof Error ? error.message : String(error)}`);
             await this.generationsRepository.update(generationId, {
                 status: AdGenerationStatus.FAILED,
                 failure_reason: error instanceof Error ? error.message : String(error),
             });
-
-            this.logger.error(`Ad generation failed: ${error instanceof Error ? error.message : String(error)}`);
             throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
         }
 
-        // Step 6: Fetch fresh entity from DB to return (ensures consistency)
+        // Step 7: Call Gemini for Image Generation
+        this.logger.log(`\n[STEP 7] 🎨 Calling GEMINI for image generation...`);
+        await this.generationsRepository.update(generationId, { progress: 50 });
+
+        const aspectRatio = FORMAT_RATIO_MAP[dto.format_id] || '1:1';
+        this.logger.log(`   📌 Aspect Ratio: ${aspectRatio}`);
+        this.logger.log(`   📌 Sending image_prompt to Gemini Image Generation...`);
+
+        let generatedImageBase64: string | null = null;
+        let generatedImageUrl: string | null = null;
+        let imageMimeType = 'image/png';
+
+        try {
+            const imageResult = await this.geminiService.generateImage(
+                adCopy.image_prompt,
+                undefined,
+                aspectRatio,
+            );
+
+            generatedImageBase64 = imageResult.data;
+            imageMimeType = imageResult.mimeType || 'image/png';
+            this.logger.log(`✅ GEMINI IMAGE GENERATION COMPLETED`);
+            this.logger.log(`   📌 MimeType: ${imageMimeType}`);
+            this.logger.log(`   📌 Size: ${(generatedImageBase64.length / 1024).toFixed(1)} KB (base64)`);
+
+            // Save image to disk
+            await this.generationsRepository.update(generationId, { progress: 80 });
+
+            const uploadsDir = join(process.cwd(), 'uploads', 'generations');
+            if (!existsSync(uploadsDir)) {
+                mkdirSync(uploadsDir, { recursive: true });
+            }
+
+            const extension = imageMimeType.includes('png') ? 'png' : 'jpeg';
+            const fileName = `${uuidv4()}.${extension}`;
+            const filePath = join(uploadsDir, fileName);
+            const imageBuffer = Buffer.from(generatedImageBase64, 'base64');
+            writeFileSync(filePath, imageBuffer);
+
+            const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+            generatedImageUrl = `${baseUrl}/uploads/generations/${fileName}`;
+
+            this.logger.log(`✅ Image saved to disk: ${filePath}`);
+            this.logger.log(`   📌 URL: ${generatedImageUrl}`);
+
+        } catch (error) {
+            this.logger.error(`❌ Gemini image generation failed: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.warn(`⚠️ Continuing without image - ad copy will still be saved.`);
+        }
+
+        // Step 8: Save everything to database
+        this.logger.log(`\n[STEP 8] 💾 Saving results to database...`);
+
+        const resultImages = generatedImageUrl ? [
+            {
+                id: uuidv4(),
+                url: generatedImageUrl,
+                base64: generatedImageBase64, // Include base64 for frontend
+                format: aspectRatio,
+                angle: dto.marketing_angle_id,
+                variation_index: 1,
+                generated_at: new Date().toISOString(),
+            },
+        ] : [];
+
+        await this.generationsRepository.update(generationId, {
+            generated_copy: adCopy,
+            result_images: resultImages,
+            status: AdGenerationStatus.COMPLETED,
+            progress: 100,
+            completed_at: new Date(),
+        });
+
+        this.logger.log(`✅ Results saved to DB`);
+        this.logger.log(`   📌 Ad Copy: SAVED`);
+        this.logger.log(`   📌 Result Images: ${resultImages.length} image(s)`);
+
+        // Step 9: Fetch and return updated generation
+        this.logger.log(`\n[STEP 9] 📤 Fetching updated generation record...`);
         const updatedGeneration = await this.generationsRepository.findOne({
             where: { id: generationId },
         });
@@ -193,49 +276,49 @@ export class GenerationsService {
             throw new InternalServerErrorException('Failed to fetch updated generation');
         }
 
+        this.logger.log(`═══════════════════════════════════════════════════════════`);
+        this.logger.log(`🎉 AD GENERATION COMPLETE`);
+        this.logger.log(`   📌 Generation ID: ${updatedGeneration.id}`);
+        this.logger.log(`   📌 Status: ${updatedGeneration.status}`);
+        this.logger.log(`   📌 Result Images: ${updatedGeneration.result_images?.length || 0}`);
+        this.logger.log(`═══════════════════════════════════════════════════════════\n`);
+
         return { generation: updatedGeneration, ad_copy: adCopy };
     }
 
     // ═══════════════════════════════════════════════════════════
-    // RENDER AD IMAGE (Step 2: Gemini → PNG file)
+    // RENDER AD IMAGE (Legacy - for re-rendering)
     // ═══════════════════════════════════════════════════════════
 
     async renderAdImage(id: string, userId: string): Promise<AdGeneration> {
-        this.logger.log(`Starting image render for generation ${id}`);
+        this.logger.log(`🔄 Re-rendering image for generation ${id}`);
 
-        // Step 1: Find generation and verify ownership
         const generation = await this.findOne(id, userId);
 
-        // Step 2: Ensure ad copy exists (must run generate first)
         if (!generation.generated_copy?.image_prompt) {
             throw new BadRequestException(AdGenerationMessage.RENDER_NO_COPY);
         }
 
-        // Step 3: Determine aspect ratio from format
         const formatId = generation.selected_formats?.[0] || 'square';
         const aspectRatio = FORMAT_RATIO_MAP[formatId] || '1:1';
 
-        // Step 4: Update status to processing
         generation.status = AdGenerationStatus.PROCESSING;
         generation.progress = 20;
         await this.generationsRepository.save(generation);
 
         try {
-            // Step 5: Call Gemini API for image generation
-            this.logger.log(`Calling Gemini API for image (ratio: ${aspectRatio})...`);
+            this.logger.log(`📤 Calling Gemini API for image (ratio: ${aspectRatio})...`);
             generation.progress = 40;
             await this.generationsRepository.save(generation);
 
             const imageResult = await this.geminiService.generateImage(
                 generation.generated_copy.image_prompt,
-                undefined, // model name (ignored, uses default)
+                undefined,
                 aspectRatio,
             );
 
-            // Convert base64 to Buffer
             const imageBuffer = Buffer.from(imageResult.data, 'base64');
 
-            // Step 6: Save image to disk
             const uploadsDir = join(process.cwd(), 'uploads', 'generations');
             if (!existsSync(uploadsDir)) {
                 mkdirSync(uploadsDir, { recursive: true });
@@ -245,9 +328,8 @@ export class GenerationsService {
             const filePath = join(uploadsDir, fileName);
             writeFileSync(filePath, imageBuffer);
 
-            this.logger.log(`Image saved: ${filePath} (${(imageBuffer.length / 1024).toFixed(1)} KB)`);
+            this.logger.log(`✅ Image saved: ${filePath} (${(imageBuffer.length / 1024).toFixed(1)} KB)`);
 
-            // Step 7: Update entity with result
             const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
             const imageUrl = `${baseUrl}/uploads/generations/${fileName}`;
 
@@ -256,6 +338,7 @@ export class GenerationsService {
                 {
                     id: uuidv4(),
                     url: imageUrl,
+                    base64: imageResult.data,
                     format: aspectRatio,
                     angle: generation.selected_angles?.[0],
                     variation_index: (generation.result_images?.length || 0) + 1,
@@ -267,14 +350,14 @@ export class GenerationsService {
             generation.completed_at = new Date();
             await this.generationsRepository.save(generation);
 
-            this.logger.log(`Image render completed: ${generation.id}`);
+            this.logger.log(`✅ Image render completed: ${generation.id}`);
             return generation;
         } catch (error) {
             generation.status = AdGenerationStatus.FAILED;
             generation.failure_reason = error instanceof Error ? error.message : String(error);
             await this.generationsRepository.save(generation);
 
-            this.logger.error(`Image render failed: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.error(`❌ Image render failed: ${error instanceof Error ? error.message : String(error)}`);
             throw new InternalServerErrorException(AdGenerationMessage.RENDER_FAILED);
         }
     }
@@ -311,42 +394,46 @@ export class GenerationsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // REAL CLAUDE AI CALL
+    // GEMINI TEXT GENERATION (Ad Copy)
     // ═══════════════════════════════════════════════════════════
 
-    private async callClaudeForAdCopy(userPrompt: string): Promise<AdCopyResult> {
-        const client = this.getAnthropicClient();
+    private async callGeminiForAdCopy(userPrompt: string): Promise<AdCopyResult> {
+        this.logger.log(`📤 Sending prompt to Gemini for ad copy generation...`);
 
-        let responseText: string;
+        const fullPrompt = `${AD_GENERATION_SYSTEM_PROMPT}
+
+${userPrompt}`;
+
         try {
-            const message = await client.messages.create({
-                model: this.model,
-                max_tokens: 2048,
-                system: AD_GENERATION_SYSTEM_PROMPT,
-                messages: [
-                    {
-                        role: 'user',
-                        content: userPrompt,
-                    },
-                ],
+            // Use Gemini's text generation via the internal analyzeDAReference-style call
+            // We'll call the generateContent directly for text-only response
+            const client = (this.geminiService as any).getClient();
+
+            const response = await client.models.generateContent({
+                model: 'gemini-2.0-flash', // Use fast text model
+                contents: fullPrompt,
             });
 
-            // Extract text from response
-            const textBlock = message.content.find((block) => block.type === 'text');
-            if (!textBlock || textBlock.type !== 'text') {
-                throw new Error('No text response from Claude');
+            const candidate = response.candidates?.[0];
+            if (!candidate || !candidate.content?.parts) {
+                throw new Error('No response from Gemini');
             }
-            responseText = textBlock.text;
 
-            this.logger.log(`Claude response received (${message.usage?.input_tokens} in / ${message.usage?.output_tokens} out tokens)`);
+            let textResponse = '';
+            for (const part of candidate.content.parts) {
+                if ((part as any).text) {
+                    textResponse += (part as any).text;
+                }
+            }
+
+            this.logger.log(`📥 Gemini response received (${textResponse.length} chars)`);
+
+            return this.parseAndValidateAdCopy(textResponse);
+
         } catch (error) {
-            if (error instanceof InternalServerErrorException) throw error;
-            this.logger.error(`Claude API call failed: ${error instanceof Error ? error.message : String(error)}`);
-            throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
+            this.logger.error(`❌ Gemini API call failed: ${error instanceof Error ? error.message : String(error)}`);
+            throw error;
         }
-
-        // Parse and validate the JSON response
-        return this.parseAndValidateAdCopy(responseText);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -354,7 +441,7 @@ export class GenerationsService {
     // ═══════════════════════════════════════════════════════════
 
     private parseAndValidateAdCopy(responseText: string): AdCopyResult {
-        // Strip markdown code fences if Claude wrapped the JSON
+        // Strip markdown code fences if wrapped
         let cleaned = responseText.trim();
         if (cleaned.startsWith('```json')) {
             cleaned = cleaned.slice(7);
@@ -370,8 +457,19 @@ export class GenerationsService {
         try {
             parsed = JSON.parse(cleaned);
         } catch {
-            this.logger.error(`Failed to parse Claude response as JSON: ${cleaned.substring(0, 200)}...`);
-            throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
+            // Try to extract JSON from text
+            const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                try {
+                    parsed = JSON.parse(jsonMatch[0]);
+                } catch {
+                    this.logger.error(`Failed to parse Gemini response: ${cleaned.substring(0, 200)}...`);
+                    throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
+                }
+            } else {
+                this.logger.error(`No JSON found in Gemini response: ${cleaned.substring(0, 200)}...`);
+                throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
+            }
         }
 
         // Validate required keys
@@ -445,23 +543,5 @@ Return ONLY this JSON object (no markdown, no explanation):
   "cta": "An action-oriented call-to-action button text (2-5 words)",
   "image_prompt": "A highly detailed image generation prompt describing: composition, product placement, lighting, color palette (using brand colors), mood, background, and style. Must be optimized for ${format.label} format (${format.ratio}, ${format.dimensions})."
 }`;
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // ANTHROPIC CLIENT (lazy init, cached)
-    // ═══════════════════════════════════════════════════════════
-
-    private getAnthropicClient(): Anthropic {
-        if (this.anthropicClient) return this.anthropicClient;
-
-        const apiKey = this.configService.get<string>('CLAUDE_API_KEY');
-        if (!apiKey) {
-            throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
-        }
-
-        this.anthropicClient = new Anthropic({ apiKey });
-        this.logger.log('Anthropic client initialized for ad generation');
-
-        return this.anthropicClient;
     }
 }
