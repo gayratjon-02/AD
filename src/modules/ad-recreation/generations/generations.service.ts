@@ -111,10 +111,10 @@ export class GenerationsService {
             this.logger.log(`Ad generation completed: ${saved.id}`);
         } catch (error) {
             saved.status = AdGenerationStatus.FAILED;
-            saved.failure_reason = error.message;
+            saved.failure_reason = error instanceof Error ? error.message : String(error);
             await this.generationsRepository.save(saved);
 
-            this.logger.error(`Ad generation failed: ${error.message}`);
+            this.logger.error(`Ad generation failed: ${error instanceof Error ? error.message : String(error)}`);
             throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
         }
 
