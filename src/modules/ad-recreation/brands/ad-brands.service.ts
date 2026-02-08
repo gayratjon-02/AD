@@ -448,14 +448,28 @@ export class AdBrandsService {
         const savedBrand = await this.adBrandsRepository.save(brand);
         this.logger.log(`Created brand: ${savedBrand.id}`);
 
-        // Step 2: Analyze playbook (PDF or text)
+        // Step 2: Analyze playbook (PDF, text file, or manual text)
         let playbook: any;
 
         if (filePath) {
-            // Analyze PDF file
-            playbook = await this.analyzeBrandPlaybookWithClaude(filePath);
+            // Detect file type by extension
+            const ext = filePath.toLowerCase().split('.').pop();
+            this.logger.log(`Analyzing file with extension: ${ext}`);
+
+            if (ext === 'pdf') {
+                // Analyze PDF file with Claude vision
+                playbook = await this.analyzeBrandPlaybookWithClaude(filePath);
+            } else if (ext === 'txt' || ext === 'docx') {
+                // Read text file and analyze with Claude text
+                const fileContent = await this.readTextFile(filePath, ext);
+                playbook = await this.analyzeTextWithClaude(fileContent, name, website);
+            } else {
+                // Unsupported file type - generate default
+                this.logger.warn(`Unsupported file type: ${ext}, using default playbook`);
+                playbook = this.generateDefaultPlaybook(name, website);
+            }
         } else if (textContent) {
-            // Analyze text content
+            // Analyze manual text content
             playbook = await this.analyzeTextWithClaude(textContent, name, website);
         } else {
             // Generate default playbook based on name/website
@@ -467,6 +481,34 @@ export class AdBrandsService {
         await this.adBrandsRepository.save(savedBrand);
 
         return { brand: savedBrand, playbook };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // READ TEXT FILE (TXT or DOCX)
+    // ═══════════════════════════════════════════════════════════
+
+    private async readTextFile(filePath: string, ext: string): Promise<string> {
+        try {
+            if (ext === 'txt') {
+                // Read plain text file
+                const content = readFileSync(filePath, 'utf-8');
+                this.logger.log(`Read TXT file: ${content.length} characters`);
+                return content;
+            } else if (ext === 'docx') {
+                // For DOCX, read as binary and extract text (basic extraction)
+                // In production, use a library like mammoth.js
+                const buffer = readFileSync(filePath);
+                // Basic text extraction - look for text between XML tags
+                const text = buffer.toString('utf-8');
+                const cleanText = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                this.logger.log(`Read DOCX file: ${cleanText.length} characters (basic extraction)`);
+                return cleanText;
+            }
+            return '';
+        } catch (error) {
+            this.logger.error(`Failed to read text file: ${error.message}`);
+            throw new BadRequestException('Failed to read uploaded file');
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
