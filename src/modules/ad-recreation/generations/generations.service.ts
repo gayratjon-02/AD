@@ -16,7 +16,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-generation.entity';
 import { AdBrandsService } from '../brands/ad-brands.service';
 import { AdConceptsService } from '../ad-concepts/ad-concepts.service';
-import { ImageGenerationService } from './image-generation.service';
+import { GeminiService } from '../../../ai/gemini.service';
 import { MARKETING_ANGLES } from '../configurations/constants/marketing-angles';
 import { AD_FORMATS } from '../configurations/constants/ad-formats';
 import { AdGenerationStatus } from '../../../libs/enums/AdRecreationEnums';
@@ -79,7 +79,7 @@ export class GenerationsService {
         private generationsRepository: Repository<AdGeneration>,
         private readonly adBrandsService: AdBrandsService,
         private readonly adConceptsService: AdConceptsService,
-        private readonly imageGenerationService: ImageGenerationService,
+        private readonly geminiService: GeminiService,
         private readonly configService: ConfigService,
     ) {
         this.model = this.configService.get<string>('CLAUDE_MODEL') || 'claude-sonnet-4-20250514';
@@ -183,7 +183,7 @@ export class GenerationsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // RENDER AD IMAGE (Step 2: Imagen → PNG file)
+    // RENDER AD IMAGE (Step 2: Gemini → PNG file)
     // ═══════════════════════════════════════════════════════════
 
     async renderAdImage(id: string, userId: string): Promise<AdGeneration> {
@@ -207,15 +207,19 @@ export class GenerationsService {
         await this.generationsRepository.save(generation);
 
         try {
-            // Step 5: Call Gemini Imagen API
-            this.logger.log(`Calling Imagen API (ratio: ${aspectRatio})...`);
+            // Step 5: Call Gemini API for image generation
+            this.logger.log(`Calling Gemini API for image (ratio: ${aspectRatio})...`);
             generation.progress = 40;
             await this.generationsRepository.save(generation);
 
-            const imageBuffer = await this.imageGenerationService.generateImageFromPrompt(
+            const imageResult = await this.geminiService.generateImage(
                 generation.generated_copy.image_prompt,
+                undefined, // model name (ignored, uses default)
                 aspectRatio,
             );
+
+            // Convert base64 to Buffer
+            const imageBuffer = Buffer.from(imageResult.data, 'base64');
 
             // Step 6: Save image to disk
             const uploadsDir = join(process.cwd(), 'uploads', 'generations');

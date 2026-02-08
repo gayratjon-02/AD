@@ -3,17 +3,17 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GenerationsController } from './generations.controller';
 import { GenerationsService } from './generations.service';
-import { ImageGenerationService } from './image-generation.service';
 import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-generation.entity';
 import { AdBrandsModule } from '../brands/ad-brands.module';
 import { AdConceptsModule } from '../ad-concepts/ad-concepts.module';
+import { AiModule } from '../../../ai/ai.module';
 
 /**
  * Generations Module - Phase 2: Ad Recreation
  *
  * Full ad generation pipeline:
  * - Claude AI for ad copy (Brand + Concept + Angle → headline/subheadline/cta/image_prompt)
- * - Gemini Imagen for image rendering (image_prompt → PNG file)
+ * - Gemini for image rendering (image_prompt → PNG file)
  */
 @Module({
     imports: [
@@ -21,9 +21,11 @@ import { AdConceptsModule } from '../ad-concepts/ad-concepts.module';
         TypeOrmModule.forFeature([AdGeneration]),
         AdBrandsModule,
         AdConceptsModule,
+        AiModule, // Provides GeminiService for image generation
     ],
     controllers: [GenerationsController],
-    providers: [GenerationsService, ImageGenerationService],
+    providers: [GenerationsService],
     exports: [GenerationsService],
 })
-export class GenerationsModule {}
+export class GenerationsModule { }
+
