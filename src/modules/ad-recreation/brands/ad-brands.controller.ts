@@ -38,13 +38,17 @@ import { AdBrandMessage } from '../../../libs/messages';
  * Ad Brands Controller - Phase 2: Ad Recreation
  *
  * Endpoints:
- * - POST /ad-brands                → Create brand
- * - GET  /ad-brands/:id            → Get brand details
- * - GET  /ad-brands                → Get all brands
- * - POST /ad-brands/:id/assets     → Upload brand assets (logos)
- * - POST /ad-brands/:id/playbook   → Analyze playbook PDF (brand/ads/copy)
+ * - POST /brands                → Create brand
+ * - GET  /brands/:id            → Get brand details
+ * - GET  /brands                → Get all brands
+ * - GET  /brands/:id/playbooks  → Get all 3 playbook JSONs
+ * - PUT  /brands/:id/playbooks/:type → Edit a playbook JSON
+ * - GET  /brands/:id/angles     → Get available angles for this brand
+ * - POST /brands/:id/angles     → Create custom angle
+ * - POST /brands/:id/assets     → Upload brand assets (logos)
+ * - POST /brands/:id/analyze-playbook → Analyze playbook PDF (brand/ads/copy)
  */
-@Controller('ad-brands')
+@Controller('brands')
 @UseGuards(JwtAuthGuard)
 export class AdBrandsController {
     private readonly logger = new Logger(AdBrandsController.name);

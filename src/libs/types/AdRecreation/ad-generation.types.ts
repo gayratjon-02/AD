@@ -22,3 +22,27 @@ export interface GeneratedAdImage {
     variation_index: number;
     generated_at: string;
 }
+
+// ═══════════════════════════════════════════════════════════
+// Ad Generation Result — Structured output format
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * AdGenerationResult — Structured response from ad generation
+ * Contains the final merged prompt along with content and design metadata.
+ */
+export interface AdGenerationResult {
+    generation_id: string;
+    content: {
+        headline: string;
+        subheadline: string;
+        cta: string;
+    };
+    design: {
+        layout_type: string;
+        zones: any[];
+        format: string;
+        ratio: string;
+    };
+    generation_prompt: string;
+}

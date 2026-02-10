@@ -28,11 +28,12 @@ import { AdConceptMessage } from '../../../libs/messages';
  * Ad Concepts Controller - Phase 2: Ad Recreation
  *
  * Endpoints:
- * - POST /ad-concepts/analyze   → Upload image and analyze with Claude Vision
- * - GET  /ad-concepts/:id       → Get concept by ID
- * - GET  /ad-concepts           → Get all concepts for user
+ * - POST /concepts/analyze   → Upload image and analyze with Claude Vision
+ * - GET  /concepts/:id       → Get concept by ID
+ * - GET  /concepts           → List saved concepts (filterable by tags)
+ * - PUT  /concepts/:id       → Edit concept (name, tags, JSON)
  */
-@Controller('ad-concepts')
+@Controller('concepts')
 @UseGuards(JwtAuthGuard)
 export class AdConceptsController {
     private readonly logger = new Logger(AdConceptsController.name);

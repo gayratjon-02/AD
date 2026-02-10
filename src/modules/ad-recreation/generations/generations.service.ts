@@ -35,6 +35,26 @@ interface AdCopyResult {
 }
 
 // ═══════════════════════════════════════════════════════════
+// AD GENERATION RESULT (New output format)
+// ═══════════════════════════════════════════════════════════
+
+interface AdGenerationResult {
+    generation_id: string;
+    content: {
+        headline: string;
+        subheadline: string;
+        cta: string;
+    };
+    design: {
+        layout_type: string;
+        zones: any[];
+        format: string;
+        ratio: string;
+    };
+    generation_prompt: string;
+}
+
+// ═══════════════════════════════════════════════════════════
 // FORMAT RATIO MAP (technical, not product-specific)
 // ═══════════════════════════════════════════════════════════
 
@@ -96,7 +116,7 @@ export class GenerationsService {
     async generateAd(
         userId: string,
         dto: GenerateAdDto,
-    ): Promise<{ generation: AdGeneration; ad_copy: AdCopyResult }> {
+    ): Promise<{ generation: AdGeneration; ad_copy: AdCopyResult; result: AdGenerationResult }> {
         this.logger.log(`═══════════════════════════════════════════════════════════`);
         this.logger.log(`STARTING AD GENERATION`);
         this.logger.log(`═══════════════════════════════════════════════════════════`);
@@ -195,8 +215,8 @@ export class GenerationsService {
             throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
         }
 
-        // Step 7: Build GUARDED image prompt (dynamic 5-layer guardrails) + Call Gemini
-        this.logger.log(`[STEP 7] Building guarded image prompt with dynamic guardrails...`);
+        // Step 7: Build GUARDED image prompt (dynamic 6-layer guardrails with hierarchy)
+        this.logger.log(`[STEP 7] Building guarded image prompt with dynamic hierarchy...`);
         await this.generationsRepository.update(generationId, { progress: 50 });
 
         const guardedImagePrompt = this.buildGuardedImagePrompt(
@@ -204,6 +224,7 @@ export class GenerationsService {
             dto.marketing_angle_id,
             angle,
             playbook,
+            concept.analysis_json,
         );
 
         const aspectRatio = FORMAT_RATIO_MAP[dto.format_id] || '1:1';
@@ -297,7 +318,24 @@ export class GenerationsService {
         this.logger.log(`   Result Images: ${updatedGeneration.result_images?.length || 0}`);
         this.logger.log(`═══════════════════════════════════════════════════════════`);
 
-        return { generation: updatedGeneration, ad_copy: adCopy };
+        // Build structured result with new output format
+        const adResult: AdGenerationResult = {
+            generation_id: updatedGeneration.id,
+            content: {
+                headline: adCopy.headline,
+                subheadline: adCopy.subheadline,
+                cta: adCopy.cta,
+            },
+            design: {
+                layout_type: concept.analysis_json?.layout?.type || 'unknown',
+                zones: concept.analysis_json?.layout?.zones || [],
+                format: format.label,
+                ratio: format.ratio,
+            },
+            generation_prompt: guardedImagePrompt,
+        };
+
+        return { generation: updatedGeneration, ad_copy: adCopy, result: adResult };
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -523,7 +561,8 @@ Show ${productName} prominently. Use brand colors (primary: ${brandPrimary}). Pr
 
     /**
      * Builds the negative prompt dynamically from playbook data.
-     * Combines standard anti-hallucination rules with product-specific constraints.
+     * Combines standard anti-hallucination rules with product-specific constraints
+     * and explicit NEGATIVE REINFORCEMENT from compliance forbidden items.
      */
     private buildNegativePrompt(playbook: BrandPlaybook): string {
         const negativeTraits = playbook.product_identity?.negative_traits || [];
@@ -533,7 +572,13 @@ Show ${productName} prominently. Use brand colors (primary: ${brandPrimary}). Pr
             .map(t => `- ${t}`)
             .join('\n');
 
-        const complianceNegatives = complianceRules
+        // Parse compliance rules into forbidden items for negative reinforcement
+        const forbiddenItems = complianceRules
+            .filter(r => /^(no |never |must not |do not |avoid |forbidden)/i.test(r))
+            .map(r => `- ${r}`)
+            .join('\n');
+
+        const allComplianceNegatives = complianceRules
             .map(r => `- ${r}`)
             .join('\n');
 
@@ -549,7 +594,11 @@ ${productNegatives}
 - Unrealistic body proportions or uncanny valley faces
 - Cluttered, messy compositions with too many visual elements
 - Dark, gloomy, or depressing atmospheres (unless the "problem" side of a comparison)
-${complianceNegatives ? `\nCOMPLIANCE RESTRICTIONS:\n${complianceNegatives}` : ''}`;
+
+${forbiddenItems ? `[NEGATIVE REINFORCEMENT — EXPLICITLY FORBIDDEN]
+The following items are STRICTLY PROHIBITED by brand compliance. If any of these appear in the generated image, it is a FAILURE:
+${forbiddenItems}` : ''}
+${allComplianceNegatives ? `\nCOMPLIANCE RESTRICTIONS (full list):\n${allComplianceNegatives}` : ''}`;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -641,61 +690,245 @@ ${userPrompt}`;
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GUARDED IMAGE PROMPT BUILDER (Dynamic 5-Layer Guardrails)
+    // GUARDED IMAGE PROMPT BUILDER (Dynamic 6-Layer Hierarchy)
+    // Priority: Compliance > Brand Identity > Angle > Layout
     // ═══════════════════════════════════════════════════════════
 
     /**
      * Wraps the AI-generated image_prompt with dynamically-built guardrail layers.
      * All layers are constructed from the Brand Playbook JSON — no hardcoded product content.
+     *
+     * DYNAMIC HIERARCHY (Strict Priority):
+     * 1. COMPLIANCE (Absolute) — Must/Must NOT rules override ALL other layers
+     * 2. BRAND IDENTITY — Product fidelity, colors, materials
+     * 3. ANGLE — Marketing narrative and scene directive
+     * 4. LAYOUT PATTERN — Visual structure from inspiration concept
      */
     private buildGuardedImagePrompt(
         rawImagePrompt: string,
         angleId: string,
         angle: { id: string; label: string; description: string },
         playbook: BrandPlaybook,
+        conceptAnalysis?: any,
     ): string {
-        // Layer 1: Dynamic Product Lock from playbook.product_identity
-        const productLock = this.buildProductLock(playbook);
+        // ━━━ LAYER 1: COMPLIANCE LOCK (ABSOLUTE — overrides everything) ━━━
+        const complianceLock = this.buildComplianceLock(playbook);
 
-        // Layer 2: Dynamic Persona Lock from playbook.target_audience
+        // ━━━ LAYER 2: BRAND IDENTITY (Product + Persona + Colors) ━━━
+        const productLock = this.buildProductLock(playbook);
         const personaLock = this.buildPersonaLock(playbook);
 
-        // Layer 3: Static Readability Lock (product-agnostic)
-        // Layer 4: Dynamic Scene Directive from angle + playbook
+        // ━━━ LAYER 3: MARKETING ANGLE (Scene directive) ━━━
         const sceneDirective = this.buildSceneDirective(
             angleId, angle.label, angle.description, playbook,
         );
 
-        // Layer 5: Dynamic Negative Prompt from playbook constraints
+        // ━━━ LAYER 4: LAYOUT PATTERN (from inspiration concept) ━━━
+        const layoutComposition = this.buildLayoutComposition(conceptAnalysis);
+
+        // ━━━ NEGATIVE REINFORCEMENT (combines all forbidden items) ━━━
         const negativePrompt = this.buildNegativePrompt(playbook);
 
-        const guardedPrompt = `You are generating a photorealistic advertisement image. Follow ALL rules below with absolute precision.
+        const guardedPrompt = `You are generating a photorealistic advertisement image.
+Follow ALL rules below in STRICT PRIORITY ORDER. Higher-priority rules OVERRIDE lower-priority ones.
 
+${'═'.repeat(60)}
+PRIORITY 1 — COMPLIANCE (ABSOLUTE, OVERRIDE ALL)
+${'═'.repeat(60)}
+${complianceLock}
+
+${'═'.repeat(60)}
+PRIORITY 2 — BRAND IDENTITY (Product Fidelity + Visual Identity)
+${'═'.repeat(60)}
 ${productLock}
 
 ${personaLock}
 
-${READABILITY_LOCK}
-
+${'═'.repeat(60)}
+PRIORITY 3 — MARKETING ANGLE (Narrative Hook)
+${'═'.repeat(60)}
 ${sceneDirective}
 
 [CREATIVE DIRECTION FROM AI COPYWRITER]
 ${rawImagePrompt}
 
+${'═'.repeat(60)}
+PRIORITY 4 — LAYOUT PATTERN (Visual Structure from Inspiration)
+${'═'.repeat(60)}
+${layoutComposition}
+
+${READABILITY_LOCK}
+
+${'═'.repeat(60)}
+NEGATIVE REINFORCEMENT
+${'═'.repeat(60)}
 ${negativePrompt}
 
-FINAL INSTRUCTION: Generate a single, high-quality, photorealistic advertisement image that follows EVERY guardrail above. The product MUST match the Product Lock description exactly. If a human model is shown, follow the Persona Lock exactly. Ensure text overlay zones have proper contrast per the Readability Lock.`;
+FINAL INSTRUCTION: Generate a single, high-quality, photorealistic advertisement image.
+- FIRST: Ensure ALL Compliance rules (Priority 1) are satisfied. If compliance says "No Gym", the scene MUST NOT contain any gym elements.
+- SECOND: Product MUST match the Product Lock description exactly — use exact colors, features, and materials from the Brand JSON. Do NOT hallucinate product features.
+- THIRD: Apply the marketing angle's scene directive for narrative and mood.
+- FOURTH: Follow the layout zones for composition, ensuring elements do NOT overlap with Safe Zones.
+- If a human model is shown, follow the Persona Lock exactly.
+- Ensure text overlay zones have proper contrast per the Readability Lock.`;
 
         this.logger.log(`Guarded image prompt built (${guardedPrompt.length} chars)`);
-        this.logger.log(`   Layers applied: Product Lock, Persona Lock, Readability Lock, Scene (${angleId}), Negative Prompt`);
+        this.logger.log(`   Hierarchy applied: Compliance → Brand Identity → Angle (${angleId}) → Layout → Negative Reinforcement`);
 
         return guardedPrompt;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // COMPLIANCE LOCK BUILDER (Priority 1 — Absolute)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Builds the COMPLIANCE LOCK from playbook.compliance.
+     * Parses rules into MUST SHOW (positive) and MUST NOT (negative) directives.
+     * This is the HIGHEST priority layer — it overrides ALL other layers.
+     */
+    private buildComplianceLock(playbook: BrandPlaybook): string {
+        const rules = playbook.compliance?.rules || [];
+        const region = playbook.compliance?.region || 'Global';
+
+        if (rules.length === 0) {
+            return `[COMPLIANCE LOCK — NO SPECIFIC RESTRICTIONS]
+Region: ${region}
+No specific compliance rules defined. Proceed with standard advertising best practices.`;
+        }
+
+        // Parse rules into positive (Must Show) and negative (Must NOT) directives
+        const mustShowRules: string[] = [];
+        const mustNotRules: string[] = [];
+
+        for (const rule of rules) {
+            const lowerRule = rule.toLowerCase().trim();
+            if (
+                lowerRule.startsWith('no ') ||
+                lowerRule.startsWith('never ') ||
+                lowerRule.startsWith('must not ') ||
+                lowerRule.startsWith('do not ') ||
+                lowerRule.startsWith('avoid ') ||
+                lowerRule.startsWith('forbidden') ||
+                lowerRule.startsWith('prohibit')
+            ) {
+                mustNotRules.push(rule);
+            } else if (
+                lowerRule.startsWith('must ') ||
+                lowerRule.startsWith('always ') ||
+                lowerRule.startsWith('require') ||
+                lowerRule.startsWith('show ') ||
+                lowerRule.startsWith('include ')
+            ) {
+                mustShowRules.push(rule);
+            } else {
+                // Default: treat ambiguous rules as Must Show
+                mustShowRules.push(rule);
+            }
+        }
+
+        const mustShowSection = mustShowRules.length > 0
+            ? `\nMUST SHOW (use these to describe the environment/background):\n${mustShowRules.map(r => `  ✅ ${r}`).join('\n')}`
+            : '';
+
+        const mustNotSection = mustNotRules.length > 0
+            ? `\nMUST NOT (these are ABSOLUTE prohibitions — violating any is a FAILURE):\n${mustNotRules.map(r => `  ❌ ${r}`).join('\n')}`
+            : '';
+
+        return `[COMPLIANCE LOCK — ABSOLUTE RULES (Override ALL other layers)]
+Region: ${region}
+
+🚨 CRITICAL: These rules have the HIGHEST priority. If ANY compliance rule conflicts
+with Brand Identity, Marketing Angle, or Layout instructions, the COMPLIANCE RULE WINS.
+${mustShowSection}
+${mustNotSection}
+
+BACKGROUND RESOLUTION:
+- Do NOT use generic terms like "fitness setting" or "gym environment"
+- Instead, use the Must Show rules above to describe a SPECIFIC, COMPLIANT environment
+- If a Must NOT rule forbids a setting (e.g., "No Gym"), you MUST explicitly describe
+  a DIFFERENT, brand-appropriate setting instead`;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // LAYOUT COMPOSITION BUILDER (Priority 4 — from Concept)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Builds layout composition directives from the concept's zone analysis.
+     * Maps layout zones to spatial directives for image generation,
+     * ensuring elements don't overlap with Safe Zones (text areas).
+     */
+    private buildLayoutComposition(conceptAnalysis?: any): string {
+        if (!conceptAnalysis?.layout) {
+            return `[LAYOUT COMPOSITION — NO REFERENCE]
+No inspiration layout provided. Use standard advertising composition:
+- Rule of thirds for product placement
+- Clean negative space for potential text overlay areas
+- Balanced visual weight distribution`;
+        }
+
+        const layout = conceptAnalysis.layout;
+        const zones = layout.zones || [];
+        const layoutType = layout.type || 'unknown';
+
+        // Identify safe zones (text areas where image should be clean)
+        const safeZones = zones.filter((z: any) =>
+            ['headline', 'body', 'cta_button', 'logo'].includes(z.content_type),
+        );
+        const imageZones = zones.filter((z: any) =>
+            ['image', 'ui_element'].includes(z.content_type),
+        );
+
+        const safeZoneDirectives = safeZones.length > 0
+            ? safeZones.map((z: any) =>
+                `  - ${z.content_type.toUpperCase()} zone (y: ${z.y_start}%-${z.y_end}%): Keep this area clean/simple for text overlay. ${z.description || ''}`,
+            ).join('\n')
+            : '  - No specific safe zones defined';
+
+        const imageZoneDirectives = imageZones.length > 0
+            ? imageZones.map((z: any) =>
+                `  - ${z.content_type.toUpperCase()} zone (y: ${z.y_start}%-${z.y_end}%): ${z.description || 'Main visual content area'}`,
+            ).join('\n')
+            : '  - Use full frame for visual content';
+
+        // Visual style from concept
+        const mood = conceptAnalysis?.visual_style?.mood || 'professional';
+        const bg = conceptAnalysis?.visual_style?.background;
+        const bgInfo = bg && typeof bg === 'object'
+            ? `${bg.type || 'N/A'} (${bg.hex || 'N/A'})`
+            : 'N/A';
+
+        return `[LAYOUT COMPOSITION — MATCH INSPIRATION STRUCTURE]
+Layout Type: ${layoutType}
+Visual Mood: ${mood}
+Background Reference: ${bgInfo}
+
+SAFE ZONES (keep clean for text — do NOT place busy imagery here):
+${safeZoneDirectives}
+
+IMAGE ZONES (place product/model content here):
+${imageZoneDirectives}
+
+COMPOSITION RULES:
+- Product/model placement MUST respect the zone boundaries above
+- Safe Zones must have simple, low-detail backgrounds for text readability
+- Visual weight should be concentrated in the Image Zones
+- Maintain the ${layoutType} layout pattern from the inspiration`;
     }
 
     // ═══════════════════════════════════════════════════════════
     // PROMPT BUILDER (JSON-driven, no hardcoded product content)
     // ═══════════════════════════════════════════════════════════
 
+    /**
+     * Builds the user prompt for Gemini text generation.
+     * Follows STRICT DYNAMIC HIERARCHY:
+     *   1. COMPLIANCE (Must/Must NOT) — Absolute, overrides all
+     *   2. BRAND IDENTITY — Colors, tone, product details
+     *   3. ANGLE — Marketing narrative hook
+     *   4. LAYOUT PATTERN — Visual structure from inspiration
+     */
     private buildUserPrompt(
         brandName: string,
         playbook: BrandPlaybook,
@@ -717,8 +950,7 @@ FINAL INSTRUCTION: Generate a single, high-quality, photorealistic advertisement
         // Content pattern info (from Visual DNA schema)
         const contentPattern = conceptAnalysis?.content_pattern;
         const contentPatternSection = contentPattern
-            ? `\n=== CONTENT PATTERN (from ad analysis) ===
-- Hook Type: ${contentPattern.hook_type || 'N/A'}
+            ? `\n- Hook Type: ${contentPattern.hook_type || 'N/A'}
 - Narrative Structure: ${contentPattern.narrative_structure || 'N/A'}
 - CTA Style: ${contentPattern.cta_style || 'N/A'}
 - Requires Product Image: ${contentPattern.requires_product_image ? 'Yes' : 'No'}`
@@ -727,28 +959,58 @@ FINAL INSTRUCTION: Generate a single, high-quality, photorealistic advertisement
         // Target audience section
         const ta = playbook.target_audience;
         const audienceSection = ta
-            ? `\n=== TARGET AUDIENCE ===
-- Gender: ${ta.gender || 'All'}
-- Age Range: ${ta.age_range || '25-54'}
+            ? `\n- Target Gender: ${ta.gender || 'All'}
+- Target Age: ${ta.age_range || '25-54'}
 - Personas: ${ta.personas?.join(', ') || 'N/A'}`
             : '';
 
-        // Compliance section
-        const complianceSection = playbook.compliance?.rules?.length
-            ? `\n=== COMPLIANCE RULES ===
-${playbook.compliance.rules.map(r => `- ${r}`).join('\n')}`
+        // ━━━ COMPLIANCE (Priority 1 — Absolute) ━━━
+        const complianceRules = playbook.compliance?.rules || [];
+        const mustNotRules = complianceRules.filter(r =>
+            /^(no |never |must not |do not |avoid |forbidden|prohibit)/i.test(r.trim()),
+        );
+        const mustShowRules = complianceRules.filter(r =>
+            !(/^(no |never |must not |do not |avoid |forbidden|prohibit)/i.test(r.trim())),
+        );
+
+        const complianceSection = complianceRules.length > 0
+            ? `
+${'═'.repeat(60)}
+🚨 PRIORITY 1 — COMPLIANCE (ABSOLUTE — Override ALL other sections)
+${'═'.repeat(60)}
+Region: ${playbook.compliance?.region || 'Global'}
+
+These rules are NON-NEGOTIABLE. They override brand, angle, and layout instructions.
+${mustShowRules.length > 0 ? `\nMUST SHOW:\n${mustShowRules.map(r => `  ✅ ${r}`).join('\n')}` : ''}
+${mustNotRules.length > 0 ? `\nMUST NOT (explicit "Do not include" list):\n${mustNotRules.map(r => `  ❌ ${r}`).join('\n')}` : ''}
+
+BACKGROUND RULE: Do NOT use generic settings ("fitness setting", "gym"). Use the Must Show
+rules above to describe a specific, compliant environment. If a certain setting is forbidden,
+you MUST describe a DIFFERENT, brand-appropriate alternative.`
             : '';
 
-        // USP section
+        // ━━━ USP section ━━━
         const uspSection = playbook.usp_offers
-            ? `\n=== USP & OFFERS ===
-- Key Benefits: ${playbook.usp_offers.key_benefits?.join(', ') || 'N/A'}
+            ? `\n- Key Benefits: ${playbook.usp_offers.key_benefits?.join(', ') || 'N/A'}
 - Current Offer: ${playbook.usp_offers.current_offer || 'N/A'}`
+            : '';
+
+        // Identify safe zones from layout for image_prompt guidance
+        const safeZones = zones.filter((z: any) =>
+            ['headline', 'body', 'cta_button', 'logo'].includes(z.content_type),
+        );
+        const safeZoneWarning = safeZones.length > 0
+            ? `\n7. SAFE ZONES — the following zones are reserved for text overlay. In the image_prompt, describe these areas as clean/simple backgrounds:\n${safeZones.map((z: any) => `   - ${z.content_type} zone (y: ${z.y_start}%-${z.y_end}%)`).join('\n')}`
             : '';
 
         return `You are a professional copywriter for the brand "${brandName}".
 
-=== BRAND IDENTITY ===
+Follow the STRICT PRIORITY HIERARCHY below. Higher-priority sections OVERRIDE lower ones.
+${complianceSection}
+
+${'═'.repeat(60)}
+PRIORITY 2 — BRAND IDENTITY (Colors, Tone, Product)
+${'═'.repeat(60)}
 - Tone Style: ${playbook.tone_of_voice?.style || 'Professional'}
 - Tone Keywords: ${playbook.tone_of_voice?.keywords?.join(', ') || 'N/A'}
 - Words to Avoid: ${playbook.tone_of_voice?.donts?.join(', ') || 'N/A'}
@@ -758,33 +1020,41 @@ ${playbook.compliance.rules.map(r => `- ${r}`).join('\n')}`
 - Heading Font: ${playbook.fonts?.heading || 'N/A'}
 - Body Font: ${playbook.fonts?.body || 'N/A'}
 
-=== LAYOUT STRUCTURE (from competitor ad analysis) ===
+PRODUCT FIDELITY (use exact details — do NOT hallucinate):
+- Product: ${pi.product_name} (${pi.product_type})
+- Key Features: ${pi.key_features.join(', ')}
+- Visual Description: ${pi.visual_description}
+- Product Colors: ${Object.entries(pi.colors || {}).map(([k, v]) => `${k}: ${v}`).join(', ') || 'use brand colors'}
+${audienceSection}
+${uspSection}
+
+${'═'.repeat(60)}
+PRIORITY 3 — MARKETING ANGLE (Narrative Hook)
+${'═'.repeat(60)}
+- Strategy: ${angle.label}
+- Apply this approach: ${angle.description}
+${contentPatternSection}
+
+${'═'.repeat(60)}
+PRIORITY 4 — LAYOUT PATTERN (Visual Structure from Inspiration)
+${'═'.repeat(60)}
 - Layout Type: ${conceptAnalysis?.layout?.type || 'N/A'}
 - Visual Mood: ${conceptAnalysis?.visual_style?.mood || 'N/A'}
-- Background: ${backgroundInfo}
+- Background Reference: ${backgroundInfo}
 - Overlay: ${overlayInfo}
 - Zones:
 ${zonesJson}
-${contentPatternSection}
-
-=== MARKETING ANGLE ===
-- Strategy: ${angle.label}
-- Apply this approach: ${angle.description}
 
 === AD FORMAT ===
 - Format: ${format.label} (${format.ratio}, ${format.dimensions})
 
-=== PRODUCT INFO ===
-- Product: ${pi.product_name} (${pi.product_type})
-- Key Features: ${pi.key_features.join(', ')}
-- Visual Description: ${pi.visual_description}
-${audienceSection}
-${complianceSection}
-${uspSection}
-
 === YOUR TASK ===
 Generate ad copy for "${pi.product_name}" using the "${angle.label}" marketing angle.
-The ad must follow the layout structure zones above and match the brand's tone of voice.
+The ad MUST respect the priority hierarchy above:
+1. FIRST check all Compliance rules and ensure nothing violates them
+2. THEN apply Brand Identity (use exact product colors, features — no hallucination)
+3. THEN apply the Marketing Angle's narrative
+4. THEN match the Layout Pattern's visual structure
 
 IMPORTANT — image_prompt rules:
 1. Describe the SCENE and COMPOSITION — do NOT repeat product specs (those are injected separately via guardrails)
@@ -793,6 +1063,7 @@ IMPORTANT — image_prompt rules:
 4. Describe the emotional atmosphere and visual storytelling
 5. Do NOT include text, watermarks, or logos in the image description
 6. Optimize composition for ${format.label} format (${format.ratio}, ${format.dimensions})
+${safeZoneWarning}
 
 Return ONLY this JSON object (no markdown, no explanation):
 

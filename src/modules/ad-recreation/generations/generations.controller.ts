@@ -20,17 +20,18 @@ import { GenerateAdDto } from './dto/generate-ad.dto';
  * Generations Controller - Phase 2: Ad Recreation
  *
  * Endpoints:
- * - POST /ad-generations/generate    → Generate ad copy from brand + concept + angle
- * - POST /ad-generations/:id/render  → Render ad image from generated image_prompt
- * - GET  /ad-generations/:id         → Get generation by ID
- * - GET  /ad-generations             → Get all generations for user
+ * - POST /ad-recreation/generate            → Generate ads (batch: angles[] + formats[])
+ * - GET  /ad-recreation/:gen_id/status      → Check progress (0-100%)
+ * - GET  /ad-recreation/:gen_id/results     → Get generated images
+ * - POST /ad-recreation/:gen_id/regenerate  → Regenerate specific angle/format combo
+ * - GET  /ad-recreation/history             → Generation history (filterable)
  */
-@Controller('ad-generations')
+@Controller('ad-recreation')
 @UseGuards(JwtAuthGuard)
 export class GenerationsController {
     private readonly logger = new Logger(GenerationsController.name);
 
-    constructor(private readonly generationsService: GenerationsService) {}
+    constructor(private readonly generationsService: GenerationsService) { }
 
     // ═══════════════════════════════════════════════════════════
     // POST /ad-generations/generate - Generate Ad
@@ -40,16 +41,17 @@ export class GenerationsController {
     async generateAd(
         @CurrentUser() user: User,
         @Body() dto: GenerateAdDto,
-    ): Promise<{ success: boolean; message: string; generation: AdGeneration; ad_copy: any }> {
+    ): Promise<{ success: boolean; message: string; generation: AdGeneration; ad_copy: any; result: any }> {
         this.logger.log(`Generating ad for user ${user.id}`);
 
-        const result = await this.generationsService.generateAd(user.id, dto);
+        const genResult = await this.generationsService.generateAd(user.id, dto);
 
         return {
             success: true,
             message: AdGenerationMessage.GENERATION_CREATED,
-            generation: result.generation,
-            ad_copy: result.ad_copy,
+            generation: genResult.generation,
+            ad_copy: genResult.ad_copy,
+            result: genResult.result,
         };
     }
 
