@@ -21,6 +21,7 @@ import { AD_FORMATS } from '../configurations/constants/ad-formats';
 import { AdGenerationStatus } from '../../../libs/enums/AdRecreationEnums';
 import { AdGenerationMessage } from '../../../libs/messages';
 import { GenerateAdDto } from './dto/generate-ad.dto';
+import { BrandPlaybook } from '../../../libs/types/AdRecreation';
 
 // ═══════════════════════════════════════════════════════════
 // AD COPY RESULT TYPE
@@ -34,18 +35,7 @@ interface AdCopyResult {
 }
 
 // ═══════════════════════════════════════════════════════════
-// PRODUCT DATA TYPE (Phase 1 schema)
-// ═══════════════════════════════════════════════════════════
-
-interface ProductData {
-    product_name: string;
-    colors: Record<string, string>;
-    key_features: string[];
-    visual_description: string;
-}
-
-// ═══════════════════════════════════════════════════════════
-// FORMAT RATIO MAP
+// FORMAT RATIO MAP (technical, not product-specific)
 // ═══════════════════════════════════════════════════════════
 
 const FORMAT_RATIO_MAP: Record<string, string> = {
@@ -56,61 +46,9 @@ const FORMAT_RATIO_MAP: Record<string, string> = {
 };
 
 // ═══════════════════════════════════════════════════════════
-// HARDCODED PRODUCT DATA (P0 MVP)
+// STATIC GUARDRAILS (product-agnostic)
 // ═══════════════════════════════════════════════════════════
 
-const BRAND_PRODUCT_MAP: Record<string, ProductData> = {
-    pilanova: {
-        product_name: 'Foldable Pilates Reformer',
-        colors: { board: '#B8A9D9', metal: '#000000' },
-        key_features: ['Two center track rails', 'Grey foot pedals', 'Foldable design', 'Resistance bands included'],
-        visual_description: 'A flat, foldable board with resistance bands, featuring a lavender-colored surface with black metal frame, grey foot pedals, and two center track rails for smooth carriage movement.',
-    },
-};
-
-// ═══════════════════════════════════════════════════════════
-// STRICT GUARDRAILS SYSTEM - 5 Layers
-// ═══════════════════════════════════════════════════════════
-
-/**
- * Layer 1: PRODUCT LOCK
- * Immutable physics description of PilaNova Foldable Pilates Reformer.
- * This block is injected verbatim into every image prompt to prevent
- * the AI from hallucinating product appearance.
- */
-const PRODUCT_LOCK = `[PRODUCT LOCK — DO NOT MODIFY]
-The product is a PilaNova Foldable Pilates Reformer. It is a flat, foldable board (NOT a traditional reformer with a carriage/tower).
-Physical traits that MUST appear exactly:
-- Board surface color: lavender/light purple (#B8A9D9)
-- Frame/rails: matte black metal
-- Two center track rails running lengthwise
-- Grey foot pedals at one end
-- Resistance bands attached (visible elastic bands with handles)
-- Compact, flat profile — approximately 2 inches tall when folded
-- NO traditional pilates reformer tower, NO springs, NO sliding carriage
-If the product is shown, it MUST match the above description exactly. Do NOT invent features.`;
-
-/**
- * Layer 2: PERSONA LOCK
- * Ensures consistent human model representation across all ads.
- * Anatomically correct, no distortion, premium activewear.
- */
-const PERSONA_LOCK = `[PERSONA LOCK — HUMAN MODEL RULES]
-If a human model appears in the image:
-- Gender: Female only
-- Age appearance: 30-45 years old
-- Body type: Fit, athletic, healthy-looking
-- Clothing: Premium activewear (sports bra + leggings or fitted workout top + leggings)
-- Activewear colors: Black, dark grey, or muted earth tones (NO bright neon)
-- Expression: Confident, calm, focused — NOT overly posed or unnatural
-- Anatomy: ALL body proportions must be anatomically correct. Correct number of fingers (5 per hand), correct limb proportions, natural joint angles
-- Hair: Pulled back (ponytail or bun) to show the face clearly
-- NO extra limbs, NO distorted faces, NO unnatural body bending`;
-
-/**
- * Layer 3: READABILITY LOCK
- * Ensures text overlay zones have sufficient contrast for readability.
- */
 const READABILITY_LOCK = `[READABILITY LOCK — TEXT CONTRAST PROTECTION]
 For any area where text will be overlaid:
 - Place a dark semi-transparent dimmer layer (rgba(0,0,0,0.35) equivalent) behind the text zone
@@ -118,57 +56,6 @@ For any area where text will be overlaid:
 - Ensure at least 60% contrast ratio between text area background and surrounding image
 - The dimmer must blend naturally with the overall composition — NOT look like a harsh rectangle
 - Leave generous padding around text zones (at least 8% of frame width on each side)`;
-
-/**
- * Layer 4: ANGLE-SPECIFIC SCENE LOGIC
- * Custom scene descriptions keyed by marketing angle ID.
- * Each angle gets a tailored visual environment.
- */
-const ANGLE_SCENE_MAP: Record<string, string> = {
-    problem_solution: 'Scene: Split composition. Left side shows a cramped, messy living room with no space for exercise equipment (desaturated, slightly dark). Right side shows the same room but clean and spacious with the PilaNova reformer unfolded and in use (bright, warm lighting). Clear visual contrast between problem and solution.',
-    before_after: 'Scene: Two-panel layout. "Before" panel (left or top): A woman looking frustrated, sitting on a couch surrounded by bulky unused gym equipment, muted tones. "After" panel (right or bottom): The same woman using the PilaNova reformer in a clean, bright room with natural light, vibrant warm tones. Transformation must be visually dramatic.',
-    social_proof: 'Scene: Lifestyle setting showing the PilaNova reformer in a beautiful, bright home studio. Include subtle social proof elements: a phone screen showing 5-star reviews in the background, or a subtle "As seen in" badge area. The model is mid-exercise, looking satisfied. Warm, inviting, aspirational lighting.',
-    myth_buster: 'Scene: Bold, editorial-style composition. The PilaNova reformer is shown center-frame at a slight angle to reveal its compact folded size next to a traditional bulky pilates reformer (shown faded/ghosted in background). Strong directional lighting. Clean, modern studio background. The contrast in size should be immediately obvious.',
-    feature_highlight: 'Scene: Product hero shot. The PilaNova reformer is the central focus, shown at a 3/4 angle on a clean, minimal surface. Soft studio lighting with subtle gradient background matching brand colors. Close-up details visible: track rails, resistance bands, foot pedals. Premium product photography style.',
-    fomo: 'Scene: Urgent, high-energy composition. The PilaNova reformer shown in a premium lifestyle setting with warm golden-hour lighting. Subtle visual cues of urgency: a timer/countdown element area, or a "limited stock" visual zone. The model is actively using the product with dynamic energy.',
-    cost_savings: 'Scene: Value comparison layout. The PilaNova reformer shown clean and accessible in a home setting. Subtle visual comparison: small icons or zones suggesting gym membership cards, expensive equipment, monthly fees — all faded/crossed out. The reformer is bright and prominent as the affordable alternative.',
-    us_vs_them: 'Scene: Direct comparison layout. Left: a traditional bulky, expensive pilates reformer in a sterile gym (cool, clinical lighting). Right: the PilaNova foldable reformer in a warm, inviting home environment (warm, natural lighting). The visual preference should clearly favor the PilaNova side.',
-    storytelling: 'Scene: Narrative sequence feel. A woman at home, morning light streaming through windows, unfolding the PilaNova reformer from its compact stored position. The scene suggests a daily ritual — peaceful, intentional, empowering. Soft, cinematic lighting with warm tones.',
-    minimalist: 'Scene: Ultra-clean, minimal composition. The PilaNova reformer on a solid white or light grey background. Generous negative space. One or two subtle shadow lines. No clutter, no props, no model — pure product focus. High-end catalogue photography aesthetic.',
-    luxury: 'Scene: Aspirational luxury setting. The PilaNova reformer in an upscale home with marble floors, floor-to-ceiling windows, and city skyline or nature view. Elegant lighting with soft highlights. The model (if present) wears premium black activewear. Everything communicates premium, exclusive lifestyle.',
-    educational: 'Scene: Instructional-style layout. The PilaNova reformer shown from a clear, informative angle. Visual callout zones pointing to key features (track rails, resistance bands, fold mechanism). Clean, well-lit studio setting. Infographic-friendly composition with space for text overlays.',
-    how_to: 'Scene: Step-by-step visual flow. Show the PilaNova reformer in 3 implied stages: folded/stored, unfolding, and in-use. Clean studio background with consistent lighting. Each stage clearly visible. The composition should flow left-to-right or top-to-bottom logically.',
-    benefit_stacking: 'Scene: Dynamic product showcase. The PilaNova reformer at center with visual "benefit rays" — subtle graphic zones radiating outward suggesting multiple benefits. Clean, energetic composition with bright, modern lighting. Space for multiple text overlay zones.',
-    curiosity_gap: 'Scene: Intriguing, partially-revealed composition. The PilaNova reformer shown at an artistic angle, partially cropped or dramatically lit to create visual curiosity. One striking detail is highlighted (e.g., the folding mechanism or track rails). Moody, editorial lighting that draws the eye.',
-    expert_endorsement: 'Scene: Professional, authoritative setting. The PilaNova reformer in a physical therapy clinic or professional pilates studio. Clean, clinical-but-warm lighting. Space for an "expert quote" text zone. The model (if present) looks like a professional instructor or therapist.',
-    user_generated: 'Scene: Authentic, casual home setting. The PilaNova reformer in a real-looking living room or bedroom (not too styled). Natural, slightly imperfect lighting (as if from a phone camera). The model is candid, mid-workout, looking natural — not posed. UGC (user-generated content) aesthetic.',
-    lifestyle: 'Scene: Aspirational daily-life integration. The PilaNova reformer seamlessly placed in a beautiful home setting — perhaps next to a yoga mat, a water bottle, and a plant. Morning or golden-hour light. The model is relaxed, post-workout, embodying wellness. Warm, inviting, "I want that life" aesthetic.',
-    contrast: 'Scene: Strong visual juxtaposition. Split or diagonal composition. One side shows a chaotic, stressful gym environment (crowded, harsh fluorescent lighting). The other side shows a peaceful home workout with the PilaNova reformer (warm, calm, natural light). The contrast should be immediately striking.',
-    question: 'Scene: Thought-provoking visual. The PilaNova reformer shown in an unexpected or intriguing context — perhaps a tiny apartment where it fits perfectly, or next to bulky equipment it clearly outperforms. The composition should make the viewer stop and think. Clean, bold framing with strong visual anchor.',
-    guarantee: 'Scene: Trust-building composition. The PilaNova reformer shown prominently with warm, reliable lighting. Visual elements suggesting confidence: clean packaging, a subtle "guarantee badge" zone, or a satisfied customer mid-use. Professional, trustworthy commercial photography style.',
-};
-
-/**
- * Layer 5: NEGATIVE PROMPT
- * Anti-hallucination text appended to every image generation prompt.
- * Prevents common AI image generation failures.
- */
-const NEGATIVE_PROMPT = `[NEGATIVE PROMPT — MUST AVOID]
-DO NOT generate any of the following:
-- Extra fingers, extra limbs, distorted hands, mutated body parts
-- Text, watermarks, logos, or written words embedded in the image
-- Traditional pilates reformer with tower/springs/carriage (the product is a FLAT FOLDABLE BOARD)
-- Blurry, low-resolution, or pixelated output
-- Overly saturated or neon colors that clash with the brand palette
-- Stock photo watermarks or grid overlays
-- Multiple copies of the same product in one frame (unless explicitly requested)
-- Unrealistic body proportions or uncanny valley faces
-- Cluttered, messy compositions with too many visual elements
-- Dark, gloomy, or depressing atmospheres (unless the "problem" side of a comparison)`;
-
-// ═══════════════════════════════════════════════════════════
-// PROMPT CONSTANTS
-// ═══════════════════════════════════════════════════════════
 
 const AD_GENERATION_SYSTEM_PROMPT = `You are a world-class Ad Copywriter and Creative Director with 15+ years of experience crafting high-converting advertisements.
 
@@ -185,8 +72,9 @@ RULES:
 /**
  * Generations Service - Phase 2: Ad Recreation
  *
- * Orchestrates the full ad generation pipeline using GEMINI ONLY:
- * 1. generateAd: Brand + Concept + Angle → Auto-fetch Product → Gemini Pro → Ad Copy → Gemini Image → Complete Ad
+ * Fully JSON-driven ad generation pipeline:
+ * All prompts and guardrails are built dynamically from Brand Playbook JSON,
+ * Ad Analysis JSON, and user selections. No hardcoded product content.
  */
 @Injectable()
 export class GenerationsService {
@@ -210,65 +98,58 @@ export class GenerationsService {
         dto: GenerateAdDto,
     ): Promise<{ generation: AdGeneration; ad_copy: AdCopyResult }> {
         this.logger.log(`═══════════════════════════════════════════════════════════`);
-        this.logger.log(`🚀 STARTING AD GENERATION`);
+        this.logger.log(`STARTING AD GENERATION`);
         this.logger.log(`═══════════════════════════════════════════════════════════`);
-        this.logger.log(`📌 User ID: ${userId}`);
-        this.logger.log(`📌 Brand ID: ${dto.brand_id}`);
-        this.logger.log(`📌 Concept ID: ${dto.concept_id}`);
-        this.logger.log(`📌 Marketing Angle: ${dto.marketing_angle_id}`);
-        this.logger.log(`📌 Format: ${dto.format_id}`);
+        this.logger.log(`User ID: ${userId}`);
+        this.logger.log(`Brand ID: ${dto.brand_id}`);
+        this.logger.log(`Concept ID: ${dto.concept_id}`);
+        this.logger.log(`Marketing Angle: ${dto.marketing_angle_id}`);
+        this.logger.log(`Format: ${dto.format_id}`);
 
         // Step 1: Validate marketing angle and format
-        this.logger.log(`\n[STEP 1] 🔍 Validating marketing angle and format...`);
+        this.logger.log(`[STEP 1] Validating marketing angle and format...`);
         const angle = MARKETING_ANGLES.find((a) => a.id === dto.marketing_angle_id);
         if (!angle) {
-            this.logger.error(`❌ Invalid marketing angle: ${dto.marketing_angle_id}`);
+            this.logger.error(`Invalid marketing angle: ${dto.marketing_angle_id}`);
             throw new BadRequestException(AdGenerationMessage.INVALID_MARKETING_ANGLE);
         }
-        this.logger.log(`✅ Marketing angle valid: ${angle.label}`);
+        this.logger.log(`Marketing angle valid: ${angle.label}`);
 
         const format = AD_FORMATS.find((f) => f.id === dto.format_id);
         if (!format) {
-            this.logger.error(`❌ Invalid ad format: ${dto.format_id}`);
+            this.logger.error(`Invalid ad format: ${dto.format_id}`);
             throw new BadRequestException(AdGenerationMessage.INVALID_AD_FORMAT);
         }
-        this.logger.log(`✅ Ad format valid: ${format.label} (${format.ratio})`);
+        this.logger.log(`Ad format valid: ${format.label} (${format.ratio})`);
 
         // Step 2: Fetch brand and concept (with ownership checks)
-        this.logger.log(`\n[STEP 2] 📚 Fetching brand and concept from database...`);
+        this.logger.log(`[STEP 2] Fetching brand and concept from database...`);
         const brand = await this.adBrandsService.findOne(dto.brand_id, userId);
-        this.logger.log(`✅ Brand fetched: "${brand.name}" (ID: ${brand.id})`);
+        this.logger.log(`Brand fetched: "${brand.name}" (ID: ${brand.id})`);
 
         const concept = await this.adConceptsService.findOne(dto.concept_id, userId);
-        this.logger.log(`✅ Concept fetched: "${concept.name || 'Unnamed'}" (ID: ${concept.id})`);
+        this.logger.log(`Concept fetched: "${concept.name || 'Unnamed'}" (ID: ${concept.id})`);
 
-        // Step 3: Get playbook (use default if not set)
-        this.logger.log(`\n[STEP 3] 📖 Getting brand playbook...`);
-        const playbook = brand.brand_playbook || {
-            tone_of_voice: {
-                style: 'Professional',
-                keywords: ['quality', 'trust', 'innovation'],
-                donts: [],
-            },
-            colors: {
-                primary: '#000000',
-                secondary: '#FFFFFF',
-                accent: '#FF5733',
-            },
-            fonts: {
-                heading: 'Inter',
-                body: 'Inter',
-            },
-        };
-        this.logger.log(`✅ Using ${brand.brand_playbook ? 'CUSTOM' : 'DEFAULT'} playbook`);
+        // Step 3: Validate brand playbook (FAIL-FAST)
+        this.logger.log(`[STEP 3] Validating brand playbook...`);
+        const playbook = brand.brand_playbook;
 
-        // Step 3.5: Auto-fetch product data by brand name
-        this.logger.log(`\n[STEP 3.5] 📦 Fetching product data for brand "${brand.name}"...`);
-        const productData = this.getProductByBrand(brand.name);
-        this.logger.log(`✅ Product: "${productData.product_name}" (${productData.key_features.length} features)`);
+        if (!playbook) {
+            throw new BadRequestException(AdGenerationMessage.BRAND_PLAYBOOK_REQUIRED);
+        }
+
+        if (!playbook.product_identity || !playbook.product_identity.product_name) {
+            throw new BadRequestException(AdGenerationMessage.BRAND_PRODUCT_IDENTITY_REQUIRED);
+        }
+
+        if (!playbook.product_identity.visual_description) {
+            this.logger.warn(`Brand ${brand.id} has product_identity but no visual_description. Image guardrails will be reduced.`);
+        }
+
+        this.logger.log(`Playbook validated: product="${playbook.product_identity.product_name}"`);
 
         // Step 4: Create generation record (STATUS: PROCESSING)
-        this.logger.log(`\n[STEP 4] 💾 Creating generation record...`);
+        this.logger.log(`[STEP 4] Creating generation record...`);
         const generation = this.generationsRepository.create({
             user_id: userId,
             brand_id: dto.brand_id,
@@ -280,34 +161,33 @@ export class GenerationsService {
         });
         const saved = await this.generationsRepository.save(generation);
         const generationId = saved.id;
-        this.logger.log(`✅ Generation record created: ${generationId}`);
+        this.logger.log(`Generation record created: ${generationId}`);
 
-        // Step 5: Build prompt for text generation
-        this.logger.log(`\n[STEP 5] 📝 Building text generation prompt...`);
+        // Step 5: Build prompt for text generation (fully JSON-driven)
+        this.logger.log(`[STEP 5] Building text generation prompt...`);
         const userPrompt = this.buildUserPrompt(
             brand.name,
             playbook,
             concept.analysis_json,
             angle,
             format,
-            productData,
         );
-        this.logger.log(`✅ Prompt built (${userPrompt.length} chars)`);
+        this.logger.log(`Prompt built (${userPrompt.length} chars)`);
 
         // Step 6: Call Gemini for Ad Copy (TEXT)
-        this.logger.log(`\n[STEP 6] 🤖 Calling GEMINI for text generation (ad copy)...`);
+        this.logger.log(`[STEP 6] Calling GEMINI for text generation (ad copy)...`);
         await this.generationsRepository.update(generationId, { progress: 30 });
 
         let adCopy: AdCopyResult;
         try {
             adCopy = await this.callGeminiForAdCopy(userPrompt);
-            this.logger.log(`✅ GEMINI TEXT GENERATION COMPLETED`);
-            this.logger.log(`   📌 Headline: "${adCopy.headline}"`);
-            this.logger.log(`   📌 Subheadline: "${adCopy.subheadline}"`);
-            this.logger.log(`   📌 CTA: "${adCopy.cta}"`);
-            this.logger.log(`   📌 Image Prompt (${adCopy.image_prompt.length} chars): ${adCopy.image_prompt.substring(0, 150)}...`);
+            this.logger.log(`GEMINI TEXT GENERATION COMPLETED`);
+            this.logger.log(`   Headline: "${adCopy.headline}"`);
+            this.logger.log(`   Subheadline: "${adCopy.subheadline}"`);
+            this.logger.log(`   CTA: "${adCopy.cta}"`);
+            this.logger.log(`   Image Prompt (${adCopy.image_prompt.length} chars): ${adCopy.image_prompt.substring(0, 150)}...`);
         } catch (error) {
-            this.logger.error(`❌ Gemini text generation failed: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.error(`Gemini text generation failed: ${error instanceof Error ? error.message : String(error)}`);
             await this.generationsRepository.update(generationId, {
                 status: AdGenerationStatus.FAILED,
                 failure_reason: error instanceof Error ? error.message : String(error),
@@ -315,20 +195,21 @@ export class GenerationsService {
             throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
         }
 
-        // Step 7: Build GUARDED image prompt (5-layer guardrails) + Call Gemini
-        this.logger.log(`\n[STEP 7] 🛡️ Building guarded image prompt with 5-layer guardrails...`);
+        // Step 7: Build GUARDED image prompt (dynamic 5-layer guardrails) + Call Gemini
+        this.logger.log(`[STEP 7] Building guarded image prompt with dynamic guardrails...`);
         await this.generationsRepository.update(generationId, { progress: 50 });
 
         const guardedImagePrompt = this.buildGuardedImagePrompt(
             adCopy.image_prompt,
             dto.marketing_angle_id,
+            angle,
+            playbook,
         );
 
         const aspectRatio = FORMAT_RATIO_MAP[dto.format_id] || '1:1';
-        this.logger.log(`   📌 Aspect Ratio: ${aspectRatio}`);
-        this.logger.log(`   📌 Raw image_prompt: ${adCopy.image_prompt.length} chars`);
-        this.logger.log(`   📌 Guarded image_prompt: ${guardedImagePrompt.length} chars`);
-        this.logger.log(`   📌 Sending GUARDED image_prompt to Gemini Image Generation...`);
+        this.logger.log(`   Aspect Ratio: ${aspectRatio}`);
+        this.logger.log(`   Raw image_prompt: ${adCopy.image_prompt.length} chars`);
+        this.logger.log(`   Guarded image_prompt: ${guardedImagePrompt.length} chars`);
 
         let generatedImageBase64: string | null = null;
         let generatedImageUrl: string | null = null;
@@ -343,9 +224,9 @@ export class GenerationsService {
 
             generatedImageBase64 = imageResult.data;
             imageMimeType = imageResult.mimeType || 'image/png';
-            this.logger.log(`✅ GEMINI IMAGE GENERATION COMPLETED`);
-            this.logger.log(`   📌 MimeType: ${imageMimeType}`);
-            this.logger.log(`   📌 Size: ${(generatedImageBase64.length / 1024).toFixed(1)} KB (base64)`);
+            this.logger.log(`GEMINI IMAGE GENERATION COMPLETED`);
+            this.logger.log(`   MimeType: ${imageMimeType}`);
+            this.logger.log(`   Size: ${(generatedImageBase64.length / 1024).toFixed(1)} KB (base64)`);
 
             // Save image to disk
             await this.generationsRepository.update(generationId, { progress: 80 });
@@ -364,22 +245,22 @@ export class GenerationsService {
             const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
             generatedImageUrl = `${baseUrl}/uploads/generations/${fileName}`;
 
-            this.logger.log(`✅ Image saved to disk: ${filePath}`);
-            this.logger.log(`   📌 URL: ${generatedImageUrl}`);
+            this.logger.log(`Image saved to disk: ${filePath}`);
+            this.logger.log(`   URL: ${generatedImageUrl}`);
 
         } catch (error) {
-            this.logger.error(`❌ Gemini image generation failed: ${error instanceof Error ? error.message : String(error)}`);
-            this.logger.warn(`⚠️ Continuing without image - ad copy will still be saved.`);
+            this.logger.error(`Gemini image generation failed: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.warn(`Continuing without image - ad copy will still be saved.`);
         }
 
         // Step 8: Save everything to database
-        this.logger.log(`\n[STEP 8] 💾 Saving results to database...`);
+        this.logger.log(`[STEP 8] Saving results to database...`);
 
         const resultImages = generatedImageUrl ? [
             {
                 id: uuidv4(),
                 url: generatedImageUrl,
-                base64: generatedImageBase64, // Include base64 for frontend
+                base64: generatedImageBase64,
                 format: aspectRatio,
                 angle: dto.marketing_angle_id,
                 variation_index: 1,
@@ -395,12 +276,12 @@ export class GenerationsService {
             completed_at: new Date(),
         });
 
-        this.logger.log(`✅ Results saved to DB`);
-        this.logger.log(`   📌 Ad Copy: SAVED`);
-        this.logger.log(`   📌 Result Images: ${resultImages.length} image(s)`);
+        this.logger.log(`Results saved to DB`);
+        this.logger.log(`   Ad Copy: SAVED`);
+        this.logger.log(`   Result Images: ${resultImages.length} image(s)`);
 
         // Step 9: Fetch and return updated generation
-        this.logger.log(`\n[STEP 9] 📤 Fetching updated generation record...`);
+        this.logger.log(`[STEP 9] Fetching updated generation record...`);
         const updatedGeneration = await this.generationsRepository.findOne({
             where: { id: generationId },
         });
@@ -410,41 +291,13 @@ export class GenerationsService {
         }
 
         this.logger.log(`═══════════════════════════════════════════════════════════`);
-        this.logger.log(`🎉 AD GENERATION COMPLETE`);
-        this.logger.log(`   📌 Generation ID: ${updatedGeneration.id}`);
-        this.logger.log(`   📌 Status: ${updatedGeneration.status}`);
-        this.logger.log(`   📌 Result Images: ${updatedGeneration.result_images?.length || 0}`);
-        this.logger.log(`═══════════════════════════════════════════════════════════\n`);
+        this.logger.log(`AD GENERATION COMPLETE`);
+        this.logger.log(`   Generation ID: ${updatedGeneration.id}`);
+        this.logger.log(`   Status: ${updatedGeneration.status}`);
+        this.logger.log(`   Result Images: ${updatedGeneration.result_images?.length || 0}`);
+        this.logger.log(`═══════════════════════════════════════════════════════════`);
 
         return { generation: updatedGeneration, ad_copy: adCopy };
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // GET PRODUCT BY BRAND (P0 MVP - Hardcoded lookup)
-    // ═══════════════════════════════════════════════════════════
-
-    /**
-     * Returns the Product JSON for a given brand name.
-     * P0 MVP: Uses hardcoded map. Future: DB lookup from Phase 1 data.
-     */
-    private getProductByBrand(brandName: string): ProductData {
-        // Normalize brand name for lookup (lowercase, trimmed)
-        const normalized = brandName.toLowerCase().trim();
-
-        // Check hardcoded map
-        if (BRAND_PRODUCT_MAP[normalized]) {
-            this.logger.log(`📦 Found hardcoded product for brand: "${brandName}"`);
-            return BRAND_PRODUCT_MAP[normalized];
-        }
-
-        // Default fallback for unknown brands
-        this.logger.warn(`⚠️ No product data found for brand "${brandName}" - using generic fallback`);
-        return {
-            product_name: `${brandName} Product`,
-            colors: { primary: '#000000', accent: '#FFFFFF' },
-            key_features: ['Premium quality', 'Modern design', 'Best in class'],
-            visual_description: `A premium product by ${brandName} with modern design and high-quality materials.`,
-        };
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -452,7 +305,7 @@ export class GenerationsService {
     // ═══════════════════════════════════════════════════════════
 
     async renderAdImage(id: string, userId: string): Promise<AdGeneration> {
-        this.logger.log(`🔄 Re-rendering image for generation ${id}`);
+        this.logger.log(`Re-rendering image for generation ${id}`);
 
         const generation = await this.findOne(id, userId);
 
@@ -468,7 +321,7 @@ export class GenerationsService {
         await this.generationsRepository.save(generation);
 
         try {
-            this.logger.log(`📤 Calling Gemini API for image (ratio: ${aspectRatio})...`);
+            this.logger.log(`Calling Gemini API for image (ratio: ${aspectRatio})...`);
             generation.progress = 40;
             await this.generationsRepository.save(generation);
 
@@ -489,7 +342,7 @@ export class GenerationsService {
             const filePath = join(uploadsDir, fileName);
             writeFileSync(filePath, imageBuffer);
 
-            this.logger.log(`✅ Image saved: ${filePath} (${(imageBuffer.length / 1024).toFixed(1)} KB)`);
+            this.logger.log(`Image saved: ${filePath} (${(imageBuffer.length / 1024).toFixed(1)} KB)`);
 
             const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
             const imageUrl = `${baseUrl}/uploads/generations/${fileName}`;
@@ -511,14 +364,14 @@ export class GenerationsService {
             generation.completed_at = new Date();
             await this.generationsRepository.save(generation);
 
-            this.logger.log(`✅ Image render completed: ${generation.id}`);
+            this.logger.log(`Image render completed: ${generation.id}`);
             return generation;
         } catch (error) {
             generation.status = AdGenerationStatus.FAILED;
             generation.failure_reason = error instanceof Error ? error.message : String(error);
             await this.generationsRepository.save(generation);
 
-            this.logger.error(`❌ Image render failed: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.error(`Image render failed: ${error instanceof Error ? error.message : String(error)}`);
             throw new InternalServerErrorException(AdGenerationMessage.RENDER_FAILED);
         }
     }
@@ -555,23 +408,166 @@ export class GenerationsService {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // DYNAMIC GUARDRAIL BUILDERS (JSON-driven)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Builds the PRODUCT LOCK guardrail dynamically from the brand playbook.
+     * Ensures the AI image generator produces the correct product identity.
+     */
+    private buildProductLock(playbook: BrandPlaybook): string {
+        const pi = playbook.product_identity!;
+
+        const featureLines = pi.key_features
+            .map(f => `- ${f}`)
+            .join('\n');
+
+        const colorLines = Object.entries(pi.colors)
+            .map(([part, hex]) => `- ${part}: ${hex}`)
+            .join('\n');
+
+        const negativeLines = (pi.negative_traits || [])
+            .map(t => `- ${t}`)
+            .join('\n');
+
+        return `[PRODUCT LOCK — DO NOT MODIFY]
+The product is: ${pi.product_name} (${pi.product_type}).
+${pi.visual_description}
+
+Physical traits that MUST appear exactly:
+${featureLines || '(see visual description above)'}
+
+Product colors:
+${colorLines || '(use brand colors)'}
+
+${negativeLines ? `MUST NOT include:\n${negativeLines}` : ''}
+If the product is shown, it MUST match the above description exactly. Do NOT invent features.`;
+    }
+
+    /**
+     * Builds the PERSONA LOCK guardrail dynamically from target_audience.
+     * Controls human model appearance in generated images.
+     */
+    private buildPersonaLock(playbook: BrandPlaybook): string {
+        const ta = playbook.target_audience;
+
+        if (!ta) {
+            return `[PERSONA LOCK — HUMAN MODEL RULES]
+If a human model appears in the image:
+- Anatomy: ALL body proportions must be anatomically correct
+- Correct number of fingers (5 per hand), correct limb proportions, natural joint angles
+- Expression: Natural, confident
+- NO extra limbs, NO distorted faces, NO unnatural body bending`;
+        }
+
+        return `[PERSONA LOCK — HUMAN MODEL RULES]
+If a human model appears in the image:
+- Gender: ${ta.gender || 'Any'}
+- Age appearance: ${ta.age_range || '25-45'} years old
+- Body type: ${ta.body_type || 'Healthy, natural-looking'}
+- Clothing: ${ta.clothing_style || 'Appropriate for the brand context'}
+- Expression: Confident, calm, focused — NOT overly posed or unnatural
+- Anatomy: ALL body proportions must be anatomically correct. Correct number of fingers (5 per hand), correct limb proportions, natural joint angles
+- NO extra limbs, NO distorted faces, NO unnatural body bending`;
+    }
+
+    /**
+     * Builds a scene directive for the given marketing angle,
+     * dynamically interpolating the product name from the playbook.
+     */
+    private buildSceneDirective(
+        angleId: string,
+        angleLabel: string,
+        angleDescription: string,
+        playbook: BrandPlaybook,
+    ): string {
+        const productName = playbook.product_identity?.product_name || 'the product';
+        const brandPrimary = playbook.colors?.primary || '#000000';
+
+        // Scene templates with dynamic product interpolation
+        const sceneTemplates: Record<string, string> = {
+            problem_solution: `Scene: Split composition. Left side shows the problem state (desaturated, slightly dark). Right side shows the solution with ${productName} in use (bright, warm lighting). Clear visual contrast between problem and solution.`,
+            before_after: `Scene: Two-panel layout. "Before" panel (left/top): frustration, muted tones. "After" panel (right/bottom): using ${productName} in a clean, bright environment with warm tones. Transformation must be visually dramatic.`,
+            social_proof: `Scene: Lifestyle setting showing ${productName} in a beautiful environment. Include subtle social proof elements: phone screen with 5-star reviews, or trust badge area. Warm, inviting, aspirational lighting.`,
+            myth_buster: `Scene: Bold, editorial-style composition. ${productName} is shown center-frame at a slight angle. Strong directional lighting. Clean, modern studio background. The product's key differentiator should be immediately obvious.`,
+            feature_highlight: `Scene: Product hero shot. ${productName} is the central focus, shown at a 3/4 angle on a clean surface. Soft studio lighting with subtle gradient background matching brand color (${brandPrimary}). Premium product photography style.`,
+            fomo: `Scene: Urgent, high-energy composition. ${productName} shown in a premium lifestyle setting with warm golden-hour lighting. Subtle visual cues of urgency: timer/countdown element area, or limited availability visual zone. Dynamic energy.`,
+            cost_savings: `Scene: Value comparison layout. ${productName} shown clean and accessible in a home setting. Subtle visual comparison suggesting expensive alternatives faded out. The product is bright and prominent as the smart choice.`,
+            us_vs_them: `Scene: Direct comparison layout. Left: a traditional/competitor alternative in a sterile environment (cool lighting). Right: ${productName} in a warm, inviting setting (natural lighting). Visual preference should clearly favor the product side.`,
+            storytelling: `Scene: Narrative sequence feel. A person at home, morning light streaming through windows, using ${productName}. The scene suggests a daily ritual — peaceful, intentional, empowering. Soft, cinematic lighting with warm tones.`,
+            minimalist: `Scene: Ultra-clean, minimal composition. ${productName} on a solid white or light grey background. Generous negative space. No clutter, no props — pure product focus. High-end catalogue photography aesthetic.`,
+            luxury: `Scene: Aspirational luxury setting. ${productName} in an upscale environment with elegant lighting and soft highlights. Everything communicates premium, exclusive lifestyle.`,
+            educational: `Scene: Instructional-style layout. ${productName} shown from a clear, informative angle. Visual callout zones pointing to key features. Clean, well-lit studio setting. Infographic-friendly composition with space for text overlays.`,
+            how_to: `Scene: Step-by-step visual flow. Show ${productName} in 3 implied stages of use. Clean studio background with consistent lighting. The composition should flow logically.`,
+            benefit_stacking: `Scene: Dynamic product showcase. ${productName} at center with visual zones suggesting multiple benefits. Clean, energetic composition with bright, modern lighting. Space for text overlays.`,
+            curiosity_gap: `Scene: Intriguing, partially-revealed composition. ${productName} shown at an artistic angle, partially cropped or dramatically lit to create visual curiosity. Moody, editorial lighting that draws the eye.`,
+            expert_endorsement: `Scene: Professional, authoritative setting. ${productName} in a professional or clinical environment. Clean, warm lighting. Space for an expert quote text zone.`,
+            user_generated: `Scene: Authentic, casual setting. ${productName} in a real-looking environment (not too styled). Natural lighting (as if from a phone camera). Candid, mid-use, natural — not posed. UGC aesthetic.`,
+            lifestyle: `Scene: Aspirational daily-life integration. ${productName} seamlessly placed in a beautiful lifestyle setting. Morning or golden-hour light. Warm, inviting atmosphere.`,
+            contrast: `Scene: Strong visual juxtaposition. Split or diagonal composition. One side shows a negative scenario (harsh lighting). The other side shows a positive scenario with ${productName} (warm, natural light). The contrast should be immediately striking.`,
+            question: `Scene: Thought-provoking visual. ${productName} shown in an unexpected or intriguing context. The composition should make the viewer stop and think. Clean, bold framing with strong visual anchor.`,
+            guarantee: `Scene: Trust-building composition. ${productName} shown prominently with warm, reliable lighting. Visual elements suggesting confidence and satisfaction. Professional, trustworthy commercial photography style.`,
+            urgent: `Scene: High-energy composition with warm golden-hour lighting. ${productName} featured prominently with visual urgency cues. Dynamic, action-oriented atmosphere.`,
+        };
+
+        const template = sceneTemplates[angleId];
+        if (template) {
+            return `[SCENE DIRECTIVE — ${angleId.toUpperCase()}]\n${template}`;
+        }
+
+        // Fallback: build from angle description
+        return `[SCENE DIRECTIVE — ${angleId.toUpperCase()}]
+Scene for "${angleLabel}" angle: ${angleDescription}
+Show ${productName} prominently. Use brand colors (primary: ${brandPrimary}). Professional commercial photography.`;
+    }
+
+    /**
+     * Builds the negative prompt dynamically from playbook data.
+     * Combines standard anti-hallucination rules with product-specific constraints.
+     */
+    private buildNegativePrompt(playbook: BrandPlaybook): string {
+        const negativeTraits = playbook.product_identity?.negative_traits || [];
+        const complianceRules = playbook.compliance?.rules || [];
+
+        const productNegatives = negativeTraits
+            .map(t => `- ${t}`)
+            .join('\n');
+
+        const complianceNegatives = complianceRules
+            .map(r => `- ${r}`)
+            .join('\n');
+
+        return `[NEGATIVE PROMPT — MUST AVOID]
+DO NOT generate any of the following:
+- Extra fingers, extra limbs, distorted hands, mutated body parts
+- Text, watermarks, logos, or written words embedded in the image
+${productNegatives}
+- Blurry, low-resolution, or pixelated output
+- Overly saturated or neon colors that clash with the brand palette
+- Stock photo watermarks or grid overlays
+- Multiple copies of the same product in one frame (unless explicitly requested)
+- Unrealistic body proportions or uncanny valley faces
+- Cluttered, messy compositions with too many visual elements
+- Dark, gloomy, or depressing atmospheres (unless the "problem" side of a comparison)
+${complianceNegatives ? `\nCOMPLIANCE RESTRICTIONS:\n${complianceNegatives}` : ''}`;
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // GEMINI TEXT GENERATION (Ad Copy)
     // ═══════════════════════════════════════════════════════════
 
     private async callGeminiForAdCopy(userPrompt: string): Promise<AdCopyResult> {
-        this.logger.log(`📤 Sending prompt to Gemini for ad copy generation...`);
+        this.logger.log(`Sending prompt to Gemini for ad copy generation...`);
 
         const fullPrompt = `${AD_GENERATION_SYSTEM_PROMPT}
 
 ${userPrompt}`;
 
         try {
-            // Use Gemini's text generation via the internal analyzeDAReference-style call
-            // We'll call the generateContent directly for text-only response
             const client = (this.geminiService as any).getClient();
 
             const response = await client.models.generateContent({
-                model: 'gemini-2.0-flash', // Use fast text model
+                model: 'gemini-2.0-flash',
                 contents: fullPrompt,
             });
 
@@ -587,12 +583,12 @@ ${userPrompt}`;
                 }
             }
 
-            this.logger.log(`📥 Gemini response received (${textResponse.length} chars)`);
+            this.logger.log(`Gemini response received (${textResponse.length} chars)`);
 
             return this.parseAndValidateAdCopy(textResponse);
 
         } catch (error) {
-            this.logger.error(`❌ Gemini API call failed: ${error instanceof Error ? error.message : String(error)}`);
+            this.logger.error(`Gemini API call failed: ${error instanceof Error ? error.message : String(error)}`);
             throw error;
         }
     }
@@ -602,7 +598,6 @@ ${userPrompt}`;
     // ═══════════════════════════════════════════════════════════
 
     private parseAndValidateAdCopy(responseText: string): AdCopyResult {
-        // Strip markdown code fences if wrapped
         let cleaned = responseText.trim();
         if (cleaned.startsWith('```json')) {
             cleaned = cleaned.slice(7);
@@ -618,7 +613,6 @@ ${userPrompt}`;
         try {
             parsed = JSON.parse(cleaned);
         } catch {
-            // Try to extract JSON from text
             const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 try {
@@ -633,7 +627,6 @@ ${userPrompt}`;
             }
         }
 
-        // Validate required keys
         if (!parsed.headline || !parsed.subheadline || !parsed.cta || !parsed.image_prompt) {
             this.logger.error('Missing required keys in AI response: headline, subheadline, cta, or image_prompt');
             throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
@@ -648,58 +641,69 @@ ${userPrompt}`;
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GUARDED IMAGE PROMPT BUILDER (5-Layer Guardrails)
+    // GUARDED IMAGE PROMPT BUILDER (Dynamic 5-Layer Guardrails)
     // ═══════════════════════════════════════════════════════════
 
     /**
-     * Wraps the AI-generated image_prompt with strict guardrail layers
-     * before sending to Gemini image generation.
-     *
-     * Pipeline: AI text → raw image_prompt → buildGuardedImagePrompt() → Gemini Image Gen
-     *
-     * @param rawImagePrompt - The AI-generated image prompt from ad copy
-     * @param angleId - The marketing angle ID for scene-specific logic
-     * @returns Fully guarded image prompt string
+     * Wraps the AI-generated image_prompt with dynamically-built guardrail layers.
+     * All layers are constructed from the Brand Playbook JSON — no hardcoded product content.
      */
-    private buildGuardedImagePrompt(rawImagePrompt: string, angleId: string): string {
-        // Layer 4: Get angle-specific scene description
-        const sceneDirective = ANGLE_SCENE_MAP[angleId] || '';
+    private buildGuardedImagePrompt(
+        rawImagePrompt: string,
+        angleId: string,
+        angle: { id: string; label: string; description: string },
+        playbook: BrandPlaybook,
+    ): string {
+        // Layer 1: Dynamic Product Lock from playbook.product_identity
+        const productLock = this.buildProductLock(playbook);
+
+        // Layer 2: Dynamic Persona Lock from playbook.target_audience
+        const personaLock = this.buildPersonaLock(playbook);
+
+        // Layer 3: Static Readability Lock (product-agnostic)
+        // Layer 4: Dynamic Scene Directive from angle + playbook
+        const sceneDirective = this.buildSceneDirective(
+            angleId, angle.label, angle.description, playbook,
+        );
+
+        // Layer 5: Dynamic Negative Prompt from playbook constraints
+        const negativePrompt = this.buildNegativePrompt(playbook);
 
         const guardedPrompt = `You are generating a photorealistic advertisement image. Follow ALL rules below with absolute precision.
 
-${PRODUCT_LOCK}
+${productLock}
 
-${PERSONA_LOCK}
+${personaLock}
 
 ${READABILITY_LOCK}
 
-${sceneDirective ? `[SCENE DIRECTIVE — ${angleId.toUpperCase()}]\n${sceneDirective}` : ''}
+${sceneDirective}
 
 [CREATIVE DIRECTION FROM AI COPYWRITER]
 ${rawImagePrompt}
 
-${NEGATIVE_PROMPT}
+${negativePrompt}
 
 FINAL INSTRUCTION: Generate a single, high-quality, photorealistic advertisement image that follows EVERY guardrail above. The product MUST match the Product Lock description exactly. If a human model is shown, follow the Persona Lock exactly. Ensure text overlay zones have proper contrast per the Readability Lock.`;
 
-        this.logger.log(`🛡️ Guarded image prompt built (${guardedPrompt.length} chars)`);
-        this.logger.log(`   📌 Layers applied: Product Lock, Persona Lock, Readability Lock, Scene (${angleId}), Negative Prompt`);
+        this.logger.log(`Guarded image prompt built (${guardedPrompt.length} chars)`);
+        this.logger.log(`   Layers applied: Product Lock, Persona Lock, Readability Lock, Scene (${angleId}), Negative Prompt`);
 
         return guardedPrompt;
     }
 
     // ═══════════════════════════════════════════════════════════
-    // PROMPT BUILDER
+    // PROMPT BUILDER (JSON-driven, no hardcoded product content)
     // ═══════════════════════════════════════════════════════════
 
     private buildUserPrompt(
         brandName: string,
-        playbook: any,
+        playbook: BrandPlaybook,
         conceptAnalysis: any,
         angle: { id: string; label: string; description: string },
         format: { id: string; label: string; ratio: string; dimensions: string },
-        product: ProductData,
     ): string {
+        const pi = playbook.product_identity!;
         const zones = conceptAnalysis?.layout?.zones || [];
         const zonesJson = JSON.stringify(zones, null, 2);
 
@@ -710,7 +714,7 @@ FINAL INSTRUCTION: Generate a single, high-quality, photorealistic advertisement
             : conceptAnalysis?.visual_style?.background_hex || 'N/A';
         const overlayInfo = conceptAnalysis?.visual_style?.overlay || 'none';
 
-        // Content pattern info (from new Visual DNA schema)
+        // Content pattern info (from Visual DNA schema)
         const contentPattern = conceptAnalysis?.content_pattern;
         const contentPatternSection = contentPattern
             ? `\n=== CONTENT PATTERN (from ad analysis) ===
@@ -718,6 +722,28 @@ FINAL INSTRUCTION: Generate a single, high-quality, photorealistic advertisement
 - Narrative Structure: ${contentPattern.narrative_structure || 'N/A'}
 - CTA Style: ${contentPattern.cta_style || 'N/A'}
 - Requires Product Image: ${contentPattern.requires_product_image ? 'Yes' : 'No'}`
+            : '';
+
+        // Target audience section
+        const ta = playbook.target_audience;
+        const audienceSection = ta
+            ? `\n=== TARGET AUDIENCE ===
+- Gender: ${ta.gender || 'All'}
+- Age Range: ${ta.age_range || '25-54'}
+- Personas: ${ta.personas?.join(', ') || 'N/A'}`
+            : '';
+
+        // Compliance section
+        const complianceSection = playbook.compliance?.rules?.length
+            ? `\n=== COMPLIANCE RULES ===
+${playbook.compliance.rules.map(r => `- ${r}`).join('\n')}`
+            : '';
+
+        // USP section
+        const uspSection = playbook.usp_offers
+            ? `\n=== USP & OFFERS ===
+- Key Benefits: ${playbook.usp_offers.key_benefits?.join(', ') || 'N/A'}
+- Current Offer: ${playbook.usp_offers.current_offer || 'N/A'}`
             : '';
 
         return `You are a professional copywriter for the brand "${brandName}".
@@ -749,13 +775,15 @@ ${contentPatternSection}
 - Format: ${format.label} (${format.ratio}, ${format.dimensions})
 
 === PRODUCT INFO ===
-- Product Name: ${product.product_name}
-- Colors: ${JSON.stringify(product.colors)}
-- Key Features: ${product.key_features.join(', ')}
-- Visual Description: ${product.visual_description}
+- Product: ${pi.product_name} (${pi.product_type})
+- Key Features: ${pi.key_features.join(', ')}
+- Visual Description: ${pi.visual_description}
+${audienceSection}
+${complianceSection}
+${uspSection}
 
 === YOUR TASK ===
-Generate ad copy for the "${product.product_name}" using the "${angle.label}" marketing angle.
+Generate ad copy for "${pi.product_name}" using the "${angle.label}" marketing angle.
 The ad must follow the layout structure zones above and match the brand's tone of voice.
 
 IMPORTANT — image_prompt rules:

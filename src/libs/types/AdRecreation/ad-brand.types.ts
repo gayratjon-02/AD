@@ -9,8 +9,10 @@
 // ═══════════════════════════════════════════════════════════
 
 /**
- * Brand Playbook - Visual identity guidelines extracted by Claude from PDF
- * This is the exact schema enforced on Claude's JSON output.
+ * Brand Playbook - Visual identity + product identity extracted by Claude
+ * This is the canonical schema for all brand analysis outputs (PDF + text).
+ * The first 4 fields (colors, fonts, tone_of_voice, logo_rules) are required.
+ * The remaining fields are optional for backward compatibility with existing DB rows.
  */
 export interface BrandPlaybook {
     colors: {
@@ -32,6 +34,37 @@ export interface BrandPlaybook {
     logo_rules: {
         clear_space: string;
         forbidden_usage: string[];
+    };
+
+    // Product identity — used to build dynamic PRODUCT_LOCK guardrail
+    product_identity?: {
+        product_name: string;
+        product_type: string;
+        visual_description: string;
+        key_features: string[];
+        colors: Record<string, string>;
+        negative_traits: string[];
+    };
+
+    // Target audience — used to build dynamic PERSONA_LOCK guardrail
+    target_audience?: {
+        gender: string;
+        age_range: string;
+        body_type?: string;
+        clothing_style?: string;
+        personas: string[];
+    };
+
+    // Compliance constraints — injected into negative prompt
+    compliance?: {
+        region: string;
+        rules: string[];
+    };
+
+    // USP and offers — provided to AI copywriter for ad copy
+    usp_offers?: {
+        key_benefits: string[];
+        current_offer?: string;
     };
 }
 

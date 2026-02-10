@@ -87,6 +87,7 @@ export enum AdGenerationMessage {
     INVALID_MARKETING_ANGLE = 'Invalid marketing angle ID',
     INVALID_AD_FORMAT = 'Invalid ad format ID',
     BRAND_PLAYBOOK_REQUIRED = 'Brand must have a brand playbook before generating ads',
+    BRAND_PRODUCT_IDENTITY_REQUIRED = 'Brand playbook must include product_identity. Please re-analyze or update the brand playbook.',
 
     // AI Pipeline
     AI_GENERATION_FAILED = 'AI failed to generate ad copy',

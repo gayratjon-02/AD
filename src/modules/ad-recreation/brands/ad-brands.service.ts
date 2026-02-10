@@ -25,15 +25,16 @@ import { AdBrandMessage } from '../../../libs/messages';
 // PROMPT CONSTANTS
 // ═══════════════════════════════════════════════════════════
 
-const BRAND_ANALYSIS_SYSTEM_PROMPT = `You are a Senior Brand Strategist with 15+ years of experience extracting visual identity systems from brand guideline documents.
+const BRAND_ANALYSIS_SYSTEM_PROMPT = `You are a Senior Brand Strategist with 15+ years of experience extracting visual identity systems and product profiles from brand guideline documents.
 
-Your job: Analyze the attached Brand Guidelines PDF and extract strict, structured visual identity rules.
+Your job: Analyze the attached Brand Guidelines PDF and extract strict, structured data covering visual identity, product identity, target audience, and compliance.
 
 RULES:
 - Return ONLY valid JSON. No markdown, no explanation, no conversational text.
-- If a value is not found in the PDF, make your best professional inference based on the visual design shown.
+- If a value is not found in the PDF, make your best professional inference based on the visual design and content shown.
 - All color values must be valid hex codes (e.g., "#1E3A5F").
-- Font names should be as specific as possible (e.g., "Montserrat Bold", not just "Montserrat").`;
+- Font names should be as specific as possible (e.g., "Montserrat Bold", not just "Montserrat").
+- For product_identity: describe the PRIMARY product shown or referenced in the document. Be specific about its physical appearance for image generation.`;
 
 const BRAND_ANALYSIS_USER_PROMPT = `Analyze this Brand Guidelines PDF and extract the following structured data.
 
@@ -59,6 +60,29 @@ Return EXACTLY this JSON structure (no extra keys, no missing keys):
   "logo_rules": {
     "clear_space": "e.g., Minimum 16px around logo",
     "forbidden_usage": ["don't rotate", "don't change color", "don't place on busy backgrounds"]
+  },
+  "product_identity": {
+    "product_name": "The primary product name as stated in the document",
+    "product_type": "Category (e.g., Foldable Pilates Reformer, Running Shoe, SaaS Platform)",
+    "visual_description": "A detailed paragraph describing the product's physical appearance for image generation. Include shape, size, material, texture, and distinguishing visual features.",
+    "key_features": ["feature1", "feature2", "feature3"],
+    "colors": {"part_name": "#HEX", "another_part": "#HEX"},
+    "negative_traits": ["What the product is NOT (e.g., NOT a traditional X)", "Does NOT have Y"]
+  },
+  "target_audience": {
+    "gender": "Female / Male / All",
+    "age_range": "e.g., 25-45",
+    "body_type": "For human model selection (e.g., Fit and athletic, Average build)",
+    "clothing_style": "For model wardrobe (e.g., Premium activewear, Business casual)",
+    "personas": ["Persona 1 description", "Persona 2 description"]
+  },
+  "compliance": {
+    "region": "UK / USA / Global",
+    "rules": ["Regulatory constraint 1", "Regulatory constraint 2"]
+  },
+  "usp_offers": {
+    "key_benefits": ["benefit1", "benefit2"],
+    "current_offer": "e.g., 50% off, Free Shipping, or null if not found"
   }
 }
 
@@ -347,6 +371,49 @@ export class AdBrandsService {
             parsed.logo_rules.forbidden_usage = [];
         }
 
+        // Validate product_identity (optional but normalize if present)
+        if (parsed.product_identity) {
+            if (!parsed.product_identity.product_name) {
+                parsed.product_identity.product_name = '';
+            }
+            if (!parsed.product_identity.product_type) {
+                parsed.product_identity.product_type = '';
+            }
+            if (!parsed.product_identity.visual_description) {
+                parsed.product_identity.visual_description = '';
+            }
+            if (!Array.isArray(parsed.product_identity.key_features)) {
+                parsed.product_identity.key_features = [];
+            }
+            if (!parsed.product_identity.colors || typeof parsed.product_identity.colors !== 'object') {
+                parsed.product_identity.colors = {};
+            }
+            if (!Array.isArray(parsed.product_identity.negative_traits)) {
+                parsed.product_identity.negative_traits = [];
+            }
+        }
+
+        // Validate target_audience (optional)
+        if (parsed.target_audience) {
+            if (!Array.isArray(parsed.target_audience.personas)) {
+                parsed.target_audience.personas = [];
+            }
+        }
+
+        // Validate compliance (optional)
+        if (parsed.compliance) {
+            if (!Array.isArray(parsed.compliance.rules)) {
+                parsed.compliance.rules = [];
+            }
+        }
+
+        // Validate usp_offers (optional)
+        if (parsed.usp_offers) {
+            if (!Array.isArray(parsed.usp_offers.key_benefits)) {
+                parsed.usp_offers.key_benefits = [];
+            }
+        }
+
         return parsed as BrandPlaybook;
     }
 
@@ -597,51 +664,60 @@ Objective: Extract specific brand details to ensure future AI-generated ads are 
 Strict JSON Output Schema: You must return ONLY a valid JSON object matching this exact structure. Do not include markdown formatting (like \`\`\`json).
 
 {
-  "brand_name": "String",
-  "website": "String",
-  "industry": "String (e.g., Fitness, SaaS, E-commerce)",
-  "brand_colors": {
-    "primary": "Hex Code (e.g., #000000)",
-    "secondary": "Hex Code",
-    "background": "Hex Code",
-    "accent": "Hex Code (optional, null if not found)",
-    "text_dark": "Hex Code",
-    "text_light": "Hex Code"
+  "colors": {
+    "primary": "#HEXCODE",
+    "secondary": "#HEXCODE",
+    "accent": "#HEXCODE",
+    "palette": ["#HEX1", "#HEX2", "#HEX3"]
   },
-  "typography": {
-    "headline": "Font Name (e.g., Playfair Display)",
-    "body": "Font Name (e.g., Inter)"
+  "fonts": {
+    "heading": "Font Name (e.g., Montserrat Bold)",
+    "body": "Font Name (e.g., Open Sans Regular)",
+    "usage_rules": "Summary of when/how to use each font"
   },
-  "tone_of_voice": "String (List 3-5 key adjectives, e.g., Warm, Empowering, Relatable)",
+  "tone_of_voice": {
+    "style": "e.g., Professional, Playful, Luxury",
+    "keywords": ["word1", "word2", "word3"],
+    "donts": ["avoid this", "never say that"]
+  },
+  "logo_rules": {
+    "clear_space": "e.g., Minimum 16px around logo",
+    "forbidden_usage": ["don't rotate", "don't change color"]
+  },
+  "product_identity": {
+    "product_name": "The primary product name",
+    "product_type": "Category (e.g., Foldable Pilates Reformer, Running Shoe)",
+    "visual_description": "Detailed paragraph describing the product's physical appearance for image generation",
+    "key_features": ["feature1", "feature2", "feature3"],
+    "colors": {"part_name": "#HEX"},
+    "negative_traits": ["What the product is NOT"]
+  },
   "target_audience": {
-    "gender": "String (e.g., Female, Male, All)",
-    "age_range": "String (e.g., 25-45)",
-    "personas": [
-      "String (e.g., Busy mums)",
-      "String (e.g., Office workers with back pain)"
-    ]
+    "gender": "Female / Male / All",
+    "age_range": "e.g., 25-45",
+    "body_type": "For model selection (e.g., Fit and athletic)",
+    "clothing_style": "For model wardrobe (e.g., Premium activewear)",
+    "personas": ["Persona 1", "Persona 2"]
   },
   "compliance": {
-    "region": "String (e.g., UK, USA, Global)",
-    "rules": [
-      "String (e.g., No weight loss claims)",
-      "String (e.g., No before/after images)"
-    ]
+    "region": "UK / USA / Global",
+    "rules": ["Constraint 1", "Constraint 2"]
   },
   "usp_offers": {
-    "key_benefits": ["String", "String"],
-    "current_offer": "String (e.g., 50% off, Free Shipping)"
+    "key_benefits": ["benefit1", "benefit2"],
+    "current_offer": "e.g., 50% off, or null"
   }
 }
 
 Instructions:
 
-1. Analyze Deeply: Read the input text thoroughly. Look for explicit mentions of colors, fonts, and rules.
+1. Analyze Deeply: Read the input text thoroughly. Look for explicit mentions of colors, fonts, product details, and rules.
 
 2. Infer if Necessary:
    - If Colors are named (e.g., "Lavender") but no Hex is provided, provide a standard Hex code for that color (e.g., #E6E6FA).
-   - If Compliance is not explicitly stated, infer standard rules based on the industry (e.g., for "Supplements" or "Fitness", add "No unrealistic claims").
+   - If Compliance is not explicitly stated, infer standard rules based on the industry.
    - If Personas are described in a paragraph, extract them into the list.
+   - For product_identity: describe the PRIMARY product. Be specific about physical appearance for image generation.
 
 3. Formatting: Ensure all Hex codes start with #. Ensure specific fields like compliance and personas are NEVER empty arrays if context allows inference.
 
@@ -673,16 +749,10 @@ ${textContent}`;
                 throw new Error('No text response from Claude');
             }
 
-            // Parse and return JSON
-            let cleaned = textBlock.text.trim();
-            if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
-            if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
-            if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
-            cleaned = cleaned.trim();
-
-            const parsed = JSON.parse(cleaned);
+            // Parse and validate through the same pipeline as PDF analysis
+            const playbook = this.parseAndValidatePlaybook(textBlock.text);
             this.logger.log(`Text analysis complete for ${brandName}`);
-            return parsed;
+            return playbook;
         } catch (error) {
             this.logger.error(`Text analysis failed: ${error.message}`);
             // Return default playbook on error
@@ -695,36 +765,39 @@ ${textContent}`;
     // Matches the comprehensive schema with all required fields
     // ═══════════════════════════════════════════════════════════
 
-    private generateDefaultPlaybook(brandName: string, website: string): any {
+    private generateDefaultPlaybook(brandName: string, website: string): BrandPlaybook {
         return {
-            brand_name: brandName,
-            website: website,
-            industry: 'General',
-            brand_colors: {
+            colors: {
                 primary: '#7c4dff',
                 secondary: '#9575cd',
-                background: '#f5f5f5',
                 accent: '#ff6b6b',
-                text_dark: '#1a1a1e',
-                text_light: '#ffffff',
+                palette: ['#7c4dff', '#9575cd', '#ff6b6b'],
             },
-            typography: {
-                headline: 'Inter',
+            fonts: {
+                heading: 'Inter',
                 body: 'Inter',
+                usage_rules: '',
             },
-            tone_of_voice: 'Professional, Friendly, Trustworthy',
+            tone_of_voice: {
+                style: 'Professional',
+                keywords: [],
+                donts: [],
+            },
+            logo_rules: {
+                clear_space: '',
+                forbidden_usage: [],
+            },
             target_audience: {
                 gender: 'All',
                 age_range: '25-54',
-                personas: ['General consumers', 'Quality-conscious buyers'],
+                personas: [],
             },
             compliance: {
                 region: 'Global',
-                rules: ['No misleading claims', 'Honest advertising'],
+                rules: [],
             },
             usp_offers: {
-                key_benefits: ['Quality product', 'Great value'],
-                current_offer: 'Shop now',
+                key_benefits: [],
             },
         };
     }
