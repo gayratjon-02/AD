@@ -50,6 +50,8 @@ export enum AdConceptMessage {
     // Success
     CONCEPT_ANALYZED = 'Ad concept analyzed successfully',
     CONCEPT_FOUND = 'Ad concept retrieved successfully',
+    CONCEPT_UPDATED = 'Ad concept updated successfully',
+    CONCEPT_DELETED = 'Ad concept deleted successfully',
 
     // Not Found
     CONCEPT_NOT_FOUND = 'Ad Concept not found',

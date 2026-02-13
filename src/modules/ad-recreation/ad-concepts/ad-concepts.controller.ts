@@ -5,6 +5,7 @@ import {
     Patch,
     Body,
     Param,
+    Query,
     UseGuards,
     UseInterceptors,
     UploadedFile,
@@ -21,7 +22,7 @@ import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { User } from '../../../database/entities/Product-Visuals/user.entity';
 import { AdConcept } from '../../../database/entities/Ad-Recreation/ad-concept.entity';
-import { AnalyzeConceptResponseDto } from '../../../libs/dto/AdRecreation/ad-concepts';
+import { AnalyzeConceptResponseDto, UpdateConceptDto } from '../../../libs/dto/AdRecreation/ad-concepts';
 import { AdConceptMessage } from '../../../libs/messages';
 
 /**
@@ -31,7 +32,7 @@ import { AdConceptMessage } from '../../../libs/messages';
  * - POST /concepts/analyze   → Upload image and analyze with Claude Vision
  * - GET  /concepts/:id       → Get concept by ID
  * - GET  /concepts           → List saved concepts (filterable by tags)
- * - PUT  /concepts/:id       → Edit concept (name, tags, JSON)
+ * - PATCH /concepts/:id      → Edit concept (name, notes, tags, analysis_json)
  */
 @Controller('concepts')
 @UseGuards(JwtAuthGuard)
@@ -41,7 +42,7 @@ export class AdConceptsController {
     constructor(private readonly adConceptsService: AdConceptsService) { }
 
     // ═══════════════════════════════════════════════════════════
-    // POST /ad-concepts/analyze - Upload & Analyze with Claude Vision
+    // POST /concepts/analyze - Upload & Analyze with Claude Vision
     // ═══════════════════════════════════════════════════════════
 
     @Post('analyze')
@@ -93,7 +94,7 @@ export class AdConceptsController {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GET /ad-concepts/:id - Get Concept by ID
+    // GET /concepts/:id - Get Concept by ID
     // ═══════════════════════════════════════════════════════════
 
     @Get(':id')
@@ -110,48 +111,53 @@ export class AdConceptsController {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GET /ad-concepts - Get All Concepts
+    // GET /concepts - List All Concepts (filterable by tags)
+    // Usage: GET /concepts?tags=notes_app,editorial
     // ═══════════════════════════════════════════════════════════
 
     @Get()
     async getAllConcepts(
         @CurrentUser() user: User,
-    ): Promise<{ success: boolean; concepts: AdConcept[] }> {
-        const concepts = await this.adConceptsService.findAll(user.id);
+        @Query('tags') tagsQuery?: string,
+    ): Promise<{ success: boolean; concepts: AdConcept[]; total: number }> {
+        // Parse comma-separated tags from query string
+        const tags = tagsQuery
+            ? tagsQuery.split(',').map(t => t.trim().toLowerCase()).filter(Boolean)
+            : undefined;
+
+        const concepts = await this.adConceptsService.findAll(user.id, tags);
 
         return {
             success: true,
             concepts,
+            total: concepts.length,
         };
     }
 
     // ═══════════════════════════════════════════════════════════
-    // PATCH /ad-concepts/:id - Update Concept Analysis JSON
+    // PATCH /concepts/:id - Update Concept (name, notes, tags, analysis_json)
     // ═══════════════════════════════════════════════════════════
 
     @Patch(':id')
     async updateConcept(
         @Param('id', ParseUUIDPipe) id: string,
-        @Body() body: { analysis_json: object },
+        @Body() body: UpdateConceptDto,
         @CurrentUser() user: User,
     ): Promise<{ success: boolean; message: string; concept: AdConcept }> {
-        if (!body.analysis_json || typeof body.analysis_json !== 'object') {
-            throw new BadRequestException('analysis_json must be a valid object');
-        }
+        this.logger.log(`Updating concept ${id}: ${JSON.stringify(Object.keys(body))}`);
 
-        this.logger.log(`Updating concept ${id} analysis_json`);
-
-        const concept = await this.adConceptsService.updateAnalysis(
+        const concept = await this.adConceptsService.updateConcept(
             id,
             user.id,
-            body.analysis_json,
+            body,
         );
 
         return {
             success: true,
-            message: 'Ad concept updated successfully',
+            message: AdConceptMessage.CONCEPT_UPDATED,
             concept,
         };
     }
 }
+
 

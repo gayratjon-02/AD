@@ -225,6 +225,9 @@ export class GenerationsService {
         const concept = await this.adConceptsService.findOne(dto.concept_id, userId);
         this.logger.log(`Concept fetched: "${concept.name || 'Unnamed'}" (ID: ${concept.id})`);
 
+        // Increment concept use_count (P0: track concept popularity)
+        await this.adConceptsService.incrementUseCount(concept.id);
+
         // Step 3: Validate brand playbook (FAIL-FAST)
         this.logger.log(`[STEP 3] Validating brand playbook...`);
         const playbook = brand.brand_playbook;

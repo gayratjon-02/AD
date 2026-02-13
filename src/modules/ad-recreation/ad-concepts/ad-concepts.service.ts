@@ -74,6 +74,8 @@ STEP 3: Map each visual zone to ABSOLUTE PIXEL y_start and y_end values.
 Return ONLY this JSON structure:
 
 {
+  "concept_name": "string — short descriptive name for this ad concept (e.g. 'Split Screen Benefits Ad', 'Notes App Testimonial', 'Product Hero Showcase')",
+  "concept_tags": ["string — 3-6 descriptive tags for filtering (e.g. 'notes_app', 'split_screen', 'editorial', 'dark_mode', 'testimonial', 'product_hero')"],
   "layout": {
     "type": "split_screen | centered_hero | notes_app | tweet_style | text_overlay | product_showcase",
     "format": "9:16 | 1:1 | 4:5 | 16:9",
@@ -105,6 +107,8 @@ Return ONLY this JSON structure:
 }
 
 REMINDER: y_start and y_end are ABSOLUTE PIXEL values (integers), NOT percentages.
+concept_name must be a short, descriptive title (3-6 words).
+concept_tags must be lowercase, underscore-separated, 3-6 tags.
 Return ONLY the JSON. No markdown. No explanation.`;
 
 // ═══════════════════════════════════════════════════════════
@@ -158,10 +162,18 @@ export class AdConceptsService {
         // Real Claude Vision analysis
         const analysisResult = await this.analyzeImageWithClaude(filePath);
 
+        // Auto-populate name and tags from Claude's analysis
+        const autoName = analysisResult.concept_name || null;
+        const autoTags = Array.isArray(analysisResult.concept_tags) ? analysisResult.concept_tags : [];
+
+        this.logger.log(`Auto-generated name: "${autoName}", tags: [${autoTags.join(', ')}]`);
+
         const concept = this.adConceptsRepository.create({
             user_id: userId,
             original_image_url: imageUrl,
             analysis_json: analysisResult,
+            name: autoName,
+            tags: autoTags,
         });
 
         const saved = await this.adConceptsRepository.save(concept);
@@ -191,31 +203,61 @@ export class AdConceptsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GET ALL CONCEPTS FOR USER
+    // GET ALL CONCEPTS FOR USER (with optional tag filtering)
     // ═══════════════════════════════════════════════════════════
 
-    async findAll(userId: string): Promise<AdConcept[]> {
-        return this.adConceptsRepository.find({
-            where: { user_id: userId },
-            order: { created_at: 'DESC' },
-        });
+    async findAll(userId: string, tags?: string[]): Promise<AdConcept[]> {
+        const qb = this.adConceptsRepository
+            .createQueryBuilder('concept')
+            .where('concept.user_id = :userId', { userId });
+
+        // Filter by tags using JSONB overlap operator (?|)
+        if (tags && tags.length > 0) {
+            qb.andWhere('concept.tags ::jsonb ?| ARRAY[:...tags]', { tags });
+        }
+
+        qb.orderBy('concept.created_at', 'DESC');
+
+        return qb.getMany();
     }
 
     // ═══════════════════════════════════════════════════════════
-    // UPDATE CONCEPT ANALYSIS JSON
+    // UPDATE CONCEPT (name, notes, tags, analysis_json)
     // ═══════════════════════════════════════════════════════════
 
-    async updateAnalysis(id: string, userId: string, analysisJson: object): Promise<AdConcept> {
+    async updateConcept(
+        id: string,
+        userId: string,
+        updates: { name?: string; notes?: string; tags?: string[]; analysis_json?: object },
+    ): Promise<AdConcept> {
         // First verify ownership
         const concept = await this.findOne(id, userId);
 
-        // Update the analysis_json
-        concept.analysis_json = analysisJson as any;
+        // Apply only provided fields
+        if (updates.name !== undefined) concept.name = updates.name;
+        if (updates.notes !== undefined) concept.notes = updates.notes;
+        if (updates.tags !== undefined) concept.tags = updates.tags;
+        if (updates.analysis_json !== undefined) concept.analysis_json = updates.analysis_json as any;
 
         const saved = await this.adConceptsRepository.save(concept);
-        this.logger.log(`Updated Ad Concept analysis_json: ${id}`);
+        this.logger.log(`Updated Ad Concept: ${id} (fields: ${Object.keys(updates).join(', ')})`);
 
         return saved;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // INCREMENT USE COUNT (called when concept is used in generation)
+    // ═══════════════════════════════════════════════════════════
+
+    async incrementUseCount(id: string): Promise<void> {
+        await this.adConceptsRepository
+            .createQueryBuilder()
+            .update(AdConcept)
+            .set({ use_count: () => 'use_count + 1' })
+            .where('id = :id', { id })
+            .execute();
+
+        this.logger.log(`Incremented use_count for concept: ${id}`);
     }
 
 
@@ -395,6 +437,38 @@ export class AdConceptsService {
         if (!parsed.content_pattern.cta_style) parsed.content_pattern.cta_style = 'pill_button';
         if (parsed.content_pattern.requires_product_image === undefined) parsed.content_pattern.requires_product_image = false;
 
+        // Validate concept_name (auto-generated by Claude)
+        if (parsed.concept_name && typeof parsed.concept_name !== 'string') {
+            parsed.concept_name = String(parsed.concept_name);
+        }
+
+        // Validate concept_tags (auto-generated by Claude)
+        if (parsed.concept_tags) {
+            if (!Array.isArray(parsed.concept_tags)) {
+                parsed.concept_tags = [];
+            } else {
+                // Ensure all tags are lowercase strings with underscores
+                parsed.concept_tags = parsed.concept_tags
+                    .filter((t: any) => typeof t === 'string' && t.trim().length > 0)
+                    .map((t: string) => t.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''));
+            }
+        } else {
+            // Auto-generate tags from layout type and mood if Claude didn't provide them
+            const autoTags: string[] = [];
+            if (parsed.layout?.type) autoTags.push(parsed.layout.type);
+            if (parsed.visual_style?.mood) autoTags.push(parsed.visual_style.mood);
+            if (parsed.content_pattern?.hook_type) autoTags.push(parsed.content_pattern.hook_type);
+            if (parsed.layout?.format) autoTags.push(parsed.layout.format.replace(':', 'x'));
+            parsed.concept_tags = autoTags;
+        }
+
+        // Auto-generate concept_name if Claude didn't provide one
+        if (!parsed.concept_name) {
+            const layoutLabel = (parsed.layout?.type || 'unknown').replace(/_/g, ' ');
+            const moodLabel = parsed.visual_style?.mood || '';
+            parsed.concept_name = `${this.capitalizeWords(layoutLabel)} ${this.capitalizeWords(moodLabel)} Ad`.trim();
+        }
+
         // Clean up legacy flat fields
         delete parsed.visual_style.background_hex;
         delete parsed.visual_style.font_color_primary;
@@ -423,5 +497,13 @@ export class AdConceptsService {
         this.logger.log('Anthropic client initialized for concept analysis');
 
         return this.anthropicClient;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // STRING HELPERS
+    // ═══════════════════════════════════════════════════════════
+
+    private capitalizeWords(str: string): string {
+        return str.replace(/\b\w/g, (c) => c.toUpperCase());
     }
 }

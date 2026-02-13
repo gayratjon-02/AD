@@ -3,6 +3,7 @@ import {
     PrimaryGeneratedColumn,
     Column,
     CreateDateColumn,
+    UpdateDateColumn,
     ManyToOne,
     JoinColumn,
 } from 'typeorm';
@@ -44,13 +45,24 @@ export class AdConcept {
 
     // ─── Optional Metadata ───────────────────────────────────
     @Column({ type: 'varchar', length: 255, nullable: true })
-    name: string; // User-provided name for the concept
+    name: string; // Auto-generated or user-provided name
 
     @Column({ type: 'text', nullable: true })
     notes: string; // User notes
 
+    // ─── P0: Tags for Concept Library filtering ──────────────
+    @Column({ type: 'jsonb', default: () => "'[]'" })
+    tags: string[]; // e.g. ["notes_app", "storytelling", "split_screen"]
+
+    // ─── P0: Use count for tracking popularity ───────────────
+    @Column({ type: 'int', default: 0 })
+    use_count: number; // Incremented each time concept is used in a generation
+
     // ─── Timestamps ──────────────────────────────────────────
     @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     created_at: Date;
+
+    @UpdateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+    updated_at: Date;
 }
 
