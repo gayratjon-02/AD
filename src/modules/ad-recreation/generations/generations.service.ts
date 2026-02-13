@@ -698,159 +698,48 @@ If a human model appears in the image:
         angleLabel: string,
         angleDescription: string,
         playbook: BrandPlaybook,
+        angle?: import('../configurations/constants/marketing-angles').MarketingAngle,
     ): string {
         const productName = playbook.product_identity?.product_name || 'the product';
         const brandPrimary = playbook.colors?.primary || '#000000';
 
-        // Scene templates with dynamic product interpolation — each angle has
-        // specific LAYOUT, TEXT RENDERING, DESIGN ELEMENTS, and MOOD instructions
-        const sceneTemplates: Record<string, string> = {
-            problem_solution: `LAYOUT: Split composition — LEFT side shows the problem (no product), RIGHT side shows the solution with ${productName}.
-LEFT PANEL: Desaturated, slightly dark, uncomfortable scene representing the pain point. Muted grey/blue color grading.
-RIGHT PANEL: Bright, warm, inviting scene with ${productName} prominently featured as the hero solution. Saturated, warm tones.
-TEXT RENDERING: Render "The Problem" label on the left panel, "The Solution" label on the right panel. Headline should bridge the two panels.
-DESIGN ELEMENTS: Vertical divider or gradient transition between panels. Optional arrow pointing from problem to solution.
-MOOD: Dramatic contrast between the two halves — cold/warm, dark/bright.`,
+        // If we have the full MarketingAngle with narrative data, use it
+        if (angle?.narrative_arc) {
+            const arc = angle.narrative_arc;
+            const ctaOptions = angle.cta_options?.join(' | ') || 'Learn More';
+            const compliance = angle.compliance_notes || 'None';
+            const persona = angle.target_persona || 'general audience';
 
-            before_after: `LAYOUT: Split into TWO distinct panels — LEFT (or TOP) panel is "BEFORE", RIGHT (or BOTTOM) panel is "AFTER".
-LEFT/TOP PANEL ("BEFORE"): Show the state WITHOUT the product. Muted, desaturated, dull colors. No ${productName} visible. Render the text "BEFORE" as a bold label in the top-left corner of this panel.
-RIGHT/BOTTOM PANEL ("AFTER"): Show the transformed, improved state WITH ${productName} clearly visible. Vibrant, glowing, warm colors. Render the text "AFTER" as a bold label in the top-right corner of this panel.
-TEXT RENDERING: Render "BEFORE" and "AFTER" labels in bold uppercase sans-serif. Headline should reference transformation (e.g., "See the Difference", "The Transformation").
-DESIGN ELEMENTS: Clean vertical or diagonal divider between panels. Optional gradient transition. The contrast between panels must be DRAMATIC and immediately obvious.
-MOOD: Cold/dull on BEFORE side, warm/radiant on AFTER side.`,
+            return `[NARRATIVE ANGLE — ${angle.label.toUpperCase()}]
+CATEGORY: ${angle.category?.toUpperCase() || 'GENERAL'}
+TARGET PERSONA: ${persona}
+FUNNEL STAGE: ${angle.funnel_stage?.join(', ') || 'TOFU'}
 
-            social_proof: `LAYOUT: Product-centered with social proof elements surrounding it.
-SCENE: ${productName} featured in a warm, aspirational lifestyle setting.
-TEXT RENDERING: Render star ratings prominently. Render a short testimonial quote in quotation marks. Render review count (e.g., "2,500+ Happy Customers"). Headline should reference trust or popularity.
-DESIGN ELEMENTS: Star rating badge, quotation marks around testimonial, trust badges, optional customer count indicator. Use cards or rounded panels to frame testimonials.
-MOOD: Warm, trustworthy, inviting. Soft natural lighting.`,
+HOOK (Opening Line): "${angle.hook}"
 
-            myth_buster: `LAYOUT: Bold, editorial-style with a strong headline that debunks a myth.
-SCENE: ${productName} shown center-frame with strong directional lighting. Clean, modern background.
-TEXT RENDERING: Render the myth in strikethrough or crossed-out style. Then render the truth below it with a green checkmark. Headline should challenge a common belief.
-DESIGN ELEMENTS: Red X or strikethrough for the myth, green checkmark for the truth. Bold typography contrast between myth and truth.
-MOOD: Confident, authoritative. Strong directional studio lighting.`,
+NARRATIVE ARC — Use this story structure to guide the ad:
+- PROBLEM: ${arc.problem}
+- DISCOVERY: ${arc.discovery}
+- RESULT: ${arc.result}
+- PAYOFF: ${arc.payoff}
 
-            feature_highlight: `LAYOUT: Product hero shot with feature callout zones.
-SCENE: ${productName} as the central focus, shown at a 3/4 angle on a clean surface. Soft studio lighting.
-TEXT RENDERING: Render 3-4 feature callouts with lines or arrows pointing to specific parts of the product. Each callout should name a specific feature. Headline should spotlight the key differentiator.
-DESIGN ELEMENTS: Thin callout lines from product features to text labels. Clean rounded info badges. Subtle gradient background matching brand color (${brandPrimary}).
-MOOD: Premium product photography. Clean, aspirational, informative.`,
+The ad should follow this narrative flow: start with the PROBLEM the viewer relates to, then show the DISCOVERY of ${productName}, demonstrate the RESULT, and end with the emotional PAYOFF.
 
-            fomo: `LAYOUT: Dynamic, high-energy composition with urgency visual cues.
-SCENE: ${productName} in a premium setting with warm golden-hour lighting.
-TEXT RENDERING: Render urgency text like "LIMITED TIME OFFER" or "Only X Left" in bold red or orange. Render a countdown-style element. CTA button must feel URGENT. Headline should create scarcity or urgency.
-DESIGN ELEMENTS: Timer or countdown visual element, "Limited" badge, sale percentage badge. Optional: strikethrough original price with new price.
-MOOD: Urgent, energetic, high-contrast. Warm golden tones with red/orange accents.`,
+CTA OPTIONS (pick the best fit): ${ctaOptions}
+COMPLIANCE: ${compliance}
 
-            cost_savings: `LAYOUT: Value comparison with price emphasis.
-SCENE: ${productName} in an accessible, relatable home setting. Clean and approachable.
-TEXT RENDERING: Render a price comparison: show the expensive alternative price crossed out, then the product lower price highlighted. Render "Save X%" in a badge. Headline should emphasize value and savings.
-DESIGN ELEMENTS: Strikethrough price, savings badge, price comparison visual, "Best Value" tag.
-MOOD: Friendly, accessible, smart-shopper energy. Bright, clean lighting.`,
-
-            us_vs_them: `LAYOUT: Side-by-side comparison — LEFT shows "Them/Others", RIGHT shows "Us/${productName}".
-LEFT PANEL: Competitor or generic alternative shown in a sterile, cool-toned environment. Label it "Others" or "Them".
-RIGHT PANEL: ${productName} in a warm, inviting setting with natural lighting. Label it "Us" or the brand name.
-TEXT RENDERING: Render comparison labels "THEM" vs "US". Render feature comparison rows with X for competitor and checkmark for product. Headline should highlight the advantage.
-DESIGN ELEMENTS: Comparison table or checklist with X and checkmark markers. Clear visual preference for the product side. Vertical divider between sides.
-MOOD: Confident. Cool on competitor side, warm on product side.`,
-
-            storytelling: `LAYOUT: Cinematic, narrative-style composition with a story feel.
-SCENE: A person in a relatable daily setting naturally using ${productName}. The scene should feel like a frozen movie frame.
-TEXT RENDERING: Headline should be emotional and narrative. Subheadline tells the next chapter of the story. Body text reads like a personal story snippet.
-DESIGN ELEMENTS: Cinematic feel, story text in elegant serif or script font. Warm color palette. Optional subtle film grain texture.
-MOOD: Cinematic, warm, personal, intimate. Soft morning or golden-hour lighting.`,
-
-            minimalist: `LAYOUT: Ultra-clean, maximum negative space. Product centered.
-SCENE: ${productName} on a solid white, off-white, or light grey background. Zero clutter, zero props.
-TEXT RENDERING: Minimal text — brand name and ONE short headline only. Small, elegant font. CTA button subtle and refined. No bullet points — let the product speak.
-DESIGN ELEMENTS: Generous whitespace (at least 40% of frame is empty). Clean lines. No busy graphics. High-end catalogue aesthetic.
-MOOD: Calm, premium, refined. Even, soft studio lighting with no harsh shadows.`,
-
-            luxury: `LAYOUT: Aspirational, high-end composition with rich textures.
-SCENE: ${productName} in an upscale environment — marble surface, velvet, gold accents, elegant props. Premium materials visible.
-TEXT RENDERING: Headline in elegant serif or thin sans-serif font. Use gold, cream, or white text on dark backgrounds. CTA should feel exclusive. Subheadline whispers exclusivity.
-DESIGN ELEMENTS: Gold accents, thin elegant dividers, premium material textures. Subtle sparkle or light reflections.
-MOOD: Opulent, exclusive, sophisticated. Dramatic moody lighting with highlights on product.`,
-
-            educational: `LAYOUT: Instructional or infographic-style with clear information zones.
-SCENE: ${productName} shown from a clear, informative angle. Clean, well-lit studio.
-TEXT RENDERING: Render "Did You Know?" or educational headline. Render 3-4 informative facts or tips with numbered markers or icons. Each fact should teach something valuable.
-DESIGN ELEMENTS: Numbered list markers, info icons, callout boxes with rounded corners. Infographic-style layout with clear visual hierarchy.
-MOOD: Friendly, knowledgeable, approachable. Bright, even lighting. Clean color palette.`,
-
-            how_to: `LAYOUT: Step-by-step visual flow showing 3 stages of use.
-SCENE: ${productName} shown in progressive use stages. Clean background with consistent lighting.
-TEXT RENDERING: Render step numbers (1, 2, 3) with step titles. Each step has a brief instruction. Headline like "How To [achieve result] in 3 Easy Steps".
-DESIGN ELEMENTS: Numbered step circles or badges, directional arrows between steps, progress indicator. Each step in its own visual zone.
-MOOD: Helpful, organized, easy-to-follow. Bright, consistent studio lighting throughout.`,
-
-            benefit_stacking: `LAYOUT: Dynamic product showcase with multiple benefit zones.
-SCENE: ${productName} at center with benefit text zones radiating around it.
-TEXT RENDERING: Render 4-6 benefits as a checklist with checkmarks. Each benefit on its own line, bold and clear. Headline should promise multiple benefits.
-DESIGN ELEMENTS: Checkmark bullets, benefit cards or badges arranged around the product. Optional icons next to each benefit.
-MOOD: Energetic, abundant, value-packed. Bright, modern lighting with vibrant colors.`,
-
-            curiosity_gap: `LAYOUT: Intriguing, partially-revealed composition that creates visual curiosity.
-SCENE: ${productName} shown at an artistic angle — partially cropped, dramatically lit, creating mystery.
-TEXT RENDERING: Headline should tease without revealing fully. DO NOT give the full answer — leave the viewer wanting more. CTA like "Find Out Now" or "Discover the Secret".
-DESIGN ELEMENTS: Dramatic shadows, partial reveal, blurred background elements. Mystery and intrigue aesthetic.
-MOOD: Mysterious, intriguing, editorial. Moody, dramatic lighting with strong shadows.`,
-
-            expert_endorsement: `LAYOUT: Professional, authoritative composition with expert quote zone.
-SCENE: ${productName} in a professional or clinical-looking environment. Clean, credible setting.
-TEXT RENDERING: Render an expert quote in quotation marks with expert name and title. Render credibility badges like "Dermatologist Approved" or "Expert Recommended". Headline should reference authority.
-DESIGN ELEMENTS: Quotation marks, credential badges, authority text styling. Official and credible feel.
-MOOD: Trustworthy, professional, authoritative. Clean clinical lighting, neutral color palette.`,
-
-            user_generated: `LAYOUT: Authentic, casual composition that looks like real user content.
-SCENE: ${productName} in a real-looking, not-too-styled environment. Natural, candid setting.
-TEXT RENDERING: Headline in casual, friendly tone. Optional social media post frame elements. Quote from a real user in casual language. Star rating.
-DESIGN ELEMENTS: Phone-camera quality aesthetic, social media UI elements (heart icon, comment icon), casual style font for quotes. Authentic, not polished.
-MOOD: Natural, authentic, relatable. Natural daylight, slightly imperfect composition.`,
-
-            lifestyle: `LAYOUT: Aspirational daily-life integration — product seamlessly placed in a beautiful setting.
-SCENE: ${productName} naturally placed in a beautiful lifestyle environment — modern home, outdoor terrace, cozy space.
-TEXT RENDERING: Headline should evoke aspiration and identity. Subheadline paints the lifestyle picture. CTA is soft and inviting.
-DESIGN ELEMENTS: Lifestyle props that complement the product (plants, candles, books, coffee). Warm color palette. Everything feels curated but natural.
-MOOD: Warm, aspirational, inviting. Morning or golden-hour natural lighting.`,
-
-            contrast: `LAYOUT: Strong visual juxtaposition — split or diagonal composition.
-LEFT/TOP: Negative scenario WITHOUT the product — harsh, cold lighting, dull colors, discomfort.
-RIGHT/BOTTOM: Positive scenario WITH ${productName} — warm, natural light, vibrant, comfortable.
-TEXT RENDERING: Render contrasting labels like "Without" and "With" or X and checkmark labels. Headline highlights the stark difference.
-DESIGN ELEMENTS: Diagonal or vertical split, contrasting color grading (cold blue vs warm gold). Clear visual preference for the product side.
-MOOD: Dramatic contrast. Cold/uncomfortable on negative side, warm/pleasant on positive side.`,
-
-            question: `LAYOUT: Bold, attention-grabbing composition built around a central question.
-SCENE: ${productName} shown in context that relates to the question being asked.
-TEXT RENDERING: Render a LARGE, provocative question as the dominant headline. The question mark should be visually prominent. Subheadline begins to answer the question.
-DESIGN ELEMENTS: Large question mark as design element, bold typography, engaging visual that provokes thought.
-MOOD: Curious, engaging, thought-provoking. Bright, inviting lighting.`,
-
-            guarantee: `LAYOUT: Trust-focused composition with guarantee badge prominently displayed.
-SCENE: ${productName} shown confidently with trust-building visual elements.
-TEXT RENDERING: Render guarantee text prominently: "100% Money-Back Guarantee" or "30-Day Risk-Free Trial" in a badge or seal. Headline should reduce purchase anxiety. CTA should emphasize zero risk.
-DESIGN ELEMENTS: Guarantee seal or badge (shield or ribbon shape), trust badges, "Risk-Free" labels, checkmarks next to guarantee terms.
-MOOD: Confident, reassuring, trustworthy. Clean, bright lighting. Professional color palette.`,
-
-            urgent: `LAYOUT: High-energy, time-sensitive composition.
-SCENE: ${productName} featured prominently with dynamic, energetic atmosphere.
-TEXT RENDERING: Render countdown or deadline text like "ENDS TONIGHT" or "24 HOURS LEFT". Render sale percentage or deal in large text. CTA must convey immediate action.
-DESIGN ELEMENTS: Timer or clock visual, "SALE" flash badge, percentage-off ribbon, red/orange accent highlights. Flash sale energy.
-MOOD: URGENT, high-energy, dynamic. Warm golden-hour lighting with red/orange accent highlights.`,
-        };
-
-        const template = sceneTemplates[angleId];
-        if (template) {
-            return `[SCENE DIRECTIVE — ${angleId.toUpperCase()}]\n${template}`;
+VISUAL DIRECTION:
+- Show ${productName} as the hero solution within the narrative context
+- The visual mood should match the emotional arc: start with the problem's tension, resolve with the product's warmth
+- Use brand primary color (${brandPrimary}) for emphasis and CTA elements
+- The overall feel should speak directly to: ${persona}`;
         }
 
-        // Fallback: build from angle description
-        return `[SCENE DIRECTIVE — ${angleId.toUpperCase()}]
-Scene for "${angleLabel}" angle: ${angleDescription}
-Show ${productName} prominently. Use brand colors (primary: ${brandPrimary}). Professional commercial photography.`;
+        // Fallback: build from basic angle info
+        return `[NARRATIVE ANGLE — ${angleId.toUpperCase()}]
+Angle: "${angleLabel}" — ${angleDescription}
+Show ${productName} prominently. Use brand colors (primary: ${brandPrimary}). Professional commercial photography.
+CTA should drive action relevant to this angle.`;
     }
 
     /**
@@ -1034,7 +923,7 @@ ${userPrompt}`;
     private buildGuardedImagePrompt(
         rawImagePrompt: string,
         angleId: string,
-        angle: { id: string; label: string; description: string },
+        angle: import('../configurations/constants/marketing-angles').MarketingAngle,
         playbook: BrandPlaybook,
         conceptAnalysis?: any,
         format?: import('../configurations/constants/ad-formats').AdFormat,
@@ -1051,7 +940,7 @@ ${userPrompt}`;
 
         // ━━━ LAYER 3: MARKETING ANGLE (Scene directive) ━━━
         const sceneDirective = this.buildSceneDirective(
-            angleId, angle.label, angle.description, playbook,
+            angleId, angle.label, angle.description, playbook, angle,
         );
 
         // ━━━ LAYER 3.5: CRITICAL SCENE DIRECTION (mood-gated) ━━━
@@ -1399,7 +1288,7 @@ FORBIDDEN SUBSTITUTIONS:
         brandName: string,
         playbook: BrandPlaybook,
         conceptAnalysis: any,
-        angle: { id: string; label: string; description: string },
+        angle: import('../configurations/constants/marketing-angles').MarketingAngle,
         format: import('../configurations/constants/ad-formats').AdFormat,
     ): string {
         const pi = playbook.product_identity!;
@@ -1520,8 +1409,17 @@ ${criticalSceneDirection}
 ${'═'.repeat(60)}
 PRIORITY 3 — MARKETING ANGLE (Narrative Hook)
 ${'═'.repeat(60)}
-- Strategy: ${angle.label}
-- Apply this approach: ${angle.description}
+- Strategy: ${angle.label} (${angle.category?.toUpperCase() || 'GENERAL'})
+- Hook: "${angle.hook || angle.description}"
+- Target Persona: ${angle.target_persona || 'general audience'}
+- Narrative Arc:
+  * Problem: ${angle.narrative_arc?.problem || 'N/A'}
+  * Discovery: ${angle.narrative_arc?.discovery || 'N/A'}
+  * Result: ${angle.narrative_arc?.result || 'N/A'}
+  * Payoff: ${angle.narrative_arc?.payoff || 'N/A'}
+- CTA Options: ${angle.cta_options?.join(' | ') || 'Learn More'}
+- Compliance: ${angle.compliance_notes || 'None'}
+- Apply this narrative approach: ${angle.description}
 ${contentPatternSection}
 
 ${'═'.repeat(60)}
