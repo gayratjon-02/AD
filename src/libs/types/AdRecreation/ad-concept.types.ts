@@ -11,7 +11,8 @@
 
 /**
  * ConceptZone - A spatial zone extracted by Claude Vision
- * Coordinates are 0-100% relative to the image dimensions.
+ * Coordinates are ABSOLUTE PIXEL values based on the format's standard resolution:
+ *   9:16 → height 1920px | 1:1 → height 1080px | 4:5 → height 1350px | 16:9 → height 1080px
  */
 export interface ConceptZone {
     id: string;

@@ -158,8 +158,19 @@ export class GenerationsService {
             throw new BadRequestException(AdGenerationMessage.BRAND_PLAYBOOK_REQUIRED);
         }
 
+        // Auto-generate product_identity if missing (for brands created before analysis)
         if (!playbook.product_identity || !playbook.product_identity.product_name) {
-            throw new BadRequestException(AdGenerationMessage.BRAND_PRODUCT_IDENTITY_REQUIRED);
+            this.logger.warn(`Brand ${brand.id} missing product_identity — auto-generating from brand name "${brand.name}"`);
+            playbook.product_identity = {
+                product_name: brand.name,
+                product_type: 'Product',
+                visual_description: `A product by ${brand.name}. For better results, re-analyze the brand playbook with product details.`,
+                key_features: [],
+                colors: {},
+                negative_traits: [],
+            };
+            // Save back to DB so future generations don't need this fallback
+            await this.adBrandsService.updatePlaybook(brand.id, userId, playbook);
         }
 
         if (!playbook.product_identity.visual_description) {
@@ -237,11 +248,31 @@ export class GenerationsService {
         let imageMimeType = 'image/png';
 
         try {
-            const imageResult = await this.geminiService.generateImage(
-                guardedImagePrompt,
-                undefined,
-                aspectRatio,
-            );
+            let imageResult: any;
+
+            if (concept.original_image_url) {
+                // 🔧 FIX: Handle legacy URLs with wrong port (3000 -> 4001)
+                let refImageUrl = concept.original_image_url;
+                if (refImageUrl.includes('localhost:3000')) {
+                    const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+                    refImageUrl = refImageUrl.replace('http://localhost:3000', uploadBaseUrl);
+                    this.logger.log(`🔧 Fixed legacy image URL: ${concept.original_image_url} -> ${refImageUrl}`);
+                }
+
+                this.logger.log(`[REFERENCE IMAGE] Using inspiration image: ${refImageUrl}`);
+                imageResult = await this.geminiService.generateImageWithReference(
+                    guardedImagePrompt,
+                    [refImageUrl], // Inspiration image as reference
+                    aspectRatio,
+                );
+            } else {
+                this.logger.warn(`No inspiration image found for concept ${concept.id} — falling back to text-only generation`);
+                imageResult = await this.geminiService.generateImage(
+                    guardedImagePrompt,
+                    undefined,
+                    aspectRatio,
+                );
+            }
 
             generatedImageBase64 = imageResult.data;
             imageMimeType = imageResult.mimeType || 'image/png';
@@ -281,7 +312,7 @@ export class GenerationsService {
             {
                 id: uuidv4(),
                 url: generatedImageUrl,
-                base64: generatedImageBase64,
+                // base64: generatedImageBase64, // ⚠️ REMOVED to save DB space (Railway volume full)
                 format: aspectRatio,
                 angle: dto.marketing_angle_id,
                 variation_index: 1,
@@ -765,7 +796,7 @@ ${'═'.repeat(60)}
 ${negativePrompt}
 
 FINAL INSTRUCTION: Generate a single, high-quality, photorealistic advertisement image.
-- FIRST: Ensure ALL Compliance rules (Priority 1) are satisfied. If compliance says "No Gym", the scene MUST NOT contain any gym elements.
+- FIRST: Ensure ALL Compliance rules (Priority 1) are satisfied. If compliance forbids a setting, the scene MUST NOT contain those elements.
 - SECOND: Product MUST match the Product Lock description exactly — use exact colors, features, and materials from the Brand JSON. Do NOT hallucinate product features.
 - THIRD: Apply the marketing angle's scene directive for narrative and mood.
 - FOURTH: Follow the layout zones for composition, ensuring elements do NOT overlap with Safe Zones.
@@ -844,9 +875,9 @@ ${mustShowSection}
 ${mustNotSection}
 
 BACKGROUND RESOLUTION:
-- Do NOT use generic terms like "fitness setting" or "gym environment"
+- Do NOT use vague or generic environment descriptions
 - Instead, use the Must Show rules above to describe a SPECIFIC, COMPLIANT environment
-- If a Must NOT rule forbids a setting (e.g., "No Gym"), you MUST explicitly describe
+- If a Must NOT rule forbids a certain setting, you MUST explicitly describe
   a DIFFERENT, brand-appropriate setting instead`;
     }
 
@@ -882,13 +913,13 @@ No inspiration layout provided. Use standard advertising composition:
 
         const safeZoneDirectives = safeZones.length > 0
             ? safeZones.map((z: any) =>
-                `  - ${z.content_type.toUpperCase()} zone (y: ${z.y_start}%-${z.y_end}%): Keep this area clean/simple for text overlay. ${z.description || ''}`,
+                `  - ${z.content_type.toUpperCase()} zone (y: ${z.y_start}px–${z.y_end}px): Keep this area clean/simple for text overlay. ${z.description || ''}`,
             ).join('\n')
             : '  - No specific safe zones defined';
 
         const imageZoneDirectives = imageZones.length > 0
             ? imageZones.map((z: any) =>
-                `  - ${z.content_type.toUpperCase()} zone (y: ${z.y_start}%-${z.y_end}%): ${z.description || 'Main visual content area'}`,
+                `  - ${z.content_type.toUpperCase()} zone (y: ${z.y_start}px–${z.y_end}px): ${z.description || 'Main visual content area'}`,
             ).join('\n')
             : '  - Use full frame for visual content';
 
@@ -984,7 +1015,7 @@ These rules are NON-NEGOTIABLE. They override brand, angle, and layout instructi
 ${mustShowRules.length > 0 ? `\nMUST SHOW:\n${mustShowRules.map(r => `  ✅ ${r}`).join('\n')}` : ''}
 ${mustNotRules.length > 0 ? `\nMUST NOT (explicit "Do not include" list):\n${mustNotRules.map(r => `  ❌ ${r}`).join('\n')}` : ''}
 
-BACKGROUND RULE: Do NOT use generic settings ("fitness setting", "gym"). Use the Must Show
+BACKGROUND RULE: Do NOT use vague or generic environment descriptions. Use the Must Show
 rules above to describe a specific, compliant environment. If a certain setting is forbidden,
 you MUST describe a DIFFERENT, brand-appropriate alternative.`
             : '';
@@ -1000,7 +1031,7 @@ you MUST describe a DIFFERENT, brand-appropriate alternative.`
             ['headline', 'body', 'cta_button', 'logo'].includes(z.content_type),
         );
         const safeZoneWarning = safeZones.length > 0
-            ? `\n7. SAFE ZONES — the following zones are reserved for text overlay. In the image_prompt, describe these areas as clean/simple backgrounds:\n${safeZones.map((z: any) => `   - ${z.content_type} zone (y: ${z.y_start}%-${z.y_end}%)`).join('\n')}`
+            ? `\n7. SAFE ZONES — the following zones are reserved for text overlay. In the image_prompt, describe these areas as clean/simple backgrounds:\n${safeZones.map((z: any) => `   - ${z.content_type} zone (y: ${z.y_start}px–${z.y_end}px)`).join('\n')}`
             : '';
 
         return `You are a professional copywriter for the brand "${brandName}".

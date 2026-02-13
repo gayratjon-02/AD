@@ -20,58 +20,92 @@ import { AdConceptMessage } from '../../../libs/messages';
 // PROMPT CONSTANTS
 // ═══════════════════════════════════════════════════════════
 
-const CONCEPT_ANALYSIS_SYSTEM_PROMPT = `Role: You are an expert Ad Creative Director and Technical Analyst. Your goal is to reverse-engineer the "Visual DNA" of an uploaded advertisement image so it can be recreated for a different brand.
+// ─── Resolution reference table for absolute pixel coordinates ───
+const FORMAT_RESOLUTIONS: Record<string, { width: number; height: number }> = {
+    '9:16': { width: 1080, height: 1920 },
+    '1:1': { width: 1080, height: 1080 },
+    '4:5': { width: 1080, height: 1350 },
+    '16:9': { width: 1920, height: 1080 },
+};
 
-Task: Analyze the provided image and extract a strictly structured JSON object describing its Layout Pattern, Visual Style, and Content Strategy.
+const CONCEPT_ANALYSIS_SYSTEM_PROMPT = `Role: You are an expert Ad Creative Director specializing in reverse-engineering Visual DNA from advertisement images for recreation by a DIFFERENT brand.
 
-Critical Rules:
+Task: Analyze the uploaded ad image and return a strictly structured JSON object describing its Layout Pattern, Visual Style, and Content Strategy.
 
-1. Ignore Brand Content: Do not output the specific text found in the image (e.g., do not write "Nike" or "Just Do It"). Instead, describe the type of content (e.g., "Short inspirational hook").
+═══════════════════════════════════════════════════════════
+ABSOLUTE RULES (VIOLATION = INVALID OUTPUT)
+═══════════════════════════════════════════════════════════
 
-2. Precise Coordinates: For zones, provide accurate y_start and y_end (0-100 scale) to map where elements are placed vertically.
+1. ABSOLUTE PIXELS ONLY — NEVER PERCENTAGES
+   First, detect the ad format aspect ratio from the image dimensions.
+   Then map ALL y_start and y_end values to ABSOLUTE PIXEL coordinates
+   based on these standard resolutions:
+     • 9:16 → 1080×1920  (height = 1920px)
+     • 1:1  → 1080×1080  (height = 1080px)
+     • 4:5  → 1080×1350  (height = 1350px)
+     • 16:9 → 1920×1080  (height = 1080px)
+   Example: A headline at the top 15% of a 9:16 ad → y_start: 0, y_end: 288
+   NEVER return values like 0-100. Always return actual pixel integers.
 
-3. Typography & Style: You MUST describe the font style (Serif/Sans, Bold/Thin) and the CTA button style.
+2. EXTRACT THE VISUAL PATTERN — NOT THE CONTENT
+   You are extracting the STRUCTURE and LAYOUT PATTERN, not the competitor's content.
+   • NEVER output the competitor's brand name, product name, or exact copy text.
+   • Use GENERIC PLACEHOLDERS in descriptions:
+     WRONG: "Nike logo in top-left"
+     RIGHT: "Brand logo placement, top-left corner"
+     WRONG: "Text says 'Just Do It'"
+     RIGHT: "Short motivational hook, centered, bold sans-serif"
 
-4. Content Pattern: You MUST identify the "Marketing Angle" structure (e.g., Question -> Solution -> CTA).
+3. ZONE COVERAGE
+   Zones MUST cover the full vertical span of the image (from pixel 0 to full height).
+   Every zone must have: id, y_start (int px), y_end (int px), content_type.
+   Zone y_start of one zone should equal y_end of the previous zone (no gaps).
 
-5. Return ONLY valid JSON. No markdown, no explanation, no conversational text. No code fences.`;
+4. STRICT JSON
+   Return ONLY valid JSON. No markdown. No code fences. No explanation.
+   No conversational text before or after the JSON object.`;
 
-const CONCEPT_ANALYSIS_USER_PROMPT = `Analyze this ad image and extract its Visual DNA for recreation.
+const CONCEPT_ANALYSIS_USER_PROMPT = `Analyze this ad image and extract its Visual DNA for recreation by a different brand.
 
-Output Schema (Strict JSON): Return ONLY valid JSON matching this structure exactly:
+STEP 1: Detect the aspect ratio (9:16, 1:1, 4:5, or 16:9) from the image.
+STEP 2: Determine the reference height in pixels (9:16→1920, 1:1→1080, 4:5→1350, 16:9→1080).
+STEP 3: Map each visual zone to ABSOLUTE PIXEL y_start and y_end values.
+
+Return ONLY this JSON structure:
 
 {
   "layout": {
-    "type": "String (Select one: split_screen, centered_hero, notes_app, tweet_style, text_overlay, product_showcase)",
-    "format": "String (e.g., 1:1, 9:16, 4:5)",
+    "type": "split_screen | centered_hero | notes_app | tweet_style | text_overlay | product_showcase",
+    "format": "9:16 | 1:1 | 4:5 | 16:9",
     "zones": [
       {
-        "id": "String (e.g., headline, body, cta, image_main, ui_status_bar)",
-        "y_start": "Number (0-100)",
-        "y_end": "Number (0-100)",
-        "content_type": "String (headline | body | cta_button | image | logo | ui_element)",
-        "typography_style": "String (e.g., Sans-Serif Bold Caps, Handwritten, Minimalist Serif)",
-        "description": "String (e.g., 'Centered white text with drop shadow')"
+        "id": "string (e.g. header, headline, body, cta, image_main, logo)",
+        "y_start": 0,
+        "y_end": 288,
+        "content_type": "headline | body | cta_button | image | logo | ui_element",
+        "typography_style": "string (e.g. Bold Sans-Serif White, Elegant Serif Black)",
+        "description": "string — describe the PATTERN, not the competitor's content"
       }
     ]
   },
   "visual_style": {
-    "mood": "String (e.g., energetic, calm, luxury, native_ugc)",
+    "mood": "string (energetic | calm | luxury | native_ugc | clean_editorial | bold_graphic)",
     "background": {
-      "type": "String (solid_color | image | gradient)",
-      "hex": "String (dominant hex code, or null if image)"
+      "type": "solid_color | image | gradient",
+      "hex": "#HEXCODE or null"
     },
-    "overlay": "String (e.g., dark_dim_layer, white_box_opacity, none)"
+    "overlay": "dark_dim_layer | white_box_opacity | none"
   },
   "content_pattern": {
-    "hook_type": "String (e.g., question, direct_benefit, controversial_statement)",
-    "narrative_structure": "String (e.g., problem_solution, feature_highlight, storytelling)",
-    "cta_style": "String (e.g., pill_button, text_link_with_arrow, swipe_up_icon)",
-    "requires_product_image": "Boolean (true if the layout clearly shows a product)"
+    "hook_type": "question | direct_benefit | controversial_statement | revolutionary_claim | social_proof",
+    "narrative_structure": "problem_solution | feature_highlight | storytelling | before_after | disruptive_product_announcement",
+    "cta_style": "pill_button | text_link_with_arrow | swipe_up_icon | implicit_editorial_style",
+    "requires_product_image": true
   }
 }
 
-Return ONLY the JSON object. No markdown code fences. No explanation.`;
+REMINDER: y_start and y_end are ABSOLUTE PIXEL values (integers), NOT percentages.
+Return ONLY the JSON. No markdown. No explanation.`;
 
 // ═══════════════════════════════════════════════════════════
 // MEDIA TYPE MAP
@@ -294,25 +328,49 @@ export class AdConceptsService {
             throw new InternalServerErrorException(AdConceptMessage.AI_INVALID_JSON);
         }
 
+        // Determine expected height from format
+        const format = parsed.layout.format;
+        const resolution = FORMAT_RESOLUTIONS[format];
+        const maxHeight = resolution ? resolution.height : 1920;
+
         // Ensure zones is an array
         if (!Array.isArray(parsed.layout.zones)) {
             parsed.layout.zones = [];
         }
 
-        // Validate each zone has required fields (new schema)
-        for (const zone of parsed.layout.zones) {
-            if (!zone.id) zone.id = `zone_${parsed.layout.zones.indexOf(zone) + 1}`;
-            if (zone.y_start === undefined) zone.y_start = 0;
-            if (zone.y_end === undefined) zone.y_end = 100;
+        // Validate each zone: enforce absolute pixel coordinates
+        for (let i = 0; i < parsed.layout.zones.length; i++) {
+            const zone = parsed.layout.zones[i];
+            if (!zone.id) zone.id = `zone_${i + 1}`;
+
+            // Coerce to integers
+            zone.y_start = typeof zone.y_start === 'number' ? Math.round(zone.y_start) : 0;
+            zone.y_end = typeof zone.y_end === 'number' ? Math.round(zone.y_end) : maxHeight;
+
+            // Auto-fix: if values look like percentages (0-100 range for tall formats), convert to pixels
+            if (maxHeight > 100 && zone.y_end <= 100 && zone.y_start <= 100) {
+                this.logger.warn(`Zone "${zone.id}" has percentage-like values (${zone.y_start}-${zone.y_end}), converting to pixels`);
+                zone.y_start = Math.round((zone.y_start / 100) * maxHeight);
+                zone.y_end = Math.round((zone.y_end / 100) * maxHeight);
+            }
+
+            // Clamp to valid range
+            zone.y_start = Math.max(0, Math.min(zone.y_start, maxHeight));
+            zone.y_end = Math.max(0, Math.min(zone.y_end, maxHeight));
+
+            // Ensure y_end > y_start
+            if (zone.y_end <= zone.y_start) {
+                zone.y_end = Math.min(zone.y_start + 100, maxHeight);
+            }
+
             if (!zone.content_type) zone.content_type = 'headline';
             if (!zone.typography_style) zone.typography_style = 'Sans-Serif Regular';
             if (!zone.description) zone.description = '';
         }
 
-        // Validate visual_style (new nested background structure)
+        // Validate visual_style
         if (!parsed.visual_style.mood) parsed.visual_style.mood = 'neutral';
         if (!parsed.visual_style.background || typeof parsed.visual_style.background !== 'object') {
-            // Migrate from old flat structure if needed
             const oldHex = parsed.visual_style.background_hex;
             parsed.visual_style.background = {
                 type: 'solid_color',
@@ -323,7 +381,7 @@ export class AdConceptsService {
         if (parsed.visual_style.background.hex === undefined) parsed.visual_style.background.hex = '#FFFFFF';
         if (!parsed.visual_style.overlay) parsed.visual_style.overlay = 'none';
 
-        // Validate content_pattern (new section)
+        // Validate content_pattern
         if (!parsed.content_pattern || typeof parsed.content_pattern !== 'object') {
             parsed.content_pattern = {
                 hook_type: 'direct_benefit',
@@ -337,7 +395,7 @@ export class AdConceptsService {
         if (!parsed.content_pattern.cta_style) parsed.content_pattern.cta_style = 'pill_button';
         if (parsed.content_pattern.requires_product_image === undefined) parsed.content_pattern.requires_product_image = false;
 
-        // Clean up old flat fields that are no longer needed
+        // Clean up legacy flat fields
         delete parsed.visual_style.background_hex;
         delete parsed.visual_style.font_color_primary;
 
