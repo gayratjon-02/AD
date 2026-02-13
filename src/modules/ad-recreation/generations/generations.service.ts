@@ -52,6 +52,7 @@ interface AdGenerationResult {
         zones: any[];
         format: string;
         ratio: string;
+        safe_zone?: import('../configurations/constants/ad-formats').SafeZone;
     };
     generation_prompt: string;
 }
@@ -371,6 +372,7 @@ export class GenerationsService {
             angle,
             playbook,
             concept.analysis_json,
+            format,
         );
 
         const aspectRatio = FORMAT_RATIO_MAP[dto.format_id] || '1:1';
@@ -508,6 +510,7 @@ export class GenerationsService {
                 zones: concept.analysis_json?.layout?.zones || [],
                 format: format.label,
                 ratio: format.ratio,
+                safe_zone: format.safe_zone,
             },
             generation_prompt: guardedImagePrompt,
         };
@@ -1034,6 +1037,7 @@ ${userPrompt}`;
         angle: { id: string; label: string; description: string },
         playbook: BrandPlaybook,
         conceptAnalysis?: any,
+        format?: import('../configurations/constants/ad-formats').AdFormat,
     ): string {
         // ━━━ LAYER 1: COMPLIANCE LOCK (ABSOLUTE — overrides everything) ━━━
         const complianceLock = this.buildComplianceLock(playbook);
@@ -1104,6 +1108,24 @@ The image MUST contain the following text rendered as VISIBLE, READABLE characte
 [CREATIVE DIRECTION FROM AI COPYWRITER]
 ${rawImagePrompt}
 
+${format?.safe_zone ? `${'═'.repeat(60)}
+PLATFORM SAFE ZONES — CONTENT PLACEMENT RULES
+${'═'.repeat(60)}
+Format: ${format.label} (${format.ratio}, ${format.width}×${format.height})
+
+🚨 CRITICAL PLACEMENT RULES:
+- DANGER ZONE TOP (${format.safe_zone.danger_top}px): Do NOT place any important content (headlines, logos, CTAs) in the top ${format.safe_zone.danger_top}px — hidden by status bar / username / audio pill
+- DANGER ZONE BOTTOM (${format.safe_zone.danger_bottom}px): Do NOT place any important content in the bottom ${format.safe_zone.danger_bottom}px — hidden by CTA button / captions / nav bar
+- SIDE MARGINS (${format.safe_zone.danger_sides}px each): Keep ${format.safe_zone.danger_sides}px margin on each side
+- USABLE AREA: All important content (headlines, product, CTA, bullet points, logo) MUST be within:
+  x: ${format.safe_zone.usable_area.x}px to ${format.safe_zone.usable_area.x + format.safe_zone.usable_area.width}px
+  y: ${format.safe_zone.usable_area.y}px to ${format.safe_zone.usable_area.y + format.safe_zone.usable_area.height}px
+  (${format.safe_zone.usable_area.width}×${format.safe_zone.usable_area.height}px usable area)
+
+Place headline and brand name BELOW the top danger zone.
+Place CTA button ABOVE the bottom danger zone.
+Center important product imagery within the usable area.
+` : ''}
 ${'═'.repeat(60)}
 NEGATIVE REINFORCEMENT (AVOID LIST)
 ${'═'.repeat(60)}
@@ -1115,6 +1137,7 @@ FINAL INSTRUCTION: Generate a single, high-quality advertisement image that is a
 - Obey CRITICAL SCENE DIRECTION restrictions
 - Apply marketing angle's scene directive for narrative and mood
 - Follow layout zones for composition
+- ALL content must be within the SAFE ZONE — nothing important in danger zones
 - Text must be spelled EXACTLY as written — zero garbled characters
 - The final result should look like a professional social media advertisement ready to publish`;
 
@@ -1377,7 +1400,7 @@ FORBIDDEN SUBSTITUTIONS:
         playbook: BrandPlaybook,
         conceptAnalysis: any,
         angle: { id: string; label: string; description: string },
-        format: { id: string; label: string; ratio: string; dimensions: string },
+        format: import('../configurations/constants/ad-formats').AdFormat,
     ): string {
         const pi = playbook.product_identity!;
         const zones = conceptAnalysis?.layout?.zones || [];
@@ -1524,6 +1547,15 @@ ${textOverlayInstructions}
 
 === AD FORMAT ===
 - Format: ${format.label} (${format.ratio}, ${format.dimensions})
+- Canvas: ${format.width}×${format.height}px
+
+=== PLATFORM SAFE ZONES (🚨 MUST RESPECT) ===
+- DANGER ZONE TOP: ${format.safe_zone.danger_top}px — do NOT place headlines, logos, or brand name here
+- DANGER ZONE BOTTOM: ${format.safe_zone.danger_bottom}px — do NOT place CTA or important text here
+- SIDE MARGINS: ${format.safe_zone.danger_sides}px each side
+- USABLE AREA: ${format.safe_zone.usable_area.width}×${format.safe_zone.usable_area.height}px (from y:${format.safe_zone.usable_area.y} to y:${format.safe_zone.usable_area.y + format.safe_zone.usable_area.height})
+- ALL text elements (headline, subheadline, CTA, bullet points, brand name) MUST be placed WITHIN the usable area
+- Your image_prompt MUST mention: "Place all text and key content within the safe zone, avoiding the top ${format.safe_zone.danger_top}px and bottom ${format.safe_zone.danger_bottom}px"
 
 === YOUR TASK ===
 Generate ad copy for "${pi.product_name}" using the "${angle.label}" marketing angle.
