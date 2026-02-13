@@ -73,7 +73,7 @@ export class ProductsService {
 
 	async findAll(
 		userId: string,
-		filters: { collection_id?: string; page?: number; limit?: number },
+		filters: { collection_id?: string; category?: string; page?: number; limit?: number },
 	): Promise<{ items: Product[]; total: number; page: number; limit: number }> {
 		const page = filters.page && filters.page > 0 ? filters.page : 1;
 		const limit = filters.limit && filters.limit > 0 ? filters.limit : 20;
@@ -91,6 +91,12 @@ export class ProductsService {
 		if (filters.collection_id) {
 			query.andWhere('product.collection_id = :collectionId', {
 				collectionId: filters.collection_id,
+			});
+		}
+
+		if (filters.category) {
+			query.andWhere('product.category = :category', {
+				category: filters.category,
 			});
 		}
 

@@ -156,11 +156,13 @@ export class ProductsController {
 	async getAllProducts(
 		@CurrentUser() user: User,
 		@Query('collection_id') collectionId?: string,
+		@Query('category') category?: string,
 		@Query('page') page?: string,
 		@Query('limit') limit?: string,
 	): Promise<ProductListResponse> {
 		const result = await this.productsService.findAll(user.id, {
 			collection_id: collectionId,
+			category,
 			page: page ? parseInt(page, 10) : undefined,
 			limit: limit ? parseInt(limit, 10) : undefined,
 		});

@@ -76,7 +76,7 @@ export class AdConceptsController {
 
         this.logger.log(`Analyzing concept image: ${file.filename}`);
 
-        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+        const baseUrl = process.env.UPLOAD_BASE_URL || 'http://localhost:4001';
         const imageUrl = `${baseUrl}/uploads/concepts/${file.filename}`;
 
         const concept = await this.adConceptsService.analyze(
