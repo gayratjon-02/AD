@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsUrl, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUrl, MaxLength, IsIn } from 'class-validator';
 
 /**
  * Create Ad Brand DTO
@@ -12,11 +12,17 @@ export class CreateAdBrandDto {
 
     @IsString()
     @IsNotEmpty()
-    @MaxLength(100)
+    @MaxLength(255)
     industry: string;
 
     @IsUrl()
     @IsOptional()
     @MaxLength(500)
     website?: string;
+
+    @IsString()
+    @IsOptional()
+    @MaxLength(10)
+    @IsIn(['GBP', 'USD', 'EUR'], { message: 'Currency must be GBP, USD, or EUR' })
+    currency?: string;
 }

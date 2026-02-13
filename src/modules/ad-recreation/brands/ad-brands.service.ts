@@ -542,6 +542,8 @@ export class AdBrandsService {
         userId: string,
         name: string,
         website: string,
+        industry: string,
+        currency: string,
         playbook: any,
     ): Promise<AdBrand> {
         this.logger.log(`Create brand with playbook: ${name} for user ${userId}`);
@@ -550,7 +552,8 @@ export class AdBrandsService {
         const brand = this.adBrandsRepository.create({
             name,
             website,
-            industry: playbook.industry || 'General',
+            industry,
+            currency,
             user_id: userId,
             brand_playbook: playbook,
         });
@@ -786,6 +789,14 @@ ${textContent}`;
             logo_rules: {
                 clear_space: '',
                 forbidden_usage: [],
+            },
+            product_identity: {
+                product_name: brandName,
+                product_type: 'Product',
+                visual_description: `A product by ${brandName}. Update this field with a detailed visual description for accurate image generation.`,
+                key_features: [],
+                colors: {},
+                negative_traits: [],
             },
             target_audience: {
                 gender: 'All',

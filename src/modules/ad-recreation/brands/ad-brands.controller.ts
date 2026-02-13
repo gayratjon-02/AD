@@ -143,12 +143,16 @@ export class AdBrandsController {
     @Post('confirm')
     async confirmAndCreate(
         @CurrentUser() user: User,
-        @Body() body: { name: string; website: string; playbook: any },
+        @Body() body: { name: string; website: string; industry: string; currency?: string; playbook: any },
     ): Promise<{ success: boolean; message: string; brand: AdBrand }> {
         this.logger.log(`Confirm and Create Brand: ${body.name}`);
 
         if (!body.name || !body.website || !body.playbook) {
             throw new BadRequestException('name, website, and playbook are required');
+        }
+
+        if (!body.industry) {
+            throw new BadRequestException('industry is required');
         }
 
         if (typeof body.playbook !== 'object') {
@@ -159,6 +163,8 @@ export class AdBrandsController {
             user.id,
             body.name,
             body.website,
+            body.industry,
+            body.currency || 'GBP',
             body.playbook,
         );
 

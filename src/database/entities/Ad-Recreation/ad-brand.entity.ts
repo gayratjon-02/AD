@@ -45,6 +45,9 @@ export class AdBrand {
     @Column({ type: 'varchar', length: 500, nullable: true })
     website: string;
 
+    @Column({ type: 'varchar', length: 10, default: 'GBP' })
+    currency: string;
+
     // ─── Assets (Logo URLs: { logo_light, logo_dark }) ───────
     @Column({ type: 'jsonb', nullable: true })
     assets: BrandAssets;
