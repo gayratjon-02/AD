@@ -13,6 +13,7 @@ import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-generation.entity';
+import { Product } from '../../../database/entities/Product-Visuals/product.entity';
 import { AdBrandsService } from '../brands/ad-brands.service';
 import { AdConceptsService } from '../ad-concepts/ad-concepts.service';
 import { GeminiService } from '../../../ai/gemini.service';
@@ -32,6 +33,7 @@ interface AdCopyResult {
     subheadline: string;
     cta: string;
     image_prompt: string;
+    bullet_points?: string[];
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -69,33 +71,40 @@ const FORMAT_RATIO_MAP: Record<string, string> = {
 // STATIC GUARDRAILS (product-agnostic)
 // ═══════════════════════════════════════════════════════════
 
-const READABILITY_LOCK = `[READABILITY LOCK — TEXT CONTRAST PROTECTION — MANDATORY]
-For EVERY zone that contains a headline, subheadline, body_paragraphs, or CTA text:
+const TEXT_RENDERING_LOCK = `[TEXT RENDERING LOCK — MANDATORY TEXT IN IMAGE]
+The generated image MUST contain RENDERED TEXT as a core design element. This is an advertisement — text is essential.
 
-1. CONTRAST OVERLAY (required):
-   - Place a semi-transparent dark gradient or solid overlay box (rgba(0,0,0,0.40–0.55)) DIRECTLY BEHIND the white/light text
-   - The overlay must cover the ENTIRE text bounding box plus 12% padding on all sides
-   - The overlay must blend naturally into the composition (soft feathered edges, NOT a harsh rectangle)
-   - If text is white (#FFFFFF) or light-colored, the area behind it MUST be dark enough for 100% legibility
+1. TEXT RENDERING RULES:
+   - ALL text specified in the TEXT CONTENT section MUST be rendered as readable, pixel-perfect characters directly in the image
+   - Text must be sharp, clean, and anti-aliased — NOT blurry, warped, or garbled
+   - Each text element must be spelled EXACTLY as provided — zero typos, zero extra characters
+   - If a word cannot be rendered clearly, use a simpler synonym but NEVER garble it
 
-2. BACKGROUND SIMPLICITY:
-   - Text zones MUST have a clean, low-detail, low-contrast background — NO busy patterns, NO high-detail imagery directly behind text
-   - If the background image is bright (sky, white wall, light gradient), you MUST darken that specific zone
+2. TYPOGRAPHY HIERARCHY:
+   - BRAND NAME: Large, bold, prominent — typically at the top of the ad. Use clean sans-serif or the brand's font style
+   - HEADLINE: Second-largest text, high visual impact. Can use italic, script, or bold styles depending on the ad mood
+   - SUBHEADLINE / BODY: Smaller, readable supporting text
+   - BULLET POINTS: Clean list with checkmarks (✓) or bullet markers
+   - CTA BUTTON: Text inside a visible button shape (rounded rectangle, pill, etc.) with contrasting colors
 
-3. CONTRAST RATIO:
-   - Minimum 4.5:1 contrast ratio between text color and its immediate background (WCAG AA standard)
-   - For large headlines: minimum 3:1 contrast ratio
-   - NEVER place white text on a bright or medium-toned background without an overlay
+3. CONTRAST & LEGIBILITY:
+   - Minimum 4.5:1 contrast ratio between text and background (WCAG AA)
+   - If background is busy, place a semi-transparent overlay, card, or solid panel behind text
+   - Text zones MUST have clean, low-detail backgrounds
 
-4. PADDING & SPACING:
-   - Leave generous padding around text zones (at least 10% of frame width on each side)
-   - Text must NOT touch the edge of the overlay or bleed into busy image areas
+4. LAYOUT INTEGRATION:
+   - Text must be integrated into the ad design as a design element, NOT floating randomly
+   - Follow the zone positions from the layout analysis
+   - Leave generous padding around text (at least 8% of frame width)
 
-FAILURE CONDITION: If ANY text in the final image is unreadable due to insufficient contrast, the generation is FAILED.`;
+FAILURE CONDITIONS:
+- If the image contains NO text → FAILED
+- If text is misspelled or garbled → FAILED
+- If text is unreadable due to poor contrast → FAILED`;
 
-const AD_GENERATION_SYSTEM_PROMPT = `You are a world-class Ad Copywriter and Creative Director specializing in ultra-precise image generation prompts for photorealistic AI image models (Gemini Imagen).
+const AD_GENERATION_SYSTEM_PROMPT = `You are a world-class Ad Copywriter and Creative Director specializing in creating COMPLETE advertisement images that include RENDERED TEXT as part of the design.
 
-Your job: Generate ad copy AND write an ultra-detailed image generation prompt (image_prompt) that leaves ZERO room for the image model to hallucinate or improvise.
+Your job: Generate ad copy AND write an ultra-detailed image generation prompt (image_prompt) that produces a FINISHED AD — with text, graphics, product imagery, and design elements ALL rendered in a single image.
 
 ═══════════════════════════════════════════════════════════
 CRITICAL RULES — VIOLATION OF ANY RULE IS A FAILURE
@@ -104,43 +113,53 @@ CRITICAL RULES — VIOLATION OF ANY RULE IS A FAILURE
 RULE 1 — STRICT PRODUCT INJECTION (ZERO HALLUCINATION):
 - You will receive a [PRODUCT_INJECTION — COPY VERBATIM] block containing the EXACT physical description of the product.
 - In your image_prompt, you MUST describe the product using the EXACT words from the PRODUCT_INJECTION block.
-- You MUST include ALL physical traits: name, type, specific parts (e.g., "two center track rails", "grey foot pedals", "U-shaped handlebar").
-- FORBIDDEN: Do NOT use generic terms like "fitness equipment", "Pilates machine", "exercise device", "workout gear", or ANY synonym. Use the EXACT product name and features.
-- If the product injection says "foldable Pilates reformer board with two center track rails, grey foot pedals, and U-shaped handlebar", your image_prompt MUST contain those EXACT words.
+- You MUST include ALL physical traits: name, type, specific parts.
+- FORBIDDEN: Do NOT use generic terms — use the EXACT product name and features.
 
 RULE 2 — CRITICAL SCENE DIRECTION (MOOD-GATED):
 - You will receive a [CRITICAL_SCENE_DIRECTION] block that dictates what the scene CAN and CANNOT show.
-- If the scene direction says "Do NOT show anyone exercising", then your image_prompt MUST NOT describe any exercise, workout, or fitness activity.
-- If the concept mood is "editorial", "magazine", "clean", or "presentation", your image_prompt must describe a STATIC, COMPOSED scene — product displayed elegantly, NOT in use.
-- If the concept mood is "lifestyle" or "action", ONLY THEN may you describe the product being used by a person.
+- If the scene direction says "Do NOT show anyone exercising", your image_prompt MUST NOT describe any exercise activity.
 - You MUST include the full AVOID list in your image_prompt.
 
-RULE 3 — TEXT LEGIBILITY (MANDATORY CONTRAST):
-- For EVERY zone in the layout that contains text (headline, subheadline, body_paragraphs, CTA):
-  - Your image_prompt MUST instruct the image model to place a dark semi-transparent gradient/overlay behind the text zone.
-  - Specify: "Place a subtle dark gradient overlay (rgba(0,0,0,0.40–0.55)) behind the text area at [zone location] to ensure 100% legibility of white text."
-  - NEVER describe a bright, unobstructed background behind a text zone.
+RULE 3 — TEXT RENDERING IN IMAGE (MANDATORY):
+🚨 THIS IS THE MOST IMPORTANT RULE FOR IMAGE QUALITY 🚨
+- The generated image MUST contain ALL of the following text elements rendered as VISIBLE, READABLE characters:
+  a) BRAND NAME — prominently displayed, typically at top or bottom
+  b) HEADLINE — large, attention-grabbing text in the designated zone
+  c) SUBHEADLINE or BODY TEXT — supporting copy, smaller but readable
+  d) BULLET POINTS — if the angle includes benefits/features, render them with ✓ markers
+  e) CTA — rendered inside a visible button shape (rounded rectangle, pill shape, etc.)
+- Your image_prompt MUST explicitly instruct: "Render the text '[exact text]' in [font style] at [position] with [color] on [background]"
+- Text must be SPELLED EXACTLY as you write it — zero garbled characters
+- Use appropriate typography: bold for headlines, italic for emotional hooks, clean sans-serif for body
 
 RULE 4 — AD COPY:
-- The headline must be punchy, attention-grabbing, and fit within the layout zone (max 8 words).
-- The subheadline must expand on the headline with a benefit-driven statement (max 20 words).
-- The CTA must be action-oriented and create urgency (2-5 words).
-- All text must match the brand's tone of voice.
+- The headline must be punchy, attention-grabbing (max 8 words)
+- The subheadline must be benefit-driven (max 20 words)
+- Include 2-4 bullet points highlighting key benefits with ✓ checkmarks
+- The CTA must be action-oriented (2-5 words), include brand name if possible
+- All text must match the brand's tone of voice
 
 RULE 5 — OUTPUT FORMAT:
-- Return ONLY valid JSON. No markdown, no explanation, no conversational text.
-- The image_prompt must be a single, ultra-detailed paragraph (200-400 words) describing the EXACT scene for the image model.
+- Return ONLY valid JSON. No markdown, no explanation.
+- The image_prompt must be 300-500 words describing the COMPLETE ad design.
 
 RULE 6 — image_prompt STRUCTURE:
-Your image_prompt MUST follow this exact structure in order:
-  a) SCENE TYPE: "Photorealistic [editorial/lifestyle/product-hero] advertisement photograph."
+Your image_prompt MUST follow this exact structure:
+  a) AD FORMAT: "A complete, finished [editorial/lifestyle/product-hero] advertisement design, ready for social media."
   b) PRODUCT DESCRIPTION: Copy VERBATIM from the PRODUCT_INJECTION block.
-  c) PRODUCT PLACEMENT: Exact position in frame (center, left-third, etc.) and angle.
+  c) PRODUCT PLACEMENT: Exact position in frame and angle.
   d) SCENE/ENVIRONMENT: Background, setting, lighting, color grading.
-  e) MODEL DIRECTION (if applicable): Pose, expression, wardrobe — or "No human model in this scene."
-  f) CRITICAL_SCENE_DIRECTION: Copy the scene restrictions verbatim.
-  g) TEXT OVERLAY ZONES: For each text zone, describe the contrast overlay.
-  h) AVOID LIST: List everything that must NOT appear.`;
+  e) MODEL DIRECTION (if applicable): Pose, expression, wardrobe.
+  f) TEXT RENDERING: For EACH text element, specify:
+     - Exact text content (spelled out character by character)
+     - Font style (bold, italic, script, sans-serif)
+     - Approximate size (large, medium, small)
+     - Color (white, dark, brand color)
+     - Position (top, center, bottom, left-aligned, centered)
+     - Background treatment (overlay panel, gradient, solid card, transparent)
+  g) DESIGN ELEMENTS: Cards, shapes, buttons, dividers, icons that make it look like a real ad
+  h) AVOID LIST: garbled text, misspelled words, random characters, plus scene-specific avoids`;
 
 /**
  * Generations Service - Phase 2: Ad Recreation
@@ -156,6 +175,8 @@ export class GenerationsService {
     constructor(
         @InjectRepository(AdGeneration)
         private generationsRepository: Repository<AdGeneration>,
+        @InjectRepository(Product)
+        private productRepository: Repository<Product>,
         private readonly adBrandsService: AdBrandsService,
         private readonly adConceptsService: AdConceptsService,
         private readonly geminiService: GeminiService,
@@ -232,6 +253,67 @@ export class GenerationsService {
 
         this.logger.log(`Playbook validated: product="${playbook.product_identity.product_name}"`);
 
+        // Step 3.5: Fetch product images if product_id provided
+        let productImageUrls: string[] = [];
+        let productData: Product | null = null;
+
+        if (dto.product_id) {
+            this.logger.log(`[STEP 3.5] Fetching product images for product_id: ${dto.product_id}`);
+            productData = await this.productRepository.findOne({ where: { id: dto.product_id } });
+
+            if (productData) {
+                const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+
+                // Collect all product image URLs
+                const fixUrl = (url: string): string => {
+                    if (url.includes('localhost:3000')) {
+                        return url.replace('http://localhost:3000', uploadBaseUrl);
+                    }
+                    return url;
+                };
+
+                if (productData.front_image_url) {
+                    productImageUrls.push(fixUrl(productData.front_image_url));
+                }
+                if (productData.back_image_url) {
+                    productImageUrls.push(fixUrl(productData.back_image_url));
+                }
+                if (productData.reference_images && Array.isArray(productData.reference_images)) {
+                    for (const refUrl of productData.reference_images) {
+                        if (refUrl && refUrl.trim()) {
+                            productImageUrls.push(fixUrl(refUrl));
+                        }
+                    }
+                }
+
+                this.logger.log(`   Product found: "${productData.name}"`);
+                this.logger.log(`   Product images collected: ${productImageUrls.length}`);
+                productImageUrls.forEach((url, i) => this.logger.log(`     [${i}] ${url}`));
+
+                // If product has analyzed JSON, enhance the playbook's product_identity
+                if (productData.analyzed_product_json) {
+                    const pj = productData.analyzed_product_json;
+                    this.logger.log(`   Merging analyzed product JSON into prompt context...`);
+
+                    // Enrich product_identity with analyzed data if it was auto-generated
+                    if (playbook.product_identity.visual_description?.includes('For better results')) {
+                        playbook.product_identity.product_name = pj.general_info?.product_name || productData.name || playbook.product_identity.product_name;
+                        playbook.product_identity.visual_description = [
+                            pj.texture_description || '',
+                            Array.isArray(pj.materials) ? `Materials: ${pj.materials.join(', ')}` : '',
+                            Array.isArray(pj.design_elements) ? `Details: ${pj.design_elements.join(', ')}` : '',
+                        ].filter(Boolean).join('. ') || playbook.product_identity.visual_description;
+
+                        if (Array.isArray(pj.style_keywords) && pj.style_keywords.length > 0) {
+                            playbook.product_identity.key_features = pj.style_keywords;
+                        }
+                    }
+                }
+            } else {
+                this.logger.warn(`Product with ID ${dto.product_id} not found — continuing without product images`);
+            }
+        }
+
         // Step 4: Create generation record (STATUS: PROCESSING)
         this.logger.log(`[STEP 4] Creating generation record...`);
         const generation = this.generationsRepository.create({
@@ -303,23 +385,34 @@ export class GenerationsService {
         try {
             let imageResult: any;
 
+            // Build combined reference images: inspiration + product images
+            const allReferenceImages: string[] = [];
+            const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+
             if (concept.original_image_url) {
                 // 🔧 FIX: Handle legacy URLs with wrong port (3000 -> 4001)
                 let refImageUrl = concept.original_image_url;
                 if (refImageUrl.includes('localhost:3000')) {
-                    const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
                     refImageUrl = refImageUrl.replace('http://localhost:3000', uploadBaseUrl);
                     this.logger.log(`🔧 Fixed legacy image URL: ${concept.original_image_url} -> ${refImageUrl}`);
                 }
+                allReferenceImages.push(refImageUrl);
+            }
 
-                this.logger.log(`[REFERENCE IMAGE] Using inspiration image: ${refImageUrl}`);
+            // Add product images to reference array
+            allReferenceImages.push(...productImageUrls);
+
+            this.logger.log(`[REFERENCE IMAGES] Total: ${allReferenceImages.length}`);
+            allReferenceImages.forEach((url, i) => this.logger.log(`   [${i}] ${url}`));
+
+            if (allReferenceImages.length > 0) {
                 imageResult = await this.geminiService.generateImageWithReference(
                     guardedImagePrompt,
-                    [refImageUrl], // Inspiration image as reference
+                    allReferenceImages, // Inspiration + product images as references
                     aspectRatio,
                 );
             } else {
-                this.logger.warn(`No inspiration image found for concept ${concept.id} — falling back to text-only generation`);
+                this.logger.warn(`No reference images available — falling back to text-only generation`);
                 imageResult = await this.geminiService.generateImage(
                     guardedImagePrompt,
                     undefined,
@@ -678,32 +771,28 @@ Show ${productName} prominently. Use brand colors (primary: ${brandPrimary}). Pr
         const conceptAvoidItems: string[] = [];
         if (isEditorial) {
             conceptAvoidItems.push(
-                '- People exercising, working out, or doing fitness activities',
-                '- Gym setting, gym equipment, gym interior',
-                '- Aggressive workout poses, sweating, athletic strain',
                 '- Action shots of the product being used in motion',
-                `- ANY fitness equipment other than the exact ${productName}`,
+                `- Any product or item that is NOT the exact "${productName}"`,
+                '- Cluttered or distracting scene elements that draw attention away from the product',
             );
         }
 
-        // Always block generic equipment hallucination for fitness products
-        const isFitness = /pilates|fitness|gym|yoga|exercise|reformer|workout/i.test(productType + ' ' + productName);
-        if (isFitness) {
-            conceptAvoidItems.push(
-                '- Generic yoga mats, rowing machines, treadmills, dumbbells, or any equipment NOT matching the exact product description',
-                `- Any fitness equipment that is NOT the exact "${productName}" as described in the Product Lock`,
-                '- Substituting the product with any similar-looking but different equipment',
-            );
-        }
+        // Always block generic product substitution — works for ANY product type
+        conceptAvoidItems.push(
+            `- Any product that is NOT the exact "${productName}" as described in the Product Lock`,
+            '- Substituting the product with any similar-looking but different product',
+            `- Generic or unrelated objects that could be confused with "${productName}"`,
+        );
 
         const conceptAvoidSection = conceptAvoidItems.length > 0
-            ? `\n[CONCEPT-SPECIFIC AVOID — SCENE MISMATCH PROTECTION]\n${conceptAvoidItems.join('\n')}`
+            ? `\n[CONCEPT-SPECIFIC AVOID — PRODUCT MISMATCH PROTECTION]\n${conceptAvoidItems.join('\n')}`
             : '';
 
         return `[NEGATIVE PROMPT — MUST AVOID]
 DO NOT generate any of the following:
 - Extra fingers, extra limbs, distorted hands, mutated body parts
-- Text, watermarks, logos, or written words embedded in the image
+- Misspelled text, garbled characters, illegible or warped letters, random symbols embedded in the image
+- Watermarks or stock photo overlays
 ${productNegatives}
 - Blurry, low-resolution, or pixelated output
 - Overly saturated or neon colors that clash with the brand palette
@@ -712,7 +801,7 @@ ${productNegatives}
 - Unrealistic body proportions or uncanny valley faces
 - Cluttered, messy compositions with too many visual elements
 - Dark, gloomy, or depressing atmospheres (unless the "problem" side of a comparison)
-- Generic fitness equipment, generic Pilates machines, generic yoga mats (use EXACT product description only)
+- Any product that does NOT match the exact product described in the Product Lock (use EXACT product description only)
 ${conceptAvoidSection}
 
 ${forbiddenItems ? `[NEGATIVE REINFORCEMENT — EXPLICITLY FORBIDDEN]
@@ -806,6 +895,7 @@ ${userPrompt}`;
             subheadline: String(parsed.subheadline),
             cta: String(parsed.cta),
             image_prompt: String(parsed.image_prompt),
+            bullet_points: Array.isArray(parsed.bullet_points) ? parsed.bullet_points.map(String) : undefined,
         };
     }
 
@@ -883,30 +973,36 @@ ${'═'.repeat(60)}
 ${'═'.repeat(60)}
 ${criticalSceneDirection}
 
-[CREATIVE DIRECTION FROM AI COPYWRITER]
-${rawImagePrompt}
-
 ${'═'.repeat(60)}
 PRIORITY 4 — LAYOUT PATTERN (Visual Structure from Inspiration)
 ${'═'.repeat(60)}
 ${layoutComposition}
 
-${READABILITY_LOCK}
+${TEXT_RENDERING_LOCK}
+
+${'═'.repeat(60)}
+TEXT CONTENT — RENDER THESE EXACT WORDS IN THE IMAGE
+${'═'.repeat(60)}
+The image MUST contain the following text rendered as VISIBLE, READABLE characters:
+- BRAND NAME: "${playbook.product_identity?.product_name || 'Brand'}" — display prominently at top of the ad
+- All other text elements (headline, subheadline, bullet points, CTA) come from the creative direction below
+
+[CREATIVE DIRECTION FROM AI COPYWRITER]
+${rawImagePrompt}
 
 ${'═'.repeat(60)}
 NEGATIVE REINFORCEMENT (AVOID LIST)
 ${'═'.repeat(60)}
 ${negativePrompt}
 
-FINAL INSTRUCTION: Generate a single, high-quality, photorealistic advertisement image.
-- ABSOLUTE RULE: The product in the image MUST be the EXACT product described in the Product Injection — "${playbook.product_identity?.product_name || 'the product'}" with ALL its specific physical features. Do NOT substitute with any generic or similar equipment.
-- FIRST: Ensure ALL Compliance rules (Priority 1) are satisfied.
-- SECOND: Product MUST match the Product Lock AND Product Injection descriptions EXACTLY — use exact colors, features, materials, and part names from the Brand JSON. Do NOT hallucinate or generalize product features.
-- THIRD: Obey the CRITICAL SCENE DIRECTION — if it says "Do NOT show exercising", the image MUST NOT show anyone exercising.
-- FOURTH: Apply the marketing angle's scene directive for narrative and mood.
-- FIFTH: Follow the layout zones for composition, ensuring elements do NOT overlap with Safe Zones.
-- If a human model is shown, follow the Persona Lock exactly.
-- MANDATORY: Every text overlay zone MUST have a dark semi-transparent overlay behind it per the Readability Lock. No exceptions.`;
+FINAL INSTRUCTION: Generate a single, high-quality advertisement image that is a COMPLETE, FINISHED AD DESIGN.
+- The image MUST contain RENDERED TEXT: brand name, headline, subheadline, bullet points, and CTA button text — all clearly readable
+- Product MUST match the Product Lock AND Product Injection descriptions EXACTLY
+- Obey CRITICAL SCENE DIRECTION restrictions
+- Apply marketing angle's scene directive for narrative and mood
+- Follow layout zones for composition
+- Text must be spelled EXACTLY as written — zero garbled characters
+- The final result should look like a professional social media advertisement ready to publish`;
 
         this.logger.log(`Guarded image prompt built (${guardedPrompt.length} chars)`);
         this.logger.log(`   Hierarchy applied: Compliance → Brand Identity → Product Injection → Angle (${angleId}) → Critical Scene Direction → Layout → Readability → Negative Reinforcement`);
@@ -1078,19 +1174,17 @@ COMPOSITION RULES:
 🚨 THIS IS A PRODUCT PRESENTATION / EDITORIAL SHOT. NOT AN ACTION SHOT.
 
  MANDATORY RULES:
-- Do NOT show anyone exercising, working out, stretching, or performing any fitness activity
-- Do NOT show the product being actively used in a workout
 - The product (${productName}) must be displayed in a STATIC, COMPOSED, ELEGANT manner
 - Think: high-end product photography, magazine editorial, luxury catalogue
-- Models (if present) should be STANDING, SITTING, or POSING near the product — NOT using it
-- The scene must feel CALM, COMPOSED, and EDITORIAL — not energetic or athletic
+- Models (if present) should be STANDING, SITTING, or POSING near the product — NOT actively using it
+- The scene must feel CALM, COMPOSED, and EDITORIAL
+- Focus on the product's visual beauty and premium presentation
 
 AVOID (in this editorial context):
-- Gym settings, gym interiors, gym equipment
-- Sweating, athletic strain, workout clothes in action
-- Dynamic movement, mid-exercise poses
-- Generic fitness equipment (yoga mats, dumbbells, resistance bands)
-- Any equipment that is NOT the exact ${productName}`;
+- Dynamic or energetic action scenes
+- Product being actively used or demonstrated
+- Any product that is NOT the exact ${productName}
+- Cluttered or distracting background elements`;
         }
 
         // Lifestyle/action mode — allow product use but still enforce product fidelity
@@ -1100,14 +1194,13 @@ The product (${productName}) may be shown in active use by a model.
 RULES:
 - The model may be shown using the product in a natural, lifestyle context
 - The product MUST still match the exact description from the Product Lock — no substitutions
-- The scene should feel aspirational and inviting, NOT aggressive or intense
-- Do NOT show aggressive workout or extreme athletic activity unless the angle explicitly requires it
+- The scene should feel aspirational and inviting
 - The product must remain clearly visible and identifiable in the scene
 
 AVOID:
-- Generic fitness equipment that is NOT the exact ${productName}
-- Overly aggressive or strained workout poses
-- Gym-bro / hardcore fitness aesthetics (unless brand tone explicitly calls for it)`;
+- Any product that is NOT the exact ${productName}
+- Overly aggressive or intense scenes
+- Generic or unrelated products in the frame`;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1145,10 +1238,10 @@ KEY PHYSICAL FEATURES: ${featureString}
 PRODUCT COLORS: ${colorString}
 
 FORBIDDEN SUBSTITUTIONS:
-- Do NOT write "fitness equipment" → write "${pi.product_name}"
-- Do NOT write "Pilates machine" → write "${pi.product_name}"
-- Do NOT write "exercise device" → write the exact product name and features above
-- Do NOT omit any of the key physical features listed above`;
+- Do NOT use generic category terms (like "cosmetic", "device", "equipment", "product") → write "${pi.product_name}"
+- Do NOT paraphrase or summarize the visual description → copy it VERBATIM
+- Do NOT omit any of the key physical features listed above
+- Do NOT substitute the product with any similar-looking alternative`;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1305,9 +1398,14 @@ ${'═'.repeat(60)}
 ${zonesJson}
 
 ${'═'.repeat(60)}
-TEXT LEGIBILITY — MANDATORY CONTRAST OVERLAYS
+TEXT LEGIBILITY — MANDATORY TEXT RENDERING
 ${'═'.repeat(60)}
-For EVERY text zone below, your image_prompt MUST include an instruction to place a dark overlay behind the text:
+The image_prompt you write MUST instruct the AI image model to RENDER ALL TEXT as visible characters in the image.
+For EVERY text zone below, your image_prompt MUST specify:
+- The EXACT text content to render
+- Font style (bold, italic, script, sans-serif)
+- Position (top, center, bottom)
+- Color and background treatment for legibility
 ${textOverlayInstructions}
 
 === AD FORMAT ===
@@ -1315,32 +1413,40 @@ ${textOverlayInstructions}
 
 === YOUR TASK ===
 Generate ad copy for "${pi.product_name}" using the "${angle.label}" marketing angle.
+This is a COMPLETE advertisement design — the generated image MUST contain ALL text rendered as visible characters.
+
 The ad MUST respect the priority hierarchy above:
-1. FIRST check all Compliance rules and ensure nothing violates them
-2. THEN apply Brand Identity (use exact product colors, features — no hallucination)
-3. THEN obey CRITICAL SCENE DIRECTION (if editorial → NO exercising)
+1. FIRST check all Compliance rules
+2. THEN apply Brand Identity (use exact product colors, features)
+3. THEN obey CRITICAL SCENE DIRECTION
 4. THEN apply the Marketing Angle's narrative
 5. THEN match the Layout Pattern's visual structure
 
 🚨 CRITICAL — image_prompt rules (MUST FOLLOW EXACTLY):
-1. START with: "Photorealistic [editorial/lifestyle/product-hero] advertisement photograph."
-2. IMMEDIATELY AFTER: Copy the EXACT product description from the PRODUCT_INJECTION block verbatim. Write: "The product is a ${pi.product_name} — ${pi.visual_description}"
-3. PRODUCT PLACEMENT: Describe exact position in frame (center, left-third, etc.) and camera angle
-4. SCENE/ENVIRONMENT: Background, setting, lighting direction, color grading, mood
-5. MODEL DIRECTION: If a model is present, describe pose, expression, wardrobe. If editorial, the model must NOT be exercising.
-6. TEXT OVERLAY ZONES: For each text zone, write: "Place a dark semi-transparent gradient overlay (rgba(0,0,0,0.45)) behind the [zone_type] text area at [position]." This is MANDATORY for every text zone.
-7. AVOID LIST: End with: "AVOID: [list everything from CRITICAL_SCENE_DIRECTION avoid list and negative prompt]"
-8. Do NOT include text, watermarks, or logos in the image description
-9. Do NOT use generic terms like "fitness equipment" or "Pilates machine" — use the exact product name and features from the PRODUCT_INJECTION
+1. START with: "A complete, finished [editorial/lifestyle/product-hero] advertisement design for social media."
+2. PRODUCT: Copy the EXACT product description from the PRODUCT_INJECTION block verbatim
+3. PRODUCT PLACEMENT: Describe exact position in frame and camera angle
+4. SCENE/ENVIRONMENT: Background, setting, lighting, mood
+5. MODEL DIRECTION: If applicable, describe pose/expression/wardrobe
+6. TEXT RENDERING (🚨 MOST IMPORTANT):
+   - "Render the brand name '${brandName}' in large bold sans-serif at the top of the ad"
+   - "Render the headline '[your headline text]' in large [italic/bold/script] font in the [position from zones]"
+   - "Render the subheadline '[your subheadline text]' in medium clean font below the headline"
+   - "Render bullet points with ✓ checkmarks: '[point 1]', '[point 2]', '[point 3]'"
+   - "Render the CTA '[your cta text]' inside a [brand-colored] rounded rectangle button at the bottom"
+7. DESIGN ELEMENTS: Describe cards, panels, shapes, gradients that frame the text and make it look like a real ad
+8. AVOID: garbled text, misspelled words, random characters, plus scene-specific avoids
+9. Do NOT use generic terms — use the exact product name from PRODUCT_INJECTION
 10. Optimize composition for ${format.label} format (${format.ratio}, ${format.dimensions})
 
 Return ONLY this JSON object (no markdown, no explanation):
 
 {
-  "headline": "A short, punchy headline (max 8 words) that fits the text zone",
+  "headline": "A short, punchy headline (max 8 words)",
   "subheadline": "A benefit-driven supporting statement (max 20 words)",
-  "cta": "An action-oriented call-to-action button text (2-5 words)",
-  "image_prompt": "A 200-400 word ultra-detailed photorealistic image generation prompt following the exact structure above. MUST include verbatim product description from PRODUCT_INJECTION, MUST include text overlay instructions for every text zone, MUST include AVOID list, MUST obey CRITICAL_SCENE_DIRECTION."
+  "cta": "An action-oriented CTA (2-5 words), include brand name if possible",
+  "bullet_points": ["Benefit point 1", "Benefit point 2", "Benefit point 3"],
+  "image_prompt": "A 300-500 word ultra-detailed prompt that produces a COMPLETE AD IMAGE with ALL text rendered as visible characters. MUST include: brand name rendering, headline rendering, subheadline rendering, bullet point rendering, CTA button rendering, product description from PRODUCT_INJECTION, scene/environment, design elements (cards, panels, buttons), and AVOID list."
 }`;
     }
 }

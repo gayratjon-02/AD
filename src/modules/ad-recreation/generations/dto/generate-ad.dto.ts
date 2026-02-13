@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 /**
  * Generate Ad DTO
@@ -22,4 +22,8 @@ export class GenerateAdDto {
     @IsString()
     @IsNotEmpty()
     format_id: string;
+
+    @IsUUID()
+    @IsOptional()
+    product_id?: string;
 }

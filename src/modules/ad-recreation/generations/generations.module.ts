@@ -7,6 +7,7 @@ import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-genera
 import { AdBrandsModule } from '../brands/ad-brands.module';
 import { AdConceptsModule } from '../ad-concepts/ad-concepts.module';
 import { AiModule } from '../../../ai/ai.module';
+import { Product } from '../../../database/entities/Product-Visuals/product.entity';
 
 /**
  * Generations Module - Phase 2: Ad Recreation
@@ -18,7 +19,7 @@ import { AiModule } from '../../../ai/ai.module';
 @Module({
     imports: [
         ConfigModule,
-        TypeOrmModule.forFeature([AdGeneration]),
+        TypeOrmModule.forFeature([AdGeneration, Product]),
         AdBrandsModule,
         AdConceptsModule,
         AiModule, // Provides GeminiService for image generation
