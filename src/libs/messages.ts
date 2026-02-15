@@ -43,6 +43,69 @@ export enum AdBrandMessage {
 }
 
 // ═══════════════════════════════════════════════════════════
+// AD COLLECTION MESSAGES
+// ═══════════════════════════════════════════════════════════
+
+export enum AdCollectionMessage {
+    // Success
+    COLLECTION_CREATED = 'Ad Collection created successfully',
+    COLLECTION_FOUND = 'Ad Collection retrieved successfully',
+    COLLECTION_UPDATED = 'Ad Collection updated successfully',
+    COLLECTION_DELETED = 'Ad Collection deleted successfully',
+
+    // Not Found
+    COLLECTION_NOT_FOUND = 'Ad Collection not found',
+
+    // Permission
+    COLLECTION_ACCESS_DENIED = 'You do not have access to this collection',
+
+    // File Validation
+    ONLY_IMAGES_ALLOWED = 'Only image files are allowed (jpg, jpeg, png, gif, svg, webp)',
+}
+
+// ═══════════════════════════════════════════════════════════
+// AD CATEGORY MESSAGES
+// ═══════════════════════════════════════════════════════════
+
+export enum AdCategoryMessage {
+    // Success
+    CATEGORY_CREATED = 'Ad Category created successfully',
+    CATEGORY_FOUND = 'Ad Category retrieved successfully',
+    CATEGORY_UPDATED = 'Ad Category updated successfully',
+    CATEGORY_DELETED = 'Ad Category deleted successfully',
+
+    // Not Found
+    CATEGORY_NOT_FOUND = 'Ad Category not found',
+
+    // Permission
+    CATEGORY_ACCESS_DENIED = 'You do not have access to this category',
+
+    // File Validation
+    ONLY_IMAGES_ALLOWED = 'Only image files are allowed (jpg, jpeg, png, gif, svg, webp)',
+}
+
+// ═══════════════════════════════════════════════════════════
+// AD PRODUCT MESSAGES
+// ═══════════════════════════════════════════════════════════
+
+export enum AdProductMessage {
+    // Success
+    PRODUCT_CREATED = 'Ad Product created successfully',
+    PRODUCT_FOUND = 'Ad Product retrieved successfully',
+    PRODUCT_UPDATED = 'Ad Product updated successfully',
+    PRODUCT_DELETED = 'Ad Product deleted successfully',
+
+    // Not Found
+    PRODUCT_NOT_FOUND = 'Ad Product not found',
+
+    // Permission
+    PRODUCT_ACCESS_DENIED = 'You do not have access to this product',
+
+    // File Validation
+    ONLY_IMAGES_ALLOWED = 'Only image files are allowed (jpg, jpeg, png, gif, svg, webp)',
+}
+
+// ═══════════════════════════════════════════════════════════
 // AD CONCEPT MESSAGES
 // ═══════════════════════════════════════════════════════════
 

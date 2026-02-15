@@ -10,6 +10,7 @@ import {
 import { User } from '../Product-Visuals/user.entity';
 import { AdBrand } from './ad-brand.entity';
 import { AdConcept } from './ad-concept.entity';
+import { AdProduct } from './ad-product.entity';
 
 // Import types and enums from centralized locations
 import { GeneratedAdImage } from '../../../libs/types/AdRecreation';
@@ -53,6 +54,14 @@ export class AdGeneration {
     @ManyToOne(() => AdConcept, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'concept_id' })
     concept: AdConcept;
+
+    // ─── Product Relation (optional) ─────────────────────────
+    @Column({ type: 'uuid', nullable: true })
+    product_id: string;
+
+    @ManyToOne(() => AdProduct, (product) => product.generations, { onDelete: 'SET NULL' })
+    @JoinColumn({ name: 'product_id' })
+    product: AdProduct;
 
     // ─── Status & Progress ───────────────────────────────────
     @Column({

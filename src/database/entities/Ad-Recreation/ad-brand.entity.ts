@@ -5,6 +5,7 @@ import {
     CreateDateColumn,
     UpdateDateColumn,
     ManyToOne,
+    OneToMany,
     JoinColumn,
 } from 'typeorm';
 import { User } from '../Product-Visuals/user.entity';
@@ -15,6 +16,7 @@ import {
     CopyPlaybook,
     BrandAssets,
 } from '../../../libs/types/AdRecreation';
+import { AdCollection } from './ad-collection.entity';
 
 /**
  * AdBrand Entity - Phase 2 Ad Recreation
@@ -65,6 +67,10 @@ export class AdBrand {
     // ─── Optional Extra PDF ──────────────────────────────────
     @Column({ type: 'varchar', length: 500, nullable: true })
     style_guide_url: string;
+
+    // ─── Collections ────────────────────────────────────────
+    @OneToMany(() => AdCollection, (collection) => collection.brand)
+    collections: AdCollection[];
 
     // ─── Timestamps ──────────────────────────────────────────
     @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })

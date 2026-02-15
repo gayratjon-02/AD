@@ -20,6 +20,9 @@ import { AdRecreation } from './entities/Ad-Recreation/ad-recreation.entity';
 import { AdBrand } from './entities/Ad-Recreation/ad-brand.entity';
 import { AdConcept } from './entities/Ad-Recreation/ad-concept.entity';
 import { AdGeneration } from './entities/Ad-Recreation/ad-generation.entity';
+import { AdCollection } from './entities/Ad-Recreation/ad-collection.entity';
+import { AdCategory } from './entities/Ad-Recreation/ad-category.entity';
+import { AdProduct } from './entities/Ad-Recreation/ad-product.entity';
 
 @Module({
     imports: [
@@ -45,6 +48,7 @@ import { AdGeneration } from './entities/Ad-Recreation/ad-generation.entity';
                         User, Brand, Collection, Product, Generation, DAPreset,
                         // Phase 2: Ad Recreation
                         AdRecreation, AdBrand, AdConcept, AdGeneration,
+                        AdCollection, AdCategory, AdProduct,
                     ],
                     autoLoadEntities: false,
                     maxQueryExecutionTime: 30000,
