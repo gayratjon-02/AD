@@ -493,6 +493,8 @@ The generated image must be VISUALLY IDENTICAL to the reference product.
 Every design element, patch, pocket, embossing, and detail must match the reference EXACTLY.
 The product must look IDENTICAL across all generated shots - same patches, same patterns, same details.
 
+🚫 DO NOT INCLUDE: collar labels, neck tags, size labels, care labels, washing instruction tags, or any inner garment tags. Only show the OUTER garment design elements visible in the reference images.
+
 PHOTOGRAPHY REQUIREMENTS:
 ${this.sanitizePromptForImageGeneration(prompt)}
 

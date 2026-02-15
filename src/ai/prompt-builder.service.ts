@@ -1185,32 +1185,51 @@ export class PromptBuilderService {
                 p.name?.toLowerCase().includes('chest')
         );
 
-        // Build pocket-specific prompt with exact details (monogram, embossing, etc.)
+        // Build pocket-specific prompt with EXACT specifications (matching closeup_back approach)
         let pocketDetails = '';
+        let exactPocketSpec = '';
+        let geometryPhrase = '';
         if (chestPocket) {
-            pocketDetails = `VISIBLE CHEST POCKET: ${chestPocket.material} ${chestPocket.shape} pocket, ${chestPocket.color} color, ${chestPocket.size}. `;
+            const pocketMaterial = chestPocket.material || 'leather';
+            const pocketShape = chestPocket.shape || 'square';
+            const pocketColor = chestPocket.color || '';
+            const pocketSize = chestPocket.size || '';
+
+            // EXACT pocket specification (matching closeup_back's exactPatchSpec pattern)
+            exactPocketSpec = `POCKET SPECIFICATION: ${pocketShape.toUpperCase()} shape, ${pocketMaterial.toUpperCase()} material${pocketColor ? `, ${pocketColor.toUpperCase()} color` : ''}${pocketSize ? `, ${pocketSize}` : ''}. `;
+
+            pocketDetails = `VISIBLE CHEST POCKET: ${pocketMaterial} ${pocketShape} pocket${pocketColor ? `, ${pocketColor} color` : ''}${pocketSize ? `, ${pocketSize}` : ''}. `;
             if (chestPocket.special_features) {
                 pocketDetails += `CRITICAL POCKET DETAIL: ${chestPocket.special_features}. `;
             }
-            this.logger.log(`🎯 CloseUp Front: Extracted pocket details - ${chestPocket.material} ${chestPocket.shape}, special: ${chestPocket.special_features || 'none'}`);
+
+            // Geometry enforcement (matching closeup_back approach)
+            const shapeLower = pocketShape.toLowerCase();
+            if (shapeLower.includes('square')) {
+                geometryPhrase = 'Focus on the SQUARE pocket patch with sharp corners. ';
+            } else if (shapeLower.includes('rectang')) {
+                geometryPhrase = 'Focus on the RECTANGULAR pocket patch with sharp corners. ';
+            }
+
+            this.logger.log(`🎯 CloseUp Front: Extracted pocket details - ${pocketMaterial} ${pocketShape}, special: ${chestPocket.special_features || 'none'}`);
         }
 
         // Include full front description with micro details
         const frontDescription = product.design_front.description || '';
         const microDetails = product.design_front.micro_details ? `Micro details: ${product.design_front.micro_details}. ` : '';
 
-        // 🎯 Priority 1: SUBJECT - Model wearing garment, close-up on front chest/collar
-        const subjectPart = `Young child model wearing ${weightedColor} ${product.general_info.product_name}. FULLY CLOTHED - complete outfit, no bare skin visible. CLOSE-UP SHOT framed from chin to chest area. Partial face visible showing lips and chin only. Camera focused on front collar, buttons, and chest details.`;
+        // 🎯 Priority 1: SUBJECT - Model wearing garment, close-up on chest area (NOT collar focus)
+        const subjectPart = `Young child model wearing ${weightedColor} ${product.general_info.product_name}. FULLY CLOTHED - complete outfit, no bare skin visible. CLOSE-UP SHOT framed from chin to chest area. Partial face visible showing lips and chin only. Camera focused on front chest pocket patch and garment details.`;
 
-        // Priority 2: Product Details - FRONT DETAILS on worn garment with EXACT pocket/patch specs
+        // Priority 2: Product Details - FRONT DETAILS with EXACT pocket/patch specs (matching closeup_back pattern)
         const productIdentity = this.buildProductIdentityBlock(product, true, false);
-        const productData = `FRONT GARMENT DETAILS IN FOCUS: ${frontDescription}. ${pocketDetails}${microDetails}Collar shape clearly visible. ${productIdentity}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp focus on buttons, zipper, pocket patches, embossing patterns, and embroidery while worn on model. CRITICAL: Pocket patch must EXACTLY match reference images with correct material, shape, and embossed pattern.`;
+        const productData = `FRONT GARMENT DETAILS IN FOCUS: ${frontDescription}. ${geometryPhrase}${exactPocketSpec}${pocketDetails}${microDetails}${productIdentity}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp focus on pocket patches, embossing patterns, buttons, and embroidery while worn on model. CRITICAL: Pocket patch must EXACTLY match reference images with correct material, shape, and embossed pattern. The pocket must look IDENTICAL to all other generated shots.`;
 
         // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred background
         const environmentPart = `${da.background.type} backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}. Shallow depth of field keeping garment details sharp.`;
 
-        // Priority 4: Technical - CRITICAL: NO BARE SKIN
-        const helpers = `Editorial fashion photography. Close-up portrait framing. Professional child model FULLY DRESSED. Complete outfit - NO bare back, NO bare shoulders, NO exposed skin anywhere. ${qualitySuffix}`;
+        // Priority 4: Technical - NO BARE SKIN, NO INNER LABELS/TAGS
+        const helpers = `Editorial fashion photography. Close-up portrait framing. Professional child model FULLY DRESSED. Complete outfit - NO bare back, NO bare shoulders, NO exposed skin anywhere. IMPORTANT: Do NOT show any collar labels, neck tags, size labels, care labels, or brand tags. Only the outer garment design should be visible - NO inner clothing tags or labels visible. ${qualitySuffix}`;
 
         return `${subjectPart} ${productData} ${environmentPart} ${helpers}`;
     }
