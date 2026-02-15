@@ -100,4 +100,7 @@ export enum AdGenerationMessage {
     RENDER_FAILED = 'AI failed to render the ad image',
     RENDER_NO_COPY = 'Generation must have ad copy before rendering. Run generate first.',
     GEMINI_API_KEY_MISSING = 'Gemini API key is not configured',
+    REGENERATION_STARTED = 'Image regeneration started',
+    REGENERATION_COMPLETED = 'Image variation regenerated successfully',
+    REGENERATION_FAILED = 'Failed to regenerate image variation',
 }

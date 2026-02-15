@@ -383,105 +383,144 @@ export class GenerationsService {
         this.logger.log(`   Raw image_prompt: ${adCopy.image_prompt.length} chars`);
         this.logger.log(`   Guarded image_prompt: ${guardedImagePrompt.length} chars`);
 
-        let generatedImageBase64: string | null = null;
-        let generatedImageUrl: string | null = null;
-        let imageMimeType = 'image/png';
+        // ─── P0: Generate N variations (default 4) ─────────────────
+        const variationsCount = dto.variations_count || 4;
+        this.logger.log(`[STEP 7b] Generating ${variationsCount} image variations...`);
 
-        try {
-            let imageResult: any;
+        const resultImages: Array<{
+            id: string;
+            url: string;
+            format: string;
+            angle: string;
+            variation_index: number;
+            generated_at: string;
+        }> = [];
 
-            // Build combined reference images: inspiration + product images
-            const allReferenceImages: string[] = [];
-            const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+        // Build combined reference images: inspiration + product images
+        const allReferenceImages: string[] = [];
+        const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
 
-            if (concept.original_image_url) {
-                // 🔧 FIX: Handle legacy URLs with wrong port (3000 -> 4001)
-                let refImageUrl = concept.original_image_url;
-                if (refImageUrl.includes('localhost:3000')) {
-                    refImageUrl = refImageUrl.replace('http://localhost:3000', uploadBaseUrl);
-                    this.logger.log(`🔧 Fixed legacy image URL: ${concept.original_image_url} -> ${refImageUrl}`);
-                }
-                allReferenceImages.push(refImageUrl);
+        if (concept.original_image_url) {
+            let refImageUrl = concept.original_image_url;
+            if (refImageUrl.includes('localhost:3000')) {
+                refImageUrl = refImageUrl.replace('http://localhost:3000', uploadBaseUrl);
+                this.logger.log(`🔧 Fixed legacy image URL: ${concept.original_image_url} -> ${refImageUrl}`);
             }
-
-            // Add product images to reference array
-            allReferenceImages.push(...productImageUrls);
-
-            this.logger.log(`[REFERENCE IMAGES] Total: ${allReferenceImages.length}`);
-            allReferenceImages.forEach((url, i) => this.logger.log(`   [${i}] ${url}`));
-
-            if (allReferenceImages.length > 0) {
-                imageResult = await this.geminiService.generateImageWithReference(
-                    guardedImagePrompt,
-                    allReferenceImages, // Inspiration + product images as references
-                    aspectRatio,
-                );
-            } else {
-                this.logger.warn(`No reference images available — falling back to text-only generation`);
-                imageResult = await this.geminiService.generateImage(
-                    guardedImagePrompt,
-                    undefined,
-                    aspectRatio,
-                );
-            }
-
-            generatedImageBase64 = imageResult.data;
-            imageMimeType = imageResult.mimeType || 'image/png';
-            this.logger.log(`GEMINI IMAGE GENERATION COMPLETED`);
-            this.logger.log(`   MimeType: ${imageMimeType}`);
-            this.logger.log(`   Size: ${(generatedImageBase64.length / 1024).toFixed(1)} KB (base64)`);
-
-            // Save image to disk
-            await this.generationsRepository.update(generationId, { progress: 80 });
-
-            const uploadsDir = join(process.cwd(), 'uploads', 'generations');
-            if (!existsSync(uploadsDir)) {
-                mkdirSync(uploadsDir, { recursive: true });
-            }
-
-            const extension = imageMimeType.includes('png') ? 'png' : 'jpeg';
-            const fileName = `${uuidv4()}.${extension}`;
-            const filePath = join(uploadsDir, fileName);
-            const imageBuffer = Buffer.from(generatedImageBase64, 'base64');
-            writeFileSync(filePath, imageBuffer);
-
-            const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
-            generatedImageUrl = `${baseUrl}/uploads/generations/${fileName}`;
-
-            this.logger.log(`Image saved to disk: ${filePath}`);
-            this.logger.log(`   URL: ${generatedImageUrl}`);
-
-        } catch (error) {
-            this.logger.error(`Gemini image generation failed: ${error instanceof Error ? error.message : String(error)}`);
-            this.logger.warn(`Continuing without image - ad copy will still be saved.`);
+            allReferenceImages.push(refImageUrl);
         }
 
-        // Step 8: Save everything to database
-        this.logger.log(`[STEP 8] Saving results to database...`);
+        // Add product images to reference array
+        allReferenceImages.push(...productImageUrls);
 
-        const resultImages = generatedImageUrl ? [
-            {
-                id: uuidv4(),
-                url: generatedImageUrl,
-                // base64: generatedImageBase64, // ⚠️ REMOVED to save DB space (Railway volume full)
-                format: aspectRatio,
-                angle: dto.marketing_angle_id,
-                variation_index: 1,
-                generated_at: new Date().toISOString(),
-            },
-        ] : [];
+        this.logger.log(`[REFERENCE IMAGES] Total: ${allReferenceImages.length}`);
+        allReferenceImages.forEach((url, i) => this.logger.log(`   [${i}] ${url}`));
+
+        // Variation seed suffixes for visual diversity
+        const variationSeeds = [
+            '', // Variation 1: base prompt, no suffix
+            '\n[VARIATION DIRECTION: Use a slightly different composition angle and camera perspective. Shift key elements position by 10-15%.]',
+            '\n[VARIATION DIRECTION: Adjust the color temperature slightly warmer. Use a different arrangement of supporting design elements.]',
+            '\n[VARIATION DIRECTION: Try an alternative text layout. Shift the visual weight slightly. Minor lighting variation.]',
+            '\n[VARIATION DIRECTION: Different crop and framing. Alternative background treatment while maintaining the same mood.]',
+            '\n[VARIATION DIRECTION: Alternate typography emphasis. Slightly different product angle or scale.]',
+            '\n[VARIATION DIRECTION: Different depth of field. Alternative decorative elements positioning.]',
+            '\n[VARIATION DIRECTION: Subtle palette shift. Different negative space distribution.]',
+        ];
+
+        for (let i = 0; i < variationsCount; i++) {
+            const variationNum = i + 1;
+            this.logger.log(`\n   ── VARIATION ${variationNum}/${variationsCount} ──`);
+
+            // Calculate progress: spread image generation across 50% → 90%
+            const progressPerVariation = 40 / variationsCount;
+            const currentProgress = Math.round(50 + (i * progressPerVariation));
+            await this.generationsRepository.update(generationId, { progress: currentProgress });
+
+            try {
+                const variationPrompt = guardedImagePrompt + (variationSeeds[i] || variationSeeds[i % variationSeeds.length]);
+
+                let imageResult: any;
+                if (allReferenceImages.length > 0) {
+                    imageResult = await this.geminiService.generateImageWithReference(
+                        variationPrompt,
+                        allReferenceImages,
+                        aspectRatio,
+                    );
+                } else {
+                    this.logger.warn(`No reference images — using text-only generation`);
+                    imageResult = await this.geminiService.generateImage(
+                        variationPrompt,
+                        undefined,
+                        aspectRatio,
+                    );
+                }
+
+                const generatedImageBase64 = imageResult.data;
+                const imageMimeType = imageResult.mimeType || 'image/png';
+
+                this.logger.log(`   ✅ Variation ${variationNum} generated (${(generatedImageBase64.length / 1024).toFixed(1)} KB base64)`);
+
+                // Save image to disk
+                const uploadsDir = join(process.cwd(), 'uploads', 'generations');
+                if (!existsSync(uploadsDir)) {
+                    mkdirSync(uploadsDir, { recursive: true });
+                }
+
+                const extension = imageMimeType.includes('png') ? 'png' : 'jpeg';
+                const fileName = `${uuidv4()}.${extension}`;
+                const filePath = join(uploadsDir, fileName);
+                const imageBuffer = Buffer.from(generatedImageBase64, 'base64');
+                writeFileSync(filePath, imageBuffer);
+
+                const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+                const generatedImageUrl = `${baseUrl}/uploads/generations/${fileName}`;
+
+                this.logger.log(`   Saved: ${filePath}`);
+                this.logger.log(`   URL: ${generatedImageUrl}`);
+
+                resultImages.push({
+                    id: uuidv4(),
+                    url: generatedImageUrl,
+                    format: aspectRatio,
+                    angle: dto.marketing_angle_id,
+                    variation_index: variationNum,
+                    generated_at: new Date().toISOString(),
+                });
+
+                // Save progress after each variation (so partial results survive crashes)
+                await this.generationsRepository.update(generationId, {
+                    result_images: resultImages,
+                    progress: Math.round(50 + ((i + 1) * progressPerVariation)),
+                });
+
+            } catch (error) {
+                this.logger.error(`   ❌ Variation ${variationNum} failed: ${error instanceof Error ? error.message : String(error)}`);
+                // Continue with remaining variations — don't fail the whole generation
+            }
+        }
+
+        this.logger.log(`\n   Image generation complete: ${resultImages.length}/${variationsCount} variations succeeded`);
+
+        // Step 8: Save everything to database
+        this.logger.log(`[STEP 8] Saving final results to database...`);
+
+        // Determine final status based on how many variations succeeded
+        const finalStatus = resultImages.length > 0
+            ? AdGenerationStatus.COMPLETED
+            : AdGenerationStatus.FAILED;
 
         await this.generationsRepository.update(generationId, {
             generated_copy: adCopy,
             result_images: resultImages,
-            status: AdGenerationStatus.COMPLETED,
+            status: finalStatus,
             progress: 100,
             completed_at: new Date(),
+            ...(resultImages.length === 0 ? { failure_reason: 'All image variations failed to generate' } : {}),
         });
 
         this.logger.log(`Results saved to DB`);
         this.logger.log(`   Ad Copy: SAVED`);
-        this.logger.log(`   Result Images: ${resultImages.length} image(s)`);
+        this.logger.log(`   Result Images: ${resultImages.length}/${variationsCount} variation(s)`);
 
         // Step 9: Fetch and return updated generation
         this.logger.log(`[STEP 9] Fetching updated generation record...`);
@@ -594,6 +633,133 @@ export class GenerationsService {
 
             this.logger.error(`Image render failed: ${error instanceof Error ? error.message : String(error)}`);
             throw new InternalServerErrorException(AdGenerationMessage.RENDER_FAILED);
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // REGENERATE SINGLE VARIATION
+    // ═══════════════════════════════════════════════════════════
+
+    async regenerateVariation(
+        generationId: string,
+        variationIndex: number,
+        userId: string,
+    ): Promise<AdGeneration> {
+        this.logger.log(`Regenerating variation ${variationIndex} for generation ${generationId}`);
+
+        const generation = await this.findOne(generationId, userId);
+
+        if (!generation.generated_copy?.image_prompt) {
+            throw new BadRequestException(AdGenerationMessage.RENDER_NO_COPY);
+        }
+
+        // Fetch brand, concept, angle, format to rebuild the guarded prompt
+        const brand = await this.adBrandsService.findOne(generation.brand_id, userId);
+        const concept = await this.adConceptsService.findOne(generation.concept_id, userId);
+        const angleId = generation.selected_angles?.[0];
+        const formatId = generation.selected_formats?.[0] || 'square';
+
+        const angle = MARKETING_ANGLES.find((a) => a.id === angleId);
+        const format = AD_FORMATS.find((f) => f.id === formatId);
+        const aspectRatio = FORMAT_RATIO_MAP[formatId] || '1:1';
+
+        if (!angle || !format || !brand.brand_playbook) {
+            throw new BadRequestException('Cannot regenerate: missing angle, format, or playbook data');
+        }
+
+        // Rebuild guarded image prompt (same pipeline as original generation)
+        const guardedImagePrompt = this.buildGuardedImagePrompt(
+            generation.generated_copy.image_prompt,
+            angleId,
+            angle,
+            brand.brand_playbook,
+            concept.analysis_json,
+            format,
+        );
+
+        // Add regeneration variation directive
+        const regenPrompt = guardedImagePrompt +
+            `\n[REGENERATION: This is a fresh take on variation ${variationIndex}. Create a distinctly different composition while maintaining the same ad concept, product, and copy.]`;
+
+        // Build reference images
+        const allReferenceImages: string[] = [];
+        const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+
+        if (concept.original_image_url) {
+            let refImageUrl = concept.original_image_url;
+            if (refImageUrl.includes('localhost:3000')) {
+                refImageUrl = refImageUrl.replace('http://localhost:3000', uploadBaseUrl);
+            }
+            allReferenceImages.push(refImageUrl);
+        }
+
+        try {
+            let imageResult: any;
+            if (allReferenceImages.length > 0) {
+                imageResult = await this.geminiService.generateImageWithReference(
+                    regenPrompt,
+                    allReferenceImages,
+                    aspectRatio,
+                );
+            } else {
+                imageResult = await this.geminiService.generateImage(
+                    regenPrompt,
+                    undefined,
+                    aspectRatio,
+                );
+            }
+
+            const generatedImageBase64 = imageResult.data;
+            const imageMimeType = imageResult.mimeType || 'image/png';
+
+            // Save image to disk
+            const uploadsDir = join(process.cwd(), 'uploads', 'generations');
+            if (!existsSync(uploadsDir)) {
+                mkdirSync(uploadsDir, { recursive: true });
+            }
+
+            const extension = imageMimeType.includes('png') ? 'png' : 'jpeg';
+            const fileName = `${uuidv4()}.${extension}`;
+            const filePath = join(uploadsDir, fileName);
+            const imageBuffer = Buffer.from(generatedImageBase64, 'base64');
+            writeFileSync(filePath, imageBuffer);
+
+            const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+            const generatedImageUrl = `${baseUrl}/uploads/generations/${fileName}`;
+
+            this.logger.log(`Regenerated variation ${variationIndex}: ${generatedImageUrl}`);
+
+            // Replace the specific variation in result_images
+            const updatedImages = [...(generation.result_images || [])];
+            const existingIdx = updatedImages.findIndex(img => img.variation_index === variationIndex);
+
+            const newImage = {
+                id: uuidv4(),
+                url: generatedImageUrl,
+                format: aspectRatio,
+                angle: angleId,
+                variation_index: variationIndex,
+                generated_at: new Date().toISOString(),
+            };
+
+            if (existingIdx >= 0) {
+                updatedImages[existingIdx] = newImage;
+            } else {
+                updatedImages.push(newImage);
+            }
+
+            await this.generationsRepository.update(generationId, {
+                result_images: updatedImages,
+            });
+
+            const updated = await this.generationsRepository.findOne({ where: { id: generationId } });
+            if (!updated) throw new InternalServerErrorException('Failed to fetch updated generation');
+
+            return updated;
+
+        } catch (error) {
+            this.logger.error(`Regeneration failed: ${error instanceof Error ? error.message : String(error)}`);
+            throw new InternalServerErrorException(AdGenerationMessage.REGENERATION_FAILED);
         }
     }
 

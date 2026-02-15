@@ -46,3 +46,5 @@ echo "   docker compose ps                      - Container'lar holatini ko'rish
 echo "   docker compose down                    - Barcha container'larni to'xtatish"
 
 
+docker compose logs --tail 200 -f
+

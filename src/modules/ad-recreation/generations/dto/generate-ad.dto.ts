@@ -1,9 +1,9 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID, IsInt, Min, Max } from 'class-validator';
 
 /**
  * Generate Ad DTO
  *
- * Request body for POST /ad-generations/generate
+ * Request body for POST /ad-recreation/generate
  * Product data is auto-fetched from the brand on the backend.
  */
 export class GenerateAdDto {
@@ -26,4 +26,12 @@ export class GenerateAdDto {
     @IsUUID()
     @IsOptional()
     product_id?: string;
+
+    /** Number of image variations to generate per combo (default: 4, max: 8) */
+    @IsOptional()
+    @IsInt()
+    @Min(1)
+    @Max(8)
+    variations_count?: number;
 }
+

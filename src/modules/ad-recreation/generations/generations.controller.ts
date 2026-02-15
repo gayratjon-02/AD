@@ -20,11 +20,11 @@ import { GenerateAdDto } from './dto/generate-ad.dto';
  * Generations Controller - Phase 2: Ad Recreation
  *
  * Endpoints:
- * - POST /ad-recreation/generate            → Generate ads (batch: angles[] + formats[])
- * - GET  /ad-recreation/:gen_id/status      → Check progress (0-100%)
- * - GET  /ad-recreation/:gen_id/results     → Get generated images
- * - POST /ad-recreation/:gen_id/regenerate  → Regenerate specific angle/format combo
- * - GET  /ad-recreation/history             → Generation history (filterable)
+ * - POST /ad-recreation/generate            → Generate ads (with N variations)
+ * - POST /ad-recreation/:id/render          → Re-render ad image
+ * - POST /ad-recreation/:id/regenerate      → Regenerate specific variation
+ * - GET  /ad-recreation/:id                 → Get generation by ID
+ * - GET  /ad-recreation                     → Generation history
  */
 @Controller('ad-recreation')
 @UseGuards(JwtAuthGuard)
@@ -34,7 +34,7 @@ export class GenerationsController {
     constructor(private readonly generationsService: GenerationsService) { }
 
     // ═══════════════════════════════════════════════════════════
-    // POST /ad-generations/generate - Generate Ad
+    // POST /ad-recreation/generate - Generate Ad (N variations)
     // ═══════════════════════════════════════════════════════════
 
     @Post('generate')
@@ -42,7 +42,7 @@ export class GenerationsController {
         @CurrentUser() user: User,
         @Body() dto: GenerateAdDto,
     ): Promise<{ success: boolean; message: string; generation: AdGeneration; ad_copy: any; result: any }> {
-        this.logger.log(`Generating ad for user ${user.id}`);
+        this.logger.log(`Generating ad for user ${user.id} (variations: ${dto.variations_count || 4})`);
 
         const genResult = await this.generationsService.generateAd(user.id, dto);
 
@@ -56,7 +56,7 @@ export class GenerationsController {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // POST /ad-generations/:id/render - Render Ad Image
+    // POST /ad-recreation/:id/render - Render Ad Image (Legacy)
     // ═══════════════════════════════════════════════════════════
 
     @Post(':id/render')
@@ -76,7 +76,29 @@ export class GenerationsController {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GET /ad-generations/:id - Get Generation by ID
+    // POST /ad-recreation/:id/regenerate - Regenerate Variation
+    // ═══════════════════════════════════════════════════════════
+
+    @Post(':id/regenerate')
+    async regenerateVariation(
+        @Param('id', ParseUUIDPipe) id: string,
+        @Body() body: { variation_index: number },
+        @CurrentUser() user: User,
+    ): Promise<{ success: boolean; message: string; generation: AdGeneration }> {
+        const variationIndex = body.variation_index || 1;
+        this.logger.log(`Regenerating variation ${variationIndex} for generation ${id}`);
+
+        const generation = await this.generationsService.regenerateVariation(id, variationIndex, user.id);
+
+        return {
+            success: true,
+            message: AdGenerationMessage.REGENERATION_COMPLETED,
+            generation,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // GET /ad-recreation/:id - Get Generation by ID
     // ═══════════════════════════════════════════════════════════
 
     @Get(':id')
@@ -93,7 +115,7 @@ export class GenerationsController {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // GET /ad-generations - Get All Generations
+    // GET /ad-recreation - Get All Generations
     // ═══════════════════════════════════════════════════════════
 
     @Get()
