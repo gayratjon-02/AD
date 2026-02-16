@@ -24,9 +24,11 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AdRecreationModule } from './modules/ad-recreation/ad-recreation.module';
+import { S3Module } from './common/s3/s3.module';
 
 @Module({
 	imports: [
+		S3Module,
 		ConfigModule.forRoot({
 			isGlobal: true,
 			load: [databaseConfig, appConfig, jwtConfig, uploadConfig, geminiConfig, vertexConfig],

@@ -9,9 +9,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { writeFileSync, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { S3Service } from '../../../common/s3/s3.service';
 import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-generation.entity';
 import { Product } from '../../../database/entities/Product-Visuals/product.entity';
 import { AdBrandsService } from '../brands/ad-brands.service';
@@ -182,6 +181,7 @@ export class GenerationsService {
         private readonly adConceptsService: AdConceptsService,
         private readonly geminiService: GeminiService,
         private readonly configService: ConfigService,
+        private readonly s3Service: S3Service,
     ) { }
 
     // ═══════════════════════════════════════════════════════════
@@ -339,12 +339,15 @@ export class GenerationsService {
 
         // Step 5: Build prompt for text generation (fully JSON-driven)
         this.logger.log(`[STEP 5] Building text generation prompt...`);
+        const productJson = productData?.analyzed_product_json;
+
         const userPrompt = this.buildUserPrompt(
             brand.name,
             playbook,
             concept.analysis_json,
             angle,
             format,
+            productJson,
         );
         this.logger.log(`Prompt built (${userPrompt.length} chars)`);
 
@@ -380,6 +383,7 @@ export class GenerationsService {
             playbook,
             concept.analysis_json,
             format,
+            productJson,
         );
 
         const aspectRatio = FORMAT_RATIO_MAP[dto.format_id] || '1:1';
@@ -480,23 +484,14 @@ export class GenerationsService {
 
                 this.logger.log(`   ✅ Variation ${variationNum} generated (${(generatedImageBase64.length / 1024).toFixed(1)} KB base64)`);
 
-                // Save image to disk
-                const uploadsDir = join(process.cwd(), 'uploads', 'generations');
-                if (!existsSync(uploadsDir)) {
-                    mkdirSync(uploadsDir, { recursive: true });
-                }
+                // Upload image to S3
+                const generatedImageUrl = await this.s3Service.uploadBase64Image(
+                    generatedImageBase64,
+                    'generations',
+                    imageMimeType,
+                );
 
-                const extension = imageMimeType.includes('png') ? 'png' : 'jpeg';
-                const fileName = `${uuidv4()}.${extension}`;
-                const filePath = join(uploadsDir, fileName);
-                const imageBuffer = Buffer.from(generatedImageBase64, 'base64');
-                writeFileSync(filePath, imageBuffer);
-
-                const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
-                const generatedImageUrl = `${baseUrl}/uploads/generations/${fileName}`;
-
-                this.logger.log(`   Saved: ${filePath}`);
-                this.logger.log(`   URL: ${generatedImageUrl}`);
+                this.logger.log(`   S3 URL: ${generatedImageUrl}`);
 
                 resultImages.push({
                     id: uuidv4(),
@@ -611,28 +606,20 @@ export class GenerationsService {
                 aspectRatio,
             );
 
-            const imageBuffer = Buffer.from(imageResult.data, 'base64');
+            // Upload image to S3
+            const imageUrl = await this.s3Service.uploadBase64Image(
+                imageResult.data,
+                'generations',
+                'image/png',
+            );
 
-            const uploadsDir = join(process.cwd(), 'uploads', 'generations');
-            if (!existsSync(uploadsDir)) {
-                mkdirSync(uploadsDir, { recursive: true });
-            }
-
-            const fileName = `${uuidv4()}.png`;
-            const filePath = join(uploadsDir, fileName);
-            writeFileSync(filePath, imageBuffer);
-
-            this.logger.log(`Image saved: ${filePath} (${(imageBuffer.length / 1024).toFixed(1)} KB)`);
-
-            const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
-            const imageUrl = `${baseUrl}/uploads/generations/${fileName}`;
+            this.logger.log(`Image uploaded to S3: ${imageUrl}`);
 
             generation.result_images = [
                 ...(generation.result_images || []),
                 {
                     id: uuidv4(),
                     url: imageUrl,
-                    base64: imageResult.data,
                     format: aspectRatio,
                     angle: generation.selected_angles?.[0],
                     variation_index: (generation.result_images?.length || 0) + 1,
@@ -743,20 +730,12 @@ export class GenerationsService {
             const generatedImageBase64 = imageResult.data;
             const imageMimeType = imageResult.mimeType || 'image/png';
 
-            // Save image to disk
-            const uploadsDir = join(process.cwd(), 'uploads', 'generations');
-            if (!existsSync(uploadsDir)) {
-                mkdirSync(uploadsDir, { recursive: true });
-            }
-
-            const extension = imageMimeType.includes('png') ? 'png' : 'jpeg';
-            const fileName = `${uuidv4()}.${extension}`;
-            const filePath = join(uploadsDir, fileName);
-            const imageBuffer = Buffer.from(generatedImageBase64, 'base64');
-            writeFileSync(filePath, imageBuffer);
-
-            const baseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
-            const generatedImageUrl = `${baseUrl}/uploads/generations/${fileName}`;
+            // Upload image to S3
+            const generatedImageUrl = await this.s3Service.uploadBase64Image(
+                generatedImageBase64,
+                'generations',
+                imageMimeType,
+            );
 
             this.logger.log(`Regenerated variation ${variationIndex}: ${generatedImageUrl}`);
 
@@ -833,27 +812,64 @@ export class GenerationsService {
      * Builds the PRODUCT LOCK guardrail dynamically from the brand playbook.
      * Ensures the AI image generator produces the correct product identity.
      */
-    private buildProductLock(playbook: BrandPlaybook): string {
+    /**
+     * Builds the PRODUCT LOCK guardrail dynamically from the brand playbook.
+     * Ensures the AI image generator produces the correct product identity.
+     */
+    private buildProductLock(playbook: BrandPlaybook, productJson?: any): string {
+        // P0: Prefer analyzed product JSON if available
         const pi = playbook.product_identity!;
 
-        const featureLines = pi.key_features
+        let productName = pi.product_name;
+        let productType = pi.product_type;
+        let visualDescription = pi.visual_description;
+        let features = pi.key_features;
+        let colors = pi.colors;
+        let materials: string[] = [];
+
+        if (productJson) {
+            productName = productJson.general_info?.product_name || productName;
+            productType = productJson.general_info?.product_type || productType;
+            // Merge visual descriptions
+            const analyzedDesc = productJson.texture_description || '';
+            const analyzedMaterials = Array.isArray(productJson.materials) ? productJson.materials.join(', ') : '';
+            const analyzedDetails = Array.isArray(productJson.design_elements) ? productJson.design_elements.join(', ') : '';
+
+            if (analyzedDesc || analyzedMaterials) {
+                visualDescription = `Analyzed Details: ${analyzedDesc}. Materials: ${analyzedMaterials}. Design: ${analyzedDetails}. \nBackground Info: ${visualDescription}`;
+            }
+
+            if (Array.isArray(productJson.style_keywords)) {
+                features = [...features, ...productJson.style_keywords];
+            }
+            if (Array.isArray(productJson.materials)) {
+                materials = productJson.materials;
+            }
+        }
+
+        const featureLines = features
             .map(f => `- ${f}`)
             .join('\n');
 
-        const colorLines = Object.entries(pi.colors)
+        const colorLines = Object.entries(colors)
             .map(([part, hex]) => `- ${part}: ${hex}`)
             .join('\n');
+
+        const materialLines = materials.length > 0
+            ? `Materials: ${materials.join(', ')}`
+            : '';
 
         const negativeLines = (pi.negative_traits || [])
             .map(t => `- ${t}`)
             .join('\n');
 
         return `[PRODUCT LOCK — DO NOT MODIFY]
-The product is: ${pi.product_name} (${pi.product_type}).
-${pi.visual_description}
+The product is: ${productName} (${productType}).
+${visualDescription}
 
 Physical traits that MUST appear exactly:
 ${featureLines || '(see visual description above)'}
+${materialLines}
 
 Product colors:
 ${colorLines || '(use brand colors)'}
@@ -899,8 +915,9 @@ If a human model appears in the image:
         angleDescription: string,
         playbook: BrandPlaybook,
         angle?: import('../configurations/constants/marketing-angles').MarketingAngle,
+        productJson?: any,
     ): string {
-        const productName = playbook.product_identity?.product_name || 'the product';
+        const productName = productJson?.general_info?.product_name || playbook.product_identity?.product_name || 'the product';
         const brandPrimary = playbook.colors?.primary || '#000000';
 
         // If we have the full MarketingAngle with narrative data, use it
@@ -1127,24 +1144,29 @@ ${userPrompt}`;
         playbook: BrandPlaybook,
         conceptAnalysis?: any,
         format?: import('../configurations/constants/ad-formats').AdFormat,
+        productJson?: any,
     ): string {
         // ━━━ LAYER 1: COMPLIANCE LOCK (ABSOLUTE — overrides everything) ━━━
         const complianceLock = this.buildComplianceLock(playbook);
 
         // ━━━ LAYER 2: BRAND IDENTITY (Product + Persona + Colors) ━━━
-        const productLock = this.buildProductLock(playbook);
+        // ━━━ LAYER 2: BRAND IDENTITY (Product + Persona + Colors) ━━━
+        const productLock = this.buildProductLock(playbook, productJson);
+        const productInjection = this.buildProductInjection(playbook, productJson);
         const personaLock = this.buildPersonaLock(playbook);
-
-        // ━━━ LAYER 2.5: PRODUCT INJECTION (verbatim reiteration for Gemini) ━━━
-        const productInjection = this.buildProductInjection(playbook);
 
         // ━━━ LAYER 3: MARKETING ANGLE (Scene directive) ━━━
         const sceneDirective = this.buildSceneDirective(
-            angleId, angle.label, angle.description, playbook, angle,
+            angleId,
+            angle.label,
+            angle.description,
+            playbook,
+            angle,
+            productJson,
         );
 
         // ━━━ LAYER 3.5: CRITICAL SCENE DIRECTION (mood-gated) ━━━
-        const criticalSceneDirection = this.buildCriticalSceneDirection(conceptAnalysis, playbook);
+        const criticalSceneDirection = this.buildCriticalSceneDirection(conceptAnalysis, playbook, productJson);
 
         // ━━━ LAYER 4: LAYOUT PATTERN (from inspiration concept) ━━━
         const layoutComposition = this.buildLayoutComposition(conceptAnalysis);
@@ -1395,11 +1417,11 @@ COMPOSITION RULES:
      * Editorial/magazine/presentation concepts → block exercise/workout scenes
      * Lifestyle/action concepts → allow product-in-use scenes
      */
-    private buildCriticalSceneDirection(conceptAnalysis?: any, playbook?: BrandPlaybook): string {
+    private buildCriticalSceneDirection(conceptAnalysis?: any, playbook?: BrandPlaybook, productJson?: any): string {
         const mood = conceptAnalysis?.visual_style?.mood?.toLowerCase() || '';
         const hookType = conceptAnalysis?.content_pattern?.hook_type?.toLowerCase() || '';
         const layoutType = conceptAnalysis?.layout?.type?.toLowerCase() || '';
-        const productName = playbook?.product_identity?.product_name || 'the product';
+        const productName = productJson?.general_info?.product_name || playbook?.product_identity?.product_name || 'the product';
 
         const editorialKeywords = ['editorial', 'magazine', 'clean', 'minimal', 'minimalist', 'presentation', 'product_showcase', 'elegant', 'sophisticated', 'premium'];
         const isEditorial = editorialKeywords.some(k => mood.includes(k) || hookType.includes(k) || layoutType.includes(k));
@@ -1447,36 +1469,34 @@ AVOID:
      * description of the product. This block must be copied VERBATIM
      * into the Gemini image generation prompt.
      */
-    private buildProductInjection(playbook: BrandPlaybook): string {
-        const pi = playbook.product_identity;
-        if (!pi) {
-            return `[PRODUCT_INJECTION — NO PRODUCT DATA AVAILABLE]
-No product identity data was provided. Use the brand name for general product reference.`;
+    private buildProductInjection(playbook: BrandPlaybook, productJson?: any): string {
+        const pi = playbook.product_identity!;
+        let visualDescription = pi.visual_description;
+
+        if (productJson) {
+            // If specific product analysis exists, use it to augment/replace the generic brand product description
+            const { texture_description, materials, design_elements } = productJson;
+
+            const features: string[] = [];
+            if (texture_description) features.push(texture_description);
+            if (materials && materials.length) features.push(`Materials: ${materials.join(', ')}`);
+            if (design_elements && design_elements.length) features.push(`Design Details: ${design_elements.join(', ')}`);
+
+            if (features.length > 0) {
+                visualDescription = features.join('. ');
+            }
         }
 
-        const featureString = pi.key_features.length > 0
-            ? pi.key_features.join(', ')
+        const featuresToUse = productJson?.style_keywords || pi.key_features || [];
+        const featureString = featuresToUse.length > 0
+            ? featuresToUse.join(', ')
             : 'no specific features listed';
-
-        const colorString = Object.entries(pi.colors || {}).length > 0
-            ? Object.entries(pi.colors).map(([part, hex]) => `${part}: ${hex}`).join(', ')
-            : 'use brand colors';
 
         return `[PRODUCT_INJECTION — COPY VERBATIM INTO IMAGE PROMPT]
 🚨 The following product description MUST appear VERBATIM in the image generation prompt.
 Do NOT paraphrase, generalize, or use synonyms. Copy these exact words:
-
-PRODUCT: ${pi.product_name}
-TYPE: ${pi.product_type}
-EXACT DESCRIPTION: ${pi.visual_description}
-KEY PHYSICAL FEATURES: ${featureString}
-PRODUCT COLORS: ${colorString}
-
-FORBIDDEN SUBSTITUTIONS:
-- Do NOT use generic category terms (like "cosmetic", "device", "equipment", "product") → write "${pi.product_name}"
-- Do NOT paraphrase or summarize the visual description → copy it VERBATIM
-- Do NOT omit any of the key physical features listed above
-- Do NOT substitute the product with any similar-looking alternative`;
+Description: ${visualDescription}
+Key Features: ${featureString}`;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1499,6 +1519,7 @@ FORBIDDEN SUBSTITUTIONS:
         conceptAnalysis: any,
         angle: import('../configurations/constants/marketing-angles').MarketingAngle,
         format: import('../configurations/constants/ad-formats').AdFormat,
+        productJson?: any,
     ): string {
         const pi = playbook.product_identity!;
         const zones = conceptAnalysis?.layout?.zones || [];
@@ -1514,18 +1535,18 @@ FORBIDDEN SUBSTITUTIONS:
         // Content pattern info (from Visual DNA schema)
         const contentPattern = conceptAnalysis?.content_pattern;
         const contentPatternSection = contentPattern
-            ? `\n- Hook Type: ${contentPattern.hook_type || 'N/A'}
+            ? `\n - Hook Type: ${contentPattern.hook_type || 'N/A'}
 - Narrative Structure: ${contentPattern.narrative_structure || 'N/A'}
 - CTA Style: ${contentPattern.cta_style || 'N/A'}
-- Requires Product Image: ${contentPattern.requires_product_image ? 'Yes' : 'No'}`
+- Requires Product Image: ${contentPattern.requires_product_image ? 'Yes' : 'No'} `
             : '';
 
         // Target audience section
         const ta = playbook.target_audience;
         const audienceSection = ta
-            ? `\n- Target Gender: ${ta.gender || 'All'}
+            ? `\n - Target Gender: ${ta.gender || 'All'}
 - Target Age: ${ta.age_range || '25-54'}
-- Personas: ${ta.personas?.join(', ') || 'N/A'}`
+- Personas: ${ta.personas?.join(', ') || 'N/A'} `
             : '';
 
         // ━━━ COMPLIANCE (Priority 1 — Absolute) ━━━
@@ -1540,30 +1561,30 @@ FORBIDDEN SUBSTITUTIONS:
         const complianceSection = complianceRules.length > 0
             ? `
 ${'═'.repeat(60)}
-🚨 PRIORITY 1 — COMPLIANCE (ABSOLUTE — Override ALL other sections)
+🚨 PRIORITY 1 — COMPLIANCE(ABSOLUTE — Override ALL other sections)
 ${'═'.repeat(60)}
 Region: ${playbook.compliance?.region || 'Global'}
 
-These rules are NON-NEGOTIABLE. They override brand, angle, and layout instructions.
-${mustShowRules.length > 0 ? `\nMUST SHOW:\n${mustShowRules.map(r => `  ✅ ${r}`).join('\n')}` : ''}
+These rules are NON - NEGOTIABLE.They override brand, angle, and layout instructions.
+    ${mustShowRules.length > 0 ? `\nMUST SHOW:\n${mustShowRules.map(r => `  ✅ ${r}`).join('\n')}` : ''}
 ${mustNotRules.length > 0 ? `\nMUST NOT (explicit "Do not include" list):\n${mustNotRules.map(r => `  ❌ ${r}`).join('\n')}` : ''}
 
-BACKGROUND RULE: Do NOT use vague or generic environment descriptions. Use the Must Show
-rules above to describe a specific, compliant environment. If a certain setting is forbidden,
-you MUST describe a DIFFERENT, brand-appropriate alternative.`
+BACKGROUND RULE: Do NOT use vague or generic environment descriptions.Use the Must Show
+rules above to describe a specific, compliant environment.If a certain setting is forbidden,
+    you MUST describe a DIFFERENT, brand - appropriate alternative.`
             : '';
 
         // ━━━ USP section ━━━
         const uspSection = playbook.usp_offers
-            ? `\n- Key Benefits: ${playbook.usp_offers.key_benefits?.join(', ') || 'N/A'}
-- Current Offer: ${playbook.usp_offers.current_offer || 'N/A'}`
+            ? `\n - Key Benefits: ${playbook.usp_offers.key_benefits?.join(', ') || 'N/A'}
+- Current Offer: ${playbook.usp_offers.current_offer || 'N/A'} `
             : '';
 
         // ━━━ PRODUCT INJECTION (verbatim block) ━━━
-        const productInjection = this.buildProductInjection(playbook);
+        const productInjection = this.buildProductInjection(playbook, productJson);
 
         // ━━━ CRITICAL SCENE DIRECTION (mood-gated) ━━━
-        const criticalSceneDirection = this.buildCriticalSceneDirection(conceptAnalysis, playbook);
+        const criticalSceneDirection = this.buildCriticalSceneDirection(conceptAnalysis, playbook, productJson);
 
         // Identify safe zones from layout for image_prompt guidance
         const safeZones = zones.filter((z: any) =>
@@ -1573,20 +1594,20 @@ you MUST describe a DIFFERENT, brand-appropriate alternative.`
         // Build text overlay contrast instructions per zone
         const textOverlayInstructions = safeZones.length > 0
             ? safeZones.map((z: any) =>
-                `   - ${z.content_type.toUpperCase()} zone (y: ${z.y_start}px–${z.y_end}px): Place a dark semi-transparent gradient overlay (rgba(0,0,0,0.40–0.55)) behind this text area. Ensure white text is 100% legible.`,
+                `   - ${z.content_type.toUpperCase()} zone(y: ${z.y_start}px–${z.y_end}px): Place a dark semi - transparent gradient overlay(rgba(0, 0, 0, 0.40–0.55)) behind this text area.Ensure white text is 100 % legible.`,
             ).join('\n')
             : '   - No specific text zones defined — apply general contrast protection for any text areas.';
 
         return `You are a professional ad copywriter and image prompt engineer for the brand "${brandName}".
 
-You are writing ad copy AND an ultra-detailed image generation prompt for Gemini Imagen.
-The image_prompt you write will be sent DIRECTLY to an AI image model. It must be so specific that the model has ZERO room to hallucinate or improvise.
+You are writing ad copy AND an ultra - detailed image generation prompt for Gemini Imagen.
+The image_prompt you write will be sent DIRECTLY to an AI image model.It must be so specific that the model has ZERO room to hallucinate or improvise.
 
-Follow the STRICT PRIORITY HIERARCHY below. Higher-priority sections OVERRIDE lower ones.
-${complianceSection}
+Follow the STRICT PRIORITY HIERARCHY below.Higher - priority sections OVERRIDE lower ones.
+    ${complianceSection}
 
 ${'═'.repeat(60)}
-PRIORITY 2 — BRAND IDENTITY (Colors, Tone, Product)
+PRIORITY 2 — BRAND IDENTITY(Colors, Tone, Product)
 ${'═'.repeat(60)}
 - Tone Style: ${playbook.tone_of_voice?.style || 'Professional'}
 - Tone Keywords: ${playbook.tone_of_voice?.keywords?.join(', ') || 'N/A'}
@@ -1597,7 +1618,7 @@ ${'═'.repeat(60)}
 - Heading Font: ${playbook.fonts?.heading || 'N/A'}
 - Body Font: ${playbook.fonts?.body || 'N/A'}
 
-PRODUCT FIDELITY (use exact details — do NOT hallucinate):
+PRODUCT FIDELITY(use exact details — do NOT hallucinate):
 - Product: ${pi.product_name} (${pi.product_type})
 - Key Features: ${pi.key_features.join(', ')}
 - Visual Description: ${pi.visual_description}
@@ -1616,11 +1637,11 @@ ${'═'.repeat(60)}
 ${criticalSceneDirection}
 
 ${'═'.repeat(60)}
-PRIORITY 3 — MARKETING ANGLE (Narrative Hook)
+PRIORITY 3 — MARKETING ANGLE(Narrative Hook)
 ${'═'.repeat(60)}
 - Strategy: ${angle.label} (${angle.category?.toUpperCase() || 'GENERAL'})
 - Hook: "${angle.hook || angle.description}"
-- Target Persona: ${angle.target_persona || 'general audience'}
+    - Target Persona: ${angle.target_persona || 'general audience'}
 - Narrative Arc:
   * Problem: ${angle.narrative_arc?.problem || 'N/A'}
   * Discovery: ${angle.narrative_arc?.discovery || 'N/A'}
@@ -1632,7 +1653,7 @@ ${'═'.repeat(60)}
 ${contentPatternSection}
 
 ${'═'.repeat(60)}
-PRIORITY 4 — LAYOUT PATTERN (Visual Structure from Inspiration)
+PRIORITY 4 — LAYOUT PATTERN(Visual Structure from Inspiration)
 ${'═'.repeat(60)}
 - Layout Type: ${conceptAnalysis?.layout?.type || 'N/A'}
 - Visual Mood: ${conceptAnalysis?.visual_style?.mood || 'N/A'}
@@ -1647,59 +1668,59 @@ ${'═'.repeat(60)}
 The image_prompt you write MUST instruct the AI image model to RENDER ALL TEXT as visible characters in the image.
 For EVERY text zone below, your image_prompt MUST specify:
 - The EXACT text content to render
-- Font style (bold, italic, script, sans-serif)
-- Position (top, center, bottom)
-- Color and background treatment for legibility
+    - Font style(bold, italic, script, sans - serif)
+        - Position(top, center, bottom)
+        - Color and background treatment for legibility
 ${textOverlayInstructions}
 
-=== AD FORMAT ===
-- Format: ${format.label} (${format.ratio}, ${format.dimensions})
-- Canvas: ${format.width}×${format.height}px
+    === AD FORMAT ===
+        - Format: ${format.label} (${format.ratio}, ${format.dimensions})
+- Canvas: ${format.width}×${format.height} px
 
-=== PLATFORM SAFE ZONES (🚨 MUST RESPECT) ===
-- DANGER ZONE TOP: ${format.safe_zone.danger_top}px — do NOT place headlines, logos, or brand name here
-- DANGER ZONE BOTTOM: ${format.safe_zone.danger_bottom}px — do NOT place CTA or important text here
-- SIDE MARGINS: ${format.safe_zone.danger_sides}px each side
-- USABLE AREA: ${format.safe_zone.usable_area.width}×${format.safe_zone.usable_area.height}px (from y:${format.safe_zone.usable_area.y} to y:${format.safe_zone.usable_area.y + format.safe_zone.usable_area.height})
-- ALL text elements (headline, subheadline, CTA, bullet points, brand name) MUST be placed WITHIN the usable area
-- Your image_prompt MUST mention: "Place all text and key content within the safe zone, avoiding the top ${format.safe_zone.danger_top}px and bottom ${format.safe_zone.danger_bottom}px"
+    === PLATFORM SAFE ZONES(🚨 MUST RESPECT) ===
+        - DANGER ZONE TOP: ${format.safe_zone.danger_top} px — do NOT place headlines, logos, or brand name here
+            - DANGER ZONE BOTTOM: ${format.safe_zone.danger_bottom} px — do NOT place CTA or important text here
+                - SIDE MARGINS: ${format.safe_zone.danger_sides}px each side
+                    - USABLE AREA: ${format.safe_zone.usable_area.width}×${format.safe_zone.usable_area.height} px(from y: ${format.safe_zone.usable_area.y} to y: ${format.safe_zone.usable_area.y + format.safe_zone.usable_area.height})
+                        - ALL text elements(headline, subheadline, CTA, bullet points, brand name) MUST be placed WITHIN the usable area
+                            - Your image_prompt MUST mention: "Place all text and key content within the safe zone, avoiding the top ${format.safe_zone.danger_top}px and bottom ${format.safe_zone.danger_bottom}px"
 
-=== YOUR TASK ===
-Generate ad copy for "${pi.product_name}" using the "${angle.label}" marketing angle.
+                                === YOUR TASK ===
+                                    Generate ad copy for "${pi.product_name}" using the "${angle.label}" marketing angle.
 This is a COMPLETE advertisement design — the generated image MUST contain ALL text rendered as visible characters.
 
 The ad MUST respect the priority hierarchy above:
 1. FIRST check all Compliance rules
-2. THEN apply Brand Identity (use exact product colors, features)
+2. THEN apply Brand Identity(use exact product colors, features)
 3. THEN obey CRITICAL SCENE DIRECTION
 4. THEN apply the Marketing Angle's narrative
 5. THEN match the Layout Pattern's visual structure
 
-🚨 CRITICAL — image_prompt rules (MUST FOLLOW EXACTLY):
+🚨 CRITICAL — image_prompt rules(MUST FOLLOW EXACTLY):
 1. START with: "A complete, finished [editorial/lifestyle/product-hero] advertisement design for social media."
 2. PRODUCT: Copy the EXACT product description from the PRODUCT_INJECTION block verbatim
 3. PRODUCT PLACEMENT: Describe exact position in frame and camera angle
-4. SCENE/ENVIRONMENT: Background, setting, lighting, mood
-5. MODEL DIRECTION: If applicable, describe pose/expression/wardrobe
-6. TEXT RENDERING (🚨 MOST IMPORTANT):
-   - "Render the brand name '${brandName}' in large bold sans-serif at the top of the ad"
-   - "Render the headline '[your headline text]' in large [italic/bold/script] font in the [position from zones]"
-   - "Render the subheadline '[your subheadline text]' in medium clean font below the headline"
-   - "Render bullet points with ✓ checkmarks: '[point 1]', '[point 2]', '[point 3]'"
-   - "Render the CTA '[your cta text]' inside a [brand-colored] rounded rectangle button at the bottom"
+4. SCENE / ENVIRONMENT: Background, setting, lighting, mood
+5. MODEL DIRECTION: If applicable, describe pose / expression / wardrobe
+6. TEXT RENDERING(🚨 MOST IMPORTANT):
+- "Render the brand name '${brandName}' in large bold sans-serif at the top of the ad"
+    - "Render the headline '[your headline text]' in large [italic/bold/script] font in the [position from zones]"
+    - "Render the subheadline '[your subheadline text]' in medium clean font below the headline"
+    - "Render bullet points with ✓ checkmarks: '[point 1]', '[point 2]', '[point 3]'"
+    - "Render the CTA '[your cta text]' inside a [brand-colored] rounded rectangle button at the bottom"
 7. DESIGN ELEMENTS: Describe cards, panels, shapes, gradients that frame the text and make it look like a real ad
-8. AVOID: garbled text, misspelled words, random characters, plus scene-specific avoids
+8. AVOID: garbled text, misspelled words, random characters, plus scene - specific avoids
 9. Do NOT use generic terms — use the exact product name from PRODUCT_INJECTION
-10. Optimize composition for ${format.label} format (${format.ratio}, ${format.dimensions})
+10. Optimize composition for ${format.label} format(${format.ratio}, ${format.dimensions})
 
-Return ONLY this JSON object (no markdown, no explanation):
+Return ONLY this JSON object(no markdown, no explanation):
 
 {
-  "headline": "A short, punchy headline (max 8 words)",
-  "subheadline": "A benefit-driven supporting statement (max 20 words)",
-  "cta": "An action-oriented CTA (2-5 words), include brand name if possible",
-  "bullet_points": ["Benefit point 1", "Benefit point 2", "Benefit point 3"],
-  "image_prompt": "A 300-500 word ultra-detailed prompt that produces a COMPLETE AD IMAGE with ALL text rendered as visible characters. MUST include: brand name rendering, headline rendering, subheadline rendering, bullet point rendering, CTA button rendering, product description from PRODUCT_INJECTION, scene/environment, design elements (cards, panels, buttons), and AVOID list."
-}`;
+    "headline": "A short, punchy headline (max 8 words)",
+        "subheadline": "A benefit-driven supporting statement (max 20 words)",
+            "cta": "An action-oriented CTA (2-5 words), include brand name if possible",
+                "bullet_points": ["Benefit point 1", "Benefit point 2", "Benefit point 3"],
+                    "image_prompt": "A 300-500 word ultra-detailed prompt that produces a COMPLETE AD IMAGE with ALL text rendered as visible characters. MUST include: brand name rendering, headline rendering, subheadline rendering, bullet point rendering, CTA button rendering, product description from PRODUCT_INJECTION, scene/environment, design elements (cards, panels, buttons), and AVOID list."
+} `;
     }
 }
