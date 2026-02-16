@@ -32,6 +32,6 @@ import { FilesModule } from '../files/files.module';
 	],
 	controllers: [GenerationsController, GenerationEventsController],
 	providers: [GenerationsService, GenerationProcessor, GenerationGateway],
-	exports: [GenerationsService],
+	exports: [GenerationsService, GenerationGateway],
 })
 export class GenerationsModule { }

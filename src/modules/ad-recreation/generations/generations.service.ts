@@ -16,6 +16,7 @@ import { Product } from '../../../database/entities/Product-Visuals/product.enti
 import { AdBrandsService } from '../brands/ad-brands.service';
 import { AdConceptsService } from '../ad-concepts/ad-concepts.service';
 import { GeminiService } from '../../../ai/gemini.service';
+import { GenerationGateway } from '../../../generations/generation.gateway';
 import { MARKETING_ANGLES } from '../configurations/constants/marketing-angles';
 import { AD_FORMATS } from '../configurations/constants/ad-formats';
 import { AdGenerationStatus } from '../../../libs/enums/AdRecreationEnums';
@@ -182,6 +183,7 @@ export class GenerationsService {
         private readonly geminiService: GeminiService,
         private readonly configService: ConfigService,
         private readonly s3Service: S3Service,
+        private readonly generationGateway: GenerationGateway,
     ) { }
 
     // ═══════════════════════════════════════════════════════════
@@ -454,15 +456,25 @@ export class GenerationsService {
         for (let i = 0; i < variationsCount; i++) {
             const variationNum = i + 1;
             this.logger.log(`\n   ── VARIATION ${variationNum}/${variationsCount} ──`);
+            console.log(`[AD-RECREATION] 🎨 Starting image generation for variation ${variationNum}/${variationsCount}`);
 
             // Calculate progress: spread image generation across 50% → 90%
             const progressPerVariation = 40 / variationsCount;
             const currentProgress = Math.round(50 + (i * progressPerVariation));
             await this.generationsRepository.update(generationId, { progress: currentProgress });
 
+            // Emit progress via Socket.IO so frontend can track
+            this.generationGateway.emitProgress(generationId, {
+                progress_percent: currentProgress,
+                completed: resultImages.length,
+                total: variationsCount,
+                elapsed_seconds: 0,
+            });
+
             try {
                 const variationPrompt = guardedImagePrompt + (variationSeeds[i] || variationSeeds[i % variationSeeds.length]);
 
+                console.log(`[AD-RECREATION] 🚀 Calling Gemini API for variation ${variationNum}...`);
                 let imageResult: any;
                 if (allReferenceImages.length > 0) {
                     imageResult = await this.geminiService.generateImageWithReference(
@@ -483,6 +495,7 @@ export class GenerationsService {
                 const imageMimeType = imageResult.mimeType || 'image/png';
 
                 this.logger.log(`   ✅ Variation ${variationNum} generated (${(generatedImageBase64.length / 1024).toFixed(1)} KB base64)`);
+                console.log(`[AD-RECREATION] ✅ Variation ${variationNum} image received from Gemini`);
 
                 // Upload image to S3
                 const generatedImageUrl = await this.s3Service.uploadBase64Image(
@@ -492,29 +505,63 @@ export class GenerationsService {
                 );
 
                 this.logger.log(`   S3 URL: ${generatedImageUrl}`);
+                console.log(`[AD-RECREATION] 📦 Variation ${variationNum} uploaded to S3: ${generatedImageUrl}`);
 
-                resultImages.push({
+                const imageEntry = {
                     id: uuidv4(),
                     url: generatedImageUrl,
                     format: aspectRatio,
                     angle: dto.marketing_angle_id,
                     variation_index: variationNum,
                     generated_at: new Date().toISOString(),
-                });
+                };
+
+                resultImages.push(imageEntry);
 
                 // Save progress after each variation (so partial results survive crashes)
+                const newProgress = Math.round(50 + ((i + 1) * progressPerVariation));
                 await this.generationsRepository.update(generationId, {
                     result_images: resultImages,
-                    progress: Math.round(50 + ((i + 1) * progressPerVariation)),
+                    progress: newProgress,
+                });
+
+                // 🔥 REAL-TIME: Emit visual_completed via Socket.IO so frontend shows image immediately
+                console.log(`[AD-RECREATION] 📡 Emitting visual_completed for variation ${variationNum} via Socket.IO`);
+                this.generationGateway.emitVisualCompleted(generationId, {
+                    type: `variation_${variationNum}`,
+                    index: i,
+                    image_url: generatedImageUrl,
+                    generated_at: imageEntry.generated_at,
+                    status: 'completed',
+                });
+
+                // Also emit progress update
+                this.generationGateway.emitProgress(generationId, {
+                    progress_percent: newProgress,
+                    completed: resultImages.length,
+                    total: variationsCount,
+                    elapsed_seconds: 0,
                 });
 
             } catch (error) {
                 this.logger.error(`   ❌ Variation ${variationNum} failed: ${error instanceof Error ? error.message : String(error)}`);
+                console.log(`[AD-RECREATION] ❌ Variation ${variationNum} FAILED: ${error instanceof Error ? error.message : String(error)}`);
+
+                // Emit failure via Socket.IO
+                this.generationGateway.emitVisualCompleted(generationId, {
+                    type: `variation_${variationNum}`,
+                    index: i,
+                    image_url: '',
+                    generated_at: new Date().toISOString(),
+                    status: 'failed',
+                    error: error instanceof Error ? error.message : String(error),
+                });
                 // Continue with remaining variations — don't fail the whole generation
             }
         }
 
         this.logger.log(`\n   Image generation complete: ${resultImages.length}/${variationsCount} variations succeeded`);
+        console.log(`[AD-RECREATION] 🏁 All variations done: ${resultImages.length}/${variationsCount} succeeded`);
 
         // Step 8: Save everything to database
         this.logger.log(`[STEP 8] Saving final results to database...`);
@@ -531,6 +578,15 @@ export class GenerationsService {
             progress: 100,
             completed_at: new Date(),
             ...(resultImages.length === 0 ? { failure_reason: 'All image variations failed to generate' } : {}),
+        });
+
+        // 🔥 REAL-TIME: Emit generation_complete via Socket.IO
+        console.log(`[AD-RECREATION] 📡 Emitting generation_complete via Socket.IO (${resultImages.length}/${variationsCount})`);
+        this.generationGateway.emitComplete(generationId, {
+            status: finalStatus === AdGenerationStatus.COMPLETED ? 'completed' : 'failed',
+            completed: resultImages.length,
+            total: variationsCount,
+            visuals: resultImages,
         });
 
         this.logger.log(`Results saved to DB`);
