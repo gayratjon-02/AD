@@ -10,7 +10,36 @@
  * - Patch stitch = look for visible stitching
  */
 
-export const PRODUCT_ANALYSIS_V3_PROMPT = `You are an expert Fashion Product Analyst. Create an EXHAUSTIVE technical specification from images.
+export const PRODUCT_ANALYSIS_V3_PROMPT = `You are an expert Product Analyst. Create an EXHAUSTIVE technical specification from images.
+
+══════════════════════════════════════════════════════════════════════════════
+🔍 UNIVERSAL PRODUCT DETECTION (STEP 1 — DO THIS FIRST!)
+══════════════════════════════════════════════════════════════════════════════
+
+BEFORE analyzing details, identify WHAT TYPE of product is in the images:
+
+| Category | Examples |
+|----------|----------|
+| Outerwear / Jackets | Shirt jackets, bombers, blazers, coats |
+| Tops | T-shirts, hoodies, sweaters, polos |
+| Bottoms | Pants, joggers, shorts, skirts |
+| Footwear | Sneakers, boots, sandals, loafers |
+| Accessories | Bags, hats, watches, belts, sunglasses |
+| Electronics | Phones, headphones, speakers |
+| Other | Anything else |
+
+⚠️ CRITICAL RULES:
+1. Analyze the ACTUAL product in the images — do NOT assume it is a garment
+2. If the product is NOT clothing (e.g., footwear, accessories, electronics), adapt the JSON output:
+   - general_info: Use appropriate category (e.g., "Athletic Footwear", "Wireless Headphones")
+   - visual_specs: Describe the actual product colors and materials
+   - design_front: Describe the front/top view branding and design
+   - design_back: Describe the back/bottom view
+   - garment_details: Repurpose for PRODUCT-SPECIFIC details (sole type for shoes, strap for bags, etc.)
+3. Use "N/A" for fields that don't apply to the product type (e.g., "neckline" for shoes)
+4. NEVER refuse to analyze a product because it doesn't match a specific template
+
+The garment-specific guidelines below are EXAMPLES for clothing. Adapt them intelligently for other product types.
 
 ══════════════════════════════════════════════════════════════════════════════
 🏷️ BRAND NAME SPELLING - CRITICAL!
@@ -425,6 +454,14 @@ For RR monogram: has_logo = TRUE, patch_detail = "RR monogram (two Rs facing eac
 ✅ FINAL CHECKLIST
 ══════════════════════════════════════════════════════════════════════════════
 
+FOR ALL PRODUCTS:
+□ general_info.product_name is DESCRIPTIVE and matches actual product?
+□ general_info.category matches actual product type?
+□ visual_specs.hex_code sampled from MAIN product surface?
+□ design_front describes actual front/top branding?
+□ design_back describes actual back/bottom view?
+
+FOR GARMENTS ONLY (skip for footwear/accessories/electronics):
 □ Interior branding on NECK TAPE (not collar wings)?
 □ Neckline describes collar material SEPARATELY from leather?
 □ Pockets listed as individual array with each pocket's details?
@@ -432,5 +469,8 @@ For RR monogram: has_logo = TRUE, patch_detail = "RR monogram (two Rs facing eac
 □ patch_stitch checked for visible stitching?
 □ RR monogram → has_logo: true?
 □ Used WEARER'S perspective for positions?
+
+FOR NON-GARMENTS: Use garment_details fields for product-specific details.
+Example for shoes: pockets → "N/A", neckline → "N/A", bottom_termination → "Rubber outsole with traction pattern"
 
 Return ONLY valid JSON. No markdown. No explanation.`;
