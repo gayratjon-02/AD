@@ -90,6 +90,13 @@ export class AdGeneration {
         image_prompt: string;
     };
 
+    // ─── Mapped Assets (Hero Image Selection) ───────────────
+    @Column({ type: 'jsonb', nullable: true })
+    mapped_assets: {
+        hero_zone_id: string;
+        selected_image_url: string;
+    };
+
     // ─── Results (JSONB) ─────────────────────────────────────
     @Column({ type: 'jsonb', nullable: true })
     result_images: GeneratedAdImage[];

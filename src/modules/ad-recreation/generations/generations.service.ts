@@ -328,10 +328,14 @@ export class GenerationsService {
             selected_formats: [dto.format_id],
             status: AdGenerationStatus.PROCESSING,
             progress: 10,
+            ...(dto.mapped_assets ? { mapped_assets: dto.mapped_assets } : {}),
         });
         const saved = await this.generationsRepository.save(generation);
         const generationId = saved.id;
         this.logger.log(`Generation record created: ${generationId}`);
+        if (dto.mapped_assets) {
+            this.logger.log(`   Mapped hero zone: "${dto.mapped_assets.hero_zone_id}" → ${dto.mapped_assets.selected_image_url}`);
+        }
 
         // Step 5: Build prompt for text generation (fully JSON-driven)
         this.logger.log(`[STEP 5] Building text generation prompt...`);
@@ -396,10 +400,21 @@ export class GenerationsService {
             generated_at: string;
         }> = [];
 
-        // Build combined reference images: inspiration + product images
+        // Build combined reference images: mapped hero (priority) + inspiration + product images
         const allReferenceImages: string[] = [];
         const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
 
+        // Priority 1: User-mapped hero image (most important — first reference for Gemini)
+        if (dto.mapped_assets?.selected_image_url) {
+            let heroUrl = dto.mapped_assets.selected_image_url;
+            if (heroUrl.includes('localhost:3000')) {
+                heroUrl = heroUrl.replace('http://localhost:3000', uploadBaseUrl);
+            }
+            allReferenceImages.push(heroUrl);
+            this.logger.log(`[HERO IMAGE] Mapped hero zone "${dto.mapped_assets.hero_zone_id}" → ${heroUrl}`);
+        }
+
+        // Priority 2: Inspiration image (concept/style reference)
         if (concept.original_image_url) {
             let refImageUrl = concept.original_image_url;
             if (refImageUrl.includes('localhost:3000')) {
@@ -409,8 +424,13 @@ export class GenerationsService {
             allReferenceImages.push(refImageUrl);
         }
 
-        // Add product images to reference array
-        allReferenceImages.push(...productImageUrls);
+        // Priority 3: Remaining product images (excluding already-added hero image)
+        const heroUrl = dto.mapped_assets?.selected_image_url;
+        for (const pUrl of productImageUrls) {
+            if (pUrl !== heroUrl) {
+                allReferenceImages.push(pUrl);
+            }
+        }
 
         this.logger.log(`[REFERENCE IMAGES] Total: ${allReferenceImages.length}`);
         allReferenceImages.forEach((url, i) => this.logger.log(`   [${i}] ${url}`));
@@ -681,10 +701,21 @@ export class GenerationsService {
         const regenPrompt = guardedImagePrompt +
             `\n[REGENERATION: This is a fresh take on variation ${variationIndex}. Create a distinctly different composition while maintaining the same ad concept, product, and copy.]`;
 
-        // Build reference images
+        // Build reference images (include hero image if mapped)
         const allReferenceImages: string[] = [];
         const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
 
+        // Priority 1: Mapped hero image from original generation
+        if (generation.mapped_assets?.selected_image_url) {
+            let heroUrl = generation.mapped_assets.selected_image_url;
+            if (heroUrl.includes('localhost:3000')) {
+                heroUrl = heroUrl.replace('http://localhost:3000', uploadBaseUrl);
+            }
+            allReferenceImages.push(heroUrl);
+            this.logger.log(`[REGEN HERO IMAGE] ${heroUrl}`);
+        }
+
+        // Priority 2: Inspiration image
         if (concept.original_image_url) {
             let refImageUrl = concept.original_image_url;
             if (refImageUrl.includes('localhost:3000')) {
