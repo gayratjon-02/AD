@@ -23,6 +23,7 @@ export class BrandsController {
 
 	@Post('createBrand')
 	async createBrand(@CurrentUser() user: User, @Body() createBrandDto: CreateBrandDto): Promise<Brand> {
+		console.log('Creating brand with data:', createBrandDto);
 		return this.brandsService.create(user.id, createBrandDto);
 	}
 

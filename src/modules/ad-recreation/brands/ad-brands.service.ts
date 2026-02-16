@@ -263,6 +263,12 @@ export class AdBrandsService {
         const client = this.getAnthropicClient();
 
         // Step 3: Send to Claude with prompt engineering
+        this.logger.log(`=== CLAUDE PDF ANALYSIS REQUEST ===`);
+        this.logger.log(`Model: ${this.model}`);
+        this.logger.log(`PDF size: ${(pdfBase64.length * 0.75 / 1024 / 1024).toFixed(2)} MB`);
+        this.logger.log(`System Prompt: ${BRAND_ANALYSIS_SYSTEM_PROMPT.substring(0, 300)}...`);
+        this.logger.log(`User Prompt: ${BRAND_ANALYSIS_USER_PROMPT.substring(0, 300)}...`);
+
         let responseText: string;
         try {
             const message = await client.messages.create({
@@ -297,7 +303,9 @@ export class AdBrandsService {
             }
             responseText = textBlock.text;
 
-            this.logger.log(`Claude response received (${message.usage?.input_tokens} in / ${message.usage?.output_tokens} out tokens)`);
+            this.logger.log(`=== CLAUDE PDF ANALYSIS RESPONSE ===`);
+            this.logger.log(`Input tokens: ${message.usage?.input_tokens}, Output tokens: ${message.usage?.output_tokens}`);
+            this.logger.log(`Raw response (first 500 chars): ${responseText.substring(0, 500)}`);
         } catch (error) {
             if (error instanceof BadRequestException) throw error;
             this.logger.error(`Claude API call failed: ${error.message}`);
@@ -501,6 +509,11 @@ export class AdBrandsService {
         textContent?: string,
     ): Promise<any> {
         this.logger.log(`Analyze Only (no brand creation): ${name}`);
+        this.logger.log(`=== ANALYZE ONLY INPUT ===`);
+        this.logger.log(`Name: ${name}`);
+        this.logger.log(`Website: ${website}`);
+        this.logger.log(`FilePath: ${filePath || 'NONE'}`);
+        this.logger.log(`TextContent: ${textContent ? textContent.substring(0, 200) + '...' : 'NONE'}`);
 
         let playbook: any;
 
@@ -734,6 +747,11 @@ Website: ${website}
 Brand Description/Guidelines:
 ${textContent}`;
 
+        this.logger.log(`=== CLAUDE TEXT ANALYSIS REQUEST ===`);
+        this.logger.log(`Model: ${this.model}`);
+        this.logger.log(`System Prompt (first 300 chars): ${systemPrompt.substring(0, 300)}...`);
+        this.logger.log(`User Prompt: ${userPrompt}`);
+
         try {
             const message = await client.messages.create({
                 model: this.model,
@@ -752,9 +770,16 @@ ${textContent}`;
                 throw new Error('No text response from Claude');
             }
 
+            this.logger.log(`=== CLAUDE TEXT ANALYSIS RESPONSE ===`);
+            this.logger.log(`Input tokens: ${message.usage?.input_tokens}`);
+            this.logger.log(`Output tokens: ${message.usage?.output_tokens}`);
+            this.logger.log(`Raw response (first 500 chars): ${textBlock.text.substring(0, 500)}`);
+
             // Parse and validate through the same pipeline as PDF analysis
             const playbook = this.parseAndValidatePlaybook(textBlock.text);
             this.logger.log(`Text analysis complete for ${brandName}`);
+            this.logger.log(`=== PARSED PLAYBOOK ===`);
+            this.logger.log(JSON.stringify(playbook, null, 2));
             return playbook;
         } catch (error) {
             this.logger.error(`Text analysis failed: ${error.message}`);
