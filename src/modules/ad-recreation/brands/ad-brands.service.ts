@@ -235,7 +235,7 @@ export class AdBrandsService {
      * 3. Parse and validate JSON response
      * 4. Return typed BrandPlaybook
      */
-    private async analyzeBrandPlaybookWithClaude(filePath: string): Promise<BrandPlaybook> {
+    private async analyzeBrandPlaybookWithClaude(filePath: string, logoLightPath?: string, logoDarkPath?: string): Promise<BrandPlaybook> {
         this.logger.log(`Analyzing brand playbook PDF with Claude: ${filePath}`);
 
         // Step 1: Read file and convert to Base64
@@ -269,6 +269,31 @@ export class AdBrandsService {
         this.logger.log(`System Prompt: ${BRAND_ANALYSIS_SYSTEM_PROMPT.substring(0, 300)}...`);
         this.logger.log(`User Prompt: ${BRAND_ANALYSIS_USER_PROMPT.substring(0, 300)}...`);
 
+        // Build content array with PDF + optional logo images
+        const contentBlocks: any[] = [
+            {
+                type: 'document',
+                source: {
+                    type: 'base64',
+                    media_type: 'application/pdf',
+                    data: pdfBase64,
+                },
+            },
+        ];
+
+        // Add logo images if provided
+        if (logoLightPath || logoDarkPath) {
+            const logoImages = this.buildLogoImageBlocks(logoLightPath, logoDarkPath);
+            contentBlocks.push(...logoImages);
+        }
+
+        contentBlocks.push({
+            type: 'text',
+            text: (logoLightPath || logoDarkPath)
+                ? BRAND_ANALYSIS_USER_PROMPT + '\n\nIMPORTANT: I have also attached the brand logos (light and/or dark versions). Please analyze these logos carefully and include detailed logo_rules in your response based on the actual logo design, colors, and style you observe.'
+                : BRAND_ANALYSIS_USER_PROMPT,
+        });
+
         let responseText: string;
         try {
             const message = await client.messages.create({
@@ -278,20 +303,7 @@ export class AdBrandsService {
                 messages: [
                     {
                         role: 'user',
-                        content: [
-                            {
-                                type: 'document',
-                                source: {
-                                    type: 'base64',
-                                    media_type: 'application/pdf',
-                                    data: pdfBase64,
-                                },
-                            },
-                            {
-                                type: 'text',
-                                text: BRAND_ANALYSIS_USER_PROMPT,
-                            },
-                        ],
+                        content: contentBlocks,
                     },
                 ],
             });
@@ -507,6 +519,8 @@ export class AdBrandsService {
         website: string,
         filePath?: string,
         textContent?: string,
+        logoLightPath?: string,
+        logoDarkPath?: string,
     ): Promise<any> {
         this.logger.log(`Analyze Only (no brand creation): ${name}`);
         this.logger.log(`=== ANALYZE ONLY INPUT ===`);
@@ -514,6 +528,8 @@ export class AdBrandsService {
         this.logger.log(`Website: ${website}`);
         this.logger.log(`FilePath: ${filePath || 'NONE'}`);
         this.logger.log(`TextContent: ${textContent ? textContent.substring(0, 200) + '...' : 'NONE'}`);
+        this.logger.log(`LogoLight: ${logoLightPath || 'NONE'}`);
+        this.logger.log(`LogoDark: ${logoDarkPath || 'NONE'}`);
 
         let playbook: any;
 
@@ -524,11 +540,11 @@ export class AdBrandsService {
 
             if (ext === 'pdf') {
                 // Analyze PDF file with Claude vision
-                playbook = await this.analyzeBrandPlaybookWithClaude(filePath);
+                playbook = await this.analyzeBrandPlaybookWithClaude(filePath, logoLightPath, logoDarkPath);
             } else if (ext === 'txt' || ext === 'docx') {
                 // Read text file and analyze with Claude text
                 const fileContent = await this.readTextFile(filePath, ext);
-                playbook = await this.analyzeTextWithClaude(fileContent, name, website);
+                playbook = await this.analyzeTextWithClaude(fileContent, name, website, logoLightPath, logoDarkPath);
             } else {
                 // Unsupported file type - generate default
                 this.logger.warn(`Unsupported file type: ${ext}, using default playbook`);
@@ -536,7 +552,7 @@ export class AdBrandsService {
             }
         } else if (textContent) {
             // Analyze manual text content
-            playbook = await this.analyzeTextWithClaude(textContent, name, website);
+            playbook = await this.analyzeTextWithClaude(textContent, name, website, logoLightPath, logoDarkPath);
         } else {
             // Generate default playbook based on name/website
             playbook = this.generateDefaultPlaybook(name, website);
@@ -668,6 +684,8 @@ export class AdBrandsService {
         textContent: string,
         brandName: string,
         website: string,
+        logoLightPath?: string,
+        logoDarkPath?: string,
     ): Promise<any> {
         this.logger.log(`Analyzing brand from text input for: ${brandName}`);
 
@@ -751,6 +769,24 @@ ${textContent}`;
         this.logger.log(`Model: ${this.model}`);
         this.logger.log(`System Prompt (first 300 chars): ${systemPrompt.substring(0, 300)}...`);
         this.logger.log(`User Prompt: ${userPrompt}`);
+        this.logger.log(`Logo Light: ${logoLightPath || 'NONE'}, Logo Dark: ${logoDarkPath || 'NONE'}`);
+
+        // Build content: text + optional logo images
+        const hasLogos = logoLightPath || logoDarkPath;
+        let messageContent: any;
+
+        if (hasLogos) {
+            const contentBlocks: any[] = [];
+            const logoImages = this.buildLogoImageBlocks(logoLightPath, logoDarkPath);
+            contentBlocks.push(...logoImages);
+            contentBlocks.push({
+                type: 'text',
+                text: userPrompt + '\n\nIMPORTANT: I have also attached the brand logos (light and/or dark versions). Please analyze these logos carefully and include detailed logo_rules in your response based on the actual logo design, colors, and style you observe.',
+            });
+            messageContent = contentBlocks;
+        } else {
+            messageContent = userPrompt;
+        }
 
         try {
             const message = await client.messages.create({
@@ -760,7 +796,7 @@ ${textContent}`;
                 messages: [
                     {
                         role: 'user',
-                        content: userPrompt,
+                        content: messageContent,
                     },
                 ],
             });
@@ -792,6 +828,48 @@ ${textContent}`;
     // GENERATE DEFAULT PLAYBOOK (fallback)
     // Matches the comprehensive schema with all required fields
     // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Build Claude image content blocks from logo file paths.
+     * Reads logo files from disk and converts to base64 for Claude vision.
+     */
+    private buildLogoImageBlocks(logoLightPath?: string, logoDarkPath?: string): any[] {
+        const blocks: any[] = [];
+
+        const addLogoBlock = (path: string, label: string) => {
+            try {
+                const buffer = readFileSync(path);
+                const ext = path.toLowerCase().split('.').pop();
+                let mediaType = 'image/png';
+                if (ext === 'jpg' || ext === 'jpeg') mediaType = 'image/jpeg';
+                else if (ext === 'webp') mediaType = 'image/webp';
+                else if (ext === 'svg') mediaType = 'image/png'; // SVG sent as-is may not work, fallback
+
+                const base64 = buffer.toString('base64');
+                this.logger.log(`Logo ${label} loaded: ${(buffer.length / 1024).toFixed(1)} KB, type: ${mediaType}`);
+
+                blocks.push({
+                    type: 'image',
+                    source: {
+                        type: 'base64',
+                        media_type: mediaType,
+                        data: base64,
+                    },
+                });
+                blocks.push({
+                    type: 'text',
+                    text: `[Above image: Brand ${label}]`,
+                });
+            } catch (err) {
+                this.logger.warn(`Failed to read logo ${label} at ${path}: ${err.message}`);
+            }
+        };
+
+        if (logoLightPath) addLogoBlock(logoLightPath, 'Light Logo (for dark backgrounds)');
+        if (logoDarkPath) addLogoBlock(logoDarkPath, 'Dark Logo (for light backgrounds)');
+
+        return blocks;
+    }
 
     private generateDefaultPlaybook(brandName: string, website: string): BrandPlaybook {
         return {

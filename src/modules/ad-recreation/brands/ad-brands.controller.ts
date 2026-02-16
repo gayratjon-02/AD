@@ -82,38 +82,51 @@ export class AdBrandsController {
 
     @Post('analyze')
     @UseInterceptors(
-        FileInterceptor('file', {
-            storage: diskStorage({
-                destination: './uploads/ad-brands/playbooks',
-                filename: (_req, file, cb) => {
-                    const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
-                    cb(null, uniqueName);
+        FileFieldsInterceptor(
+            [
+                { name: 'file', maxCount: 1 },
+                { name: 'logo_light', maxCount: 1 },
+                { name: 'logo_dark', maxCount: 1 },
+            ],
+            {
+                storage: diskStorage({
+                    destination: './uploads/ad-brands/playbooks',
+                    filename: (_req, file, cb) => {
+                        const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
+                        cb(null, uniqueName);
+                    },
+                }),
+                fileFilter: (_req, file, cb) => {
+                    // Accept PDF, DOCX, TXT for playbook; images for logos
+                    const docMimes = [
+                        'application/pdf',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'text/plain',
+                    ];
+                    const imageMimes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'];
+                    if (file.fieldname === 'file') {
+                        cb(docMimes.includes(file.mimetype) ? null : new BadRequestException('Only PDF, DOCX, or TXT files are allowed'), docMimes.includes(file.mimetype));
+                    } else {
+                        cb(imageMimes.includes(file.mimetype) ? null : new BadRequestException('Only PNG, JPG, WebP, or SVG images are allowed for logos'), imageMimes.includes(file.mimetype));
+                    }
                 },
-            }),
-            fileFilter: (_req, file, cb) => {
-                // Accept PDF, DOCX, TXT
-                const allowedMimes = [
-                    'application/pdf',
-                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                    'text/plain',
-                ];
-                if (allowedMimes.includes(file.mimetype)) {
-                    cb(null, true);
-                } else {
-                    cb(new BadRequestException('Only PDF, DOCX, or TXT files are allowed'), false);
-                }
+                limits: {
+                    fileSize: 10 * 1024 * 1024, // 10MB
+                },
             },
-            limits: {
-                fileSize: 10 * 1024 * 1024, // 10MB
-            },
-        }),
+        ),
     )
     async analyzeOnly(
         @CurrentUser() user: User,
-        @UploadedFile() file: Express.Multer.File,
+        @UploadedFiles() files: { file?: Express.Multer.File[]; logo_light?: Express.Multer.File[]; logo_dark?: Express.Multer.File[] },
         @Body() dto: AnalyzeBrandDto,
     ): Promise<{ success: boolean; message: string; playbook: any }> {
+        const file = files?.file?.[0];
+        const logoLight = files?.logo_light?.[0];
+        const logoDark = files?.logo_dark?.[0];
+
         this.logger.log(`Analyze Only (no brand creation): ${dto.name}`);
+        this.logger.log(`Files received - playbook: ${file?.originalname || 'NONE'}, logo_light: ${logoLight?.originalname || 'NONE'}, logo_dark: ${logoDark?.originalname || 'NONE'}`);
 
         // Validation: must have file OR text_content
         if (!file && !dto.text_content) {
@@ -126,6 +139,8 @@ export class AdBrandsController {
             dto.website,
             file?.path,
             dto.text_content,
+            logoLight?.path,
+            logoDark?.path,
         );
 
         return {
