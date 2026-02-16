@@ -41,8 +41,8 @@ export class GenerateAdDto {
     format_id: string;
 
     @IsUUID()
-    @IsOptional()
-    product_id?: string;
+    @IsNotEmpty()
+    product_id: string;
 
     /** Number of image variations to generate per combo (default: 4, max: 8) */
     @IsOptional()

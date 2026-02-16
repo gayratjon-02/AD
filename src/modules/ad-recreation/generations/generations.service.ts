@@ -1162,6 +1162,15 @@ ${'═'.repeat(60)}
 ${complianceLock}
 
 ${'═'.repeat(60)}
+🚨 PRODUCT REPLACEMENT MANDATE (ABSOLUTE — OVERRIDE ALL REFERENCES)
+${'═'.repeat(60)}
+IGNORE any product, item, or merchandise shown in the Inspiration/Reference image.
+The Inspiration image is ONLY a style, layout, and composition reference — NEVER copy its product.
+You MUST replace the inspiration product with the User's Product defined in the Product Injection section below.
+If the Inspiration shows sneakers but the User's Product is a jacket, the ad MUST feature the jacket.
+This rule is NON-NEGOTIABLE and overrides all other creative direction.
+
+${'═'.repeat(60)}
 PRIORITY 2 — BRAND IDENTITY (Product Fidelity + Visual Identity)
 ${'═'.repeat(60)}
 ${productLock}
