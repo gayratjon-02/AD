@@ -458,6 +458,13 @@ export class GenerationsService {
             this.logger.log(`\n   ── VARIATION ${variationNum}/${variationsCount} ──`);
             console.log(`[AD-RECREATION] 🎨 Starting image generation for variation ${variationNum}/${variationsCount}`);
 
+            // 🛡️ RATE LIMIT PROTECTION: Add delay between API calls (skip first)
+            if (i > 0) {
+                const delayMs = 3000; // 3 seconds between each Gemini call
+                console.log(`[AD-RECREATION] ⏱️ Waiting ${delayMs / 1000}s before variation ${variationNum} (rate limit protection)...`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+
             // Calculate progress: spread image generation across 50% → 90%
             const progressPerVariation = 40 / variationsCount;
             const currentProgress = Math.round(50 + (i * progressPerVariation));
@@ -474,21 +481,56 @@ export class GenerationsService {
             try {
                 const variationPrompt = guardedImagePrompt + (variationSeeds[i] || variationSeeds[i % variationSeeds.length]);
 
-                console.log(`[AD-RECREATION] 🚀 Calling Gemini API for variation ${variationNum}...`);
-                let imageResult: any;
-                if (allReferenceImages.length > 0) {
-                    imageResult = await this.geminiService.generateImageWithReference(
-                        variationPrompt,
-                        allReferenceImages,
-                        aspectRatio,
-                    );
-                } else {
-                    this.logger.warn(`No reference images — using text-only generation`);
-                    imageResult = await this.geminiService.generateImage(
-                        variationPrompt,
-                        undefined,
-                        aspectRatio,
-                    );
+                // 🛡️ RETRY LOGIC: Up to 3 attempts with exponential backoff
+                const MAX_RETRIES = 3;
+                let imageResult: any = null;
+                let lastError: any = null;
+
+                for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                    try {
+                        if (attempt > 1) {
+                            const backoffMs = attempt * 3000; // 3s, 6s, 9s
+                            console.log(`[AD-RECREATION] 🔄 Retry ${attempt}/${MAX_RETRIES} for variation ${variationNum} (waiting ${backoffMs / 1000}s)...`);
+                            await new Promise(resolve => setTimeout(resolve, backoffMs));
+                        }
+
+                        console.log(`[AD-RECREATION] 🚀 Calling Gemini API for variation ${variationNum} (attempt ${attempt}/${MAX_RETRIES})...`);
+
+                        if (allReferenceImages.length > 0) {
+                            imageResult = await this.geminiService.generateImageWithReference(
+                                variationPrompt,
+                                allReferenceImages,
+                                aspectRatio,
+                            );
+                        } else {
+                            this.logger.warn(`No reference images — using text-only generation`);
+                            imageResult = await this.geminiService.generateImage(
+                                variationPrompt,
+                                undefined,
+                                aspectRatio,
+                            );
+                        }
+
+                        // Success — break retry loop
+                        lastError = null;
+                        break;
+
+                    } catch (retryError: any) {
+                        lastError = retryError;
+                        const errMsg = retryError instanceof Error ? retryError.message : String(retryError);
+                        console.log(`[AD-RECREATION] ⚠️ Attempt ${attempt}/${MAX_RETRIES} failed for variation ${variationNum}: ${errMsg}`);
+
+                        // Don't retry on policy violations — they won't succeed
+                        if (errMsg.includes('violates') || errMsg.includes('policy') || errMsg.includes('refused')) {
+                            console.log(`[AD-RECREATION] 🚫 Policy violation — skipping retries for variation ${variationNum}`);
+                            break;
+                        }
+                    }
+                }
+
+                // If all retries failed, throw the last error
+                if (lastError || !imageResult) {
+                    throw lastError || new Error(`All ${MAX_RETRIES} attempts failed for variation ${variationNum}`);
                 }
 
                 const generatedImageBase64 = imageResult.data;
