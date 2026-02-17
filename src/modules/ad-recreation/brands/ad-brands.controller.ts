@@ -363,8 +363,8 @@ export class AdBrandsController {
 
         this.logger.log(`Analyzing ${playbookType} playbook for Ad Brand ${id}`);
 
-        // If type is 'brand', file is mandatory
-        if (playbookType === PlaybookType.BRAND && !file) {
+        // PDF file is mandatory for all playbook types (brand, ads, copy)
+        if (!file) {
             throw new BadRequestException(AdBrandMessage.PLAYBOOK_FILE_REQUIRED);
         }
 

@@ -88,6 +88,102 @@ Return EXACTLY this JSON structure (no extra keys, no missing keys):
 
 Return ONLY the JSON object. No markdown code fences. No explanation.`;
 
+// ═══════════════════════════════════════════════════════════
+// ADS PLAYBOOK PROMPTS
+// ═══════════════════════════════════════════════════════════
+
+const ADS_PLAYBOOK_SYSTEM_PROMPT = `You are a Senior Ad Creative Director with 15+ years of experience analyzing ad style guides, brand visual standards, and layout systems.
+
+Your job: Analyze the attached PDF document and extract structured layout rules and visual style guidelines for ad generation.
+
+RULES:
+- Return ONLY valid JSON. No markdown, no explanation, no conversational text.
+- If a value is not found in the PDF, make your best professional inference based on the visual design, layout examples, and content shown.
+- Be specific about layout preferences, grid systems, and safe zones.
+- For visual_style, describe the image treatment approach (e.g., high-contrast, muted tones, vibrant saturation).`;
+
+const ADS_PLAYBOOK_USER_PROMPT = `Analyze this PDF and extract ad layout rules and visual style guidelines.
+
+Return EXACTLY this JSON structure:
+
+{
+  "layout_rules": {
+    "preferred_formats": ["9:16", "1:1", "4:5"],
+    "grid_system": "e.g., 12-column grid, rule of thirds, center-aligned",
+    "safe_zones": {
+      "top": "percentage or pixel value for top safe zone",
+      "bottom": "percentage or pixel value for bottom safe zone",
+      "left": "percentage or pixel value for left safe zone",
+      "right": "percentage or pixel value for right safe zone"
+    }
+  },
+  "visual_style": {
+    "image_treatment": "e.g., high-contrast, soft lighting, editorial, lifestyle, flat-lay",
+    "overlay_opacity": 0.3,
+    "corner_radius": 12
+  }
+}
+
+Notes:
+- preferred_formats: List ad aspect ratios shown or recommended in the document (e.g., "9:16", "1:1", "4:5", "16:9").
+- grid_system: Describe the layout grid or alignment system used.
+- safe_zones: Extract any safe zone / margin / padding guidelines.
+- image_treatment: Describe the overall photo/image style.
+- overlay_opacity: If overlays are used, estimate opacity (0.0-1.0). Default to 0.3 if not specified.
+- corner_radius: If rounded corners are used, estimate radius in pixels. Default to 0 if not specified.
+
+Return ONLY the JSON object. No markdown code fences. No explanation.`;
+
+// ═══════════════════════════════════════════════════════════
+// COPY PLAYBOOK PROMPTS
+// ═══════════════════════════════════════════════════════════
+
+const COPY_PLAYBOOK_SYSTEM_PROMPT = `You are a Senior Copywriter and Brand Voice Strategist with 15+ years of experience analyzing brand documents to extract copywriting guidelines, messaging frameworks, and tone-of-voice rules.
+
+Your job: Analyze the attached PDF document and extract structured copywriting guidelines for ad generation.
+
+RULES:
+- Return ONLY valid JSON. No markdown, no explanation, no conversational text.
+- If a value is not found in the PDF, make your best professional inference based on the brand's tone, messaging examples, and content shown.
+- Hooks should use template variables like {{pain_point}}, {{desired_outcome}}, {{product_name}} where appropriate.
+- Extract at least 3-5 hooks, 2-4 angles, and 3-6 CTA variations.`;
+
+const COPY_PLAYBOOK_USER_PROMPT = `Analyze this PDF and extract copywriting guidelines, messaging hooks, and tone-of-voice rules.
+
+Return EXACTLY this JSON structure:
+
+{
+  "hooks": [
+    "Tired of {{pain_point}}?",
+    "What if you could {{desired_outcome}}?",
+    "Stop {{bad_habit}}. Start {{good_habit}}.",
+    "The secret to {{desired_outcome}} that nobody talks about",
+    "Why {{target_audience}} are switching to {{product_name}}"
+  ],
+  "angles": [
+    {
+      "name": "Problem-Solution",
+      "description": "Lead with the pain point, then present the product as the solution",
+      "example_headlines": ["Still struggling with X?", "The #1 solution for Y"]
+    },
+    {
+      "name": "Social Proof",
+      "description": "Leverage testimonials and numbers to build trust",
+      "example_headlines": ["Join 10,000+ happy customers", "Rated #1 by experts"]
+    }
+  ],
+  "cta_variations": ["Shop Now", "Get Started", "Try Free", "Learn More", "Discover More"],
+  "forbidden_words": ["cheap", "guarantee", "best ever", "miracle"]
+}
+
+Notes:
+- hooks: Copywriting hooks/templates with {{variables}} for dynamic insertion. Extract from the document's messaging examples.
+- angles: Marketing message angles with name, description, and example headlines. Infer from the brand's positioning.
+- cta_variations: Call-to-action button texts. Extract from existing CTAs or infer from brand tone.
+- forbidden_words: Words/phrases the brand should never use. Extract from brand guidelines or infer from tone.
+
+Return ONLY the JSON object. No markdown code fences. No explanation.`;
+
 /**
  * Ad Brands Service - Phase 2: Ad Recreation
  *
@@ -184,7 +280,7 @@ export class AdBrandsService {
 
     // ═══════════════════════════════════════════════════════════
     // ANALYZE PLAYBOOK (brand / ads / copy)
-    // Brand type uses real Claude AI; ads/copy use mocks for now.
+    // All types use real Claude AI analysis.
     // ═══════════════════════════════════════════════════════════
 
     async analyzePlaybook(
@@ -196,21 +292,25 @@ export class AdBrandsService {
     ): Promise<AdBrand> {
         const brand = await this.findOne(id, userId);
 
+        if (!filePath) {
+            throw new BadRequestException(AdBrandMessage.PLAYBOOK_FILE_REQUIRED);
+        }
+
         this.logger.log(`Analyzing ${type} playbook for Ad Brand ${id}`);
 
         switch (type) {
             case PlaybookType.BRAND: {
-                const brandPlaybook = await this.analyzeBrandPlaybookWithClaude(filePath!);
+                const brandPlaybook = await this.analyzeBrandPlaybookWithClaude(filePath);
                 brand.brand_playbook = brandPlaybook;
                 break;
             }
             case PlaybookType.ADS: {
-                const adsPlaybook = await this.mockAdsPlaybookAnalysis(pdfUrl);
+                const adsPlaybook = await this.analyzeAdsPlaybookWithClaude(filePath);
                 brand.ads_playbook = adsPlaybook;
                 break;
             }
             case PlaybookType.COPY: {
-                const copyPlaybook = await this.mockCopyPlaybookAnalysis(pdfUrl);
+                const copyPlaybook = await this.analyzeCopyPlaybookWithClaude(filePath);
                 brand.copy_playbook = copyPlaybook;
                 break;
             }
@@ -456,57 +556,187 @@ export class AdBrandsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // MOCK ANALYSIS METHODS (ads / copy - to be replaced later)
+    // REAL CLAUDE AI — Ads Playbook Analysis
     // ═══════════════════════════════════════════════════════════
 
-    private async mockAdsPlaybookAnalysis(pdfUrl?: string): Promise<AdsPlaybook> {
-        this.logger.log(`[MOCK] Analyzing ads playbook${pdfUrl ? `: ${pdfUrl}` : ''}`);
-        await new Promise(resolve => setTimeout(resolve, 500));
+    private async analyzeAdsPlaybookWithClaude(filePath: string): Promise<AdsPlaybook> {
+        this.logger.log(`Analyzing ads playbook PDF with Claude: ${filePath}`);
 
-        return {
-            layout_rules: {
-                preferred_formats: ['9:16', '1:1', '4:5'],
-                grid_system: '12-column grid',
-                safe_zones: {
-                    top: '10%',
-                    bottom: '15%',
-                    left: '5%',
-                    right: '5%',
+        const pdfBase64 = this.readPdfAsBase64(filePath);
+        const client = this.getAnthropicClient();
+
+        const message = await client.messages.create({
+            model: this.model,
+            max_tokens: 2048,
+            system: ADS_PLAYBOOK_SYSTEM_PROMPT,
+            messages: [
+                {
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'document',
+                            source: {
+                                type: 'base64',
+                                media_type: 'application/pdf',
+                                data: pdfBase64,
+                            },
+                        },
+                        { type: 'text', text: ADS_PLAYBOOK_USER_PROMPT },
+                    ],
                 },
-            },
-            visual_style: {
+            ],
+        });
+
+        const textBlock = message.content.find((block) => block.type === 'text');
+        if (!textBlock || textBlock.type !== 'text') {
+            throw new InternalServerErrorException(AdBrandMessage.AI_ANALYSIS_FAILED);
+        }
+
+        this.logger.log(`Ads playbook analysis - Input: ${message.usage?.input_tokens}, Output: ${message.usage?.output_tokens} tokens`);
+
+        const parsed = this.parseJsonResponse(textBlock.text);
+
+        // Normalize arrays and defaults
+        if (parsed.layout_rules) {
+            if (!Array.isArray(parsed.layout_rules.preferred_formats)) {
+                parsed.layout_rules.preferred_formats = ['9:16', '1:1', '4:5'];
+            }
+            if (!parsed.layout_rules.grid_system) {
+                parsed.layout_rules.grid_system = 'rule of thirds';
+            }
+            if (!parsed.layout_rules.safe_zones || typeof parsed.layout_rules.safe_zones !== 'object') {
+                parsed.layout_rules.safe_zones = { top: '10%', bottom: '15%', left: '5%', right: '5%' };
+            }
+        } else {
+            parsed.layout_rules = {
+                preferred_formats: ['9:16', '1:1', '4:5'],
+                grid_system: 'rule of thirds',
+                safe_zones: { top: '10%', bottom: '15%', left: '5%', right: '5%' },
+            };
+        }
+
+        if (parsed.visual_style) {
+            if (typeof parsed.visual_style.overlay_opacity !== 'number') {
+                parsed.visual_style.overlay_opacity = 0.3;
+            }
+            if (typeof parsed.visual_style.corner_radius !== 'number') {
+                parsed.visual_style.corner_radius = 0;
+            }
+        } else {
+            parsed.visual_style = {
                 image_treatment: 'high-contrast',
                 overlay_opacity: 0.3,
-                corner_radius: 12,
-            },
-        };
+                corner_radius: 0,
+            };
+        }
+
+        this.logger.log(`Ads playbook extracted: ${parsed.layout_rules.preferred_formats.length} formats, style: ${parsed.visual_style.image_treatment}`);
+        return parsed as AdsPlaybook;
     }
 
-    private async mockCopyPlaybookAnalysis(pdfUrl?: string): Promise<CopyPlaybook> {
-        this.logger.log(`[MOCK] Analyzing copy playbook${pdfUrl ? `: ${pdfUrl}` : ''}`);
-        await new Promise(resolve => setTimeout(resolve, 500));
+    // ═══════════════════════════════════════════════════════════
+    // REAL CLAUDE AI — Copy Playbook Analysis
+    // ═══════════════════════════════════════════════════════════
 
-        return {
-            hooks: [
-                'Tired of {{pain_point}}?',
-                'What if you could {{desired_outcome}}?',
-                'Stop {{bad_habit}}. Start {{good_habit}}.',
-            ],
-            angles: [
+    private async analyzeCopyPlaybookWithClaude(filePath: string): Promise<CopyPlaybook> {
+        this.logger.log(`Analyzing copy playbook PDF with Claude: ${filePath}`);
+
+        const pdfBase64 = this.readPdfAsBase64(filePath);
+        const client = this.getAnthropicClient();
+
+        const message = await client.messages.create({
+            model: this.model,
+            max_tokens: 2048,
+            system: COPY_PLAYBOOK_SYSTEM_PROMPT,
+            messages: [
                 {
-                    name: 'Problem-Solution',
-                    description: 'Lead with the pain point, then present the product as the solution',
-                    example_headlines: ['Still struggling with X?', 'The #1 solution for Y'],
-                },
-                {
-                    name: 'Social Proof',
-                    description: 'Leverage testimonials and numbers to build trust',
-                    example_headlines: ['Join 10,000+ happy customers', 'Rated #1 by experts'],
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'document',
+                            source: {
+                                type: 'base64',
+                                media_type: 'application/pdf',
+                                data: pdfBase64,
+                            },
+                        },
+                        { type: 'text', text: COPY_PLAYBOOK_USER_PROMPT },
+                    ],
                 },
             ],
-            cta_variations: ['Shop Now', 'Get Started', 'Try Free', 'Learn More'],
-            forbidden_words: ['cheap', 'guarantee', 'best ever', 'miracle'],
-        };
+        });
+
+        const textBlock = message.content.find((block) => block.type === 'text');
+        if (!textBlock || textBlock.type !== 'text') {
+            throw new InternalServerErrorException(AdBrandMessage.AI_ANALYSIS_FAILED);
+        }
+
+        this.logger.log(`Copy playbook analysis - Input: ${message.usage?.input_tokens}, Output: ${message.usage?.output_tokens} tokens`);
+
+        const parsed = this.parseJsonResponse(textBlock.text);
+
+        // Normalize arrays and defaults
+        if (!Array.isArray(parsed.hooks)) {
+            parsed.hooks = [];
+        }
+        if (!Array.isArray(parsed.angles)) {
+            parsed.angles = [];
+        }
+        // Normalize each angle
+        parsed.angles = parsed.angles.map((angle: any) => ({
+            name: angle.name || 'Unnamed Angle',
+            description: angle.description || '',
+            example_headlines: Array.isArray(angle.example_headlines) ? angle.example_headlines : [],
+        }));
+        if (!Array.isArray(parsed.cta_variations)) {
+            parsed.cta_variations = ['Shop Now', 'Learn More'];
+        }
+        if (!Array.isArray(parsed.forbidden_words)) {
+            parsed.forbidden_words = [];
+        }
+
+        this.logger.log(`Copy playbook extracted: ${parsed.hooks.length} hooks, ${parsed.angles.length} angles, ${parsed.cta_variations.length} CTAs`);
+        return parsed as CopyPlaybook;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // SHARED HELPERS — PDF reading + JSON parsing
+    // ═══════════════════════════════════════════════════════════
+
+    private readPdfAsBase64(filePath: string): string {
+        try {
+            const fileBuffer = readFileSync(filePath);
+            const header = fileBuffer.subarray(0, 4).toString('utf8');
+            if (header !== '%PDF') {
+                throw new BadRequestException('Invalid PDF file: a real PDF is required');
+            }
+            this.logger.log(`PDF loaded: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+            return fileBuffer.toString('base64');
+        } catch (error) {
+            if (error instanceof BadRequestException) throw error;
+            this.logger.error(`Failed to read PDF file: ${error.message}`);
+            throw new BadRequestException(AdBrandMessage.AI_PDF_UNREADABLE);
+        }
+    }
+
+    private parseJsonResponse(responseText: string): any {
+        let cleaned = responseText.trim();
+        if (cleaned.startsWith('```json')) {
+            cleaned = cleaned.slice(7);
+        } else if (cleaned.startsWith('```')) {
+            cleaned = cleaned.slice(3);
+        }
+        if (cleaned.endsWith('```')) {
+            cleaned = cleaned.slice(0, -3);
+        }
+        cleaned = cleaned.trim();
+
+        try {
+            return JSON.parse(cleaned);
+        } catch {
+            this.logger.error(`Failed to parse Claude response as JSON: ${cleaned.substring(0, 200)}...`);
+            throw new InternalServerErrorException(AdBrandMessage.AI_INVALID_JSON);
+        }
     }
 
     // ═══════════════════════════════════════════════════════════
