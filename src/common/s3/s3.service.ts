@@ -88,6 +88,7 @@ export class S3Service {
                     Key: key,
                     Body: buffer,
                     ContentType: mimeType,
+                    ACL: 'public-read',
                 }),
             );
 
