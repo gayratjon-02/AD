@@ -22,6 +22,7 @@ import { DAPreset } from '../database/entities/Product-Visuals/da-preset.entity'
 import { CreateGenerationDto, GenerateDto, UpdateGenerationDto } from '../libs/dto';
 import { ErrorMessage, GenerationMessage, GenerationStatus, NotFoundMessage, PermissionMessage } from '../libs/enums';
 import { GenerationJobData } from './generation.processor';
+import { GenerationGateway } from './generation.gateway';
 import { VertexImagenService } from '../ai/vertex-imagen.service';
 import { ClaudeService } from '../ai/claude.service';
 import { FilesService } from '../files/files.service';
@@ -72,6 +73,7 @@ export class GenerationsService {
 		private readonly claudeService: ClaudeService,
 		private readonly filesService: FilesService,
 		private readonly promptBuilderService: PromptBuilderService,
+		private readonly generationGateway: GenerationGateway,
 	) { }
 
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -2030,6 +2032,22 @@ export class GenerationsService {
 			this.logger.error(`Visual object:`, JSON.stringify(visual, null, 2));
 		}
 
+		// 🔌 Socket.IO: Send to frontend via WebSocket gateway (primary channel)
+		try {
+			this.generationGateway.emitVisualCompleted(generationId, {
+				type: visual.type,
+				index: visualIndex,
+				image_url: visual.image_url || '',
+				generated_at: visual.generated_at,
+				status: visual.status || 'completed',
+				prompt: visual.prompt,
+			});
+			this.logger.log(`✅ Socket.IO: visual_completed emitted for visual ${visualIndex}`);
+		} catch (err) {
+			this.logger.error(`❌ Socket.IO emit failed:`, err);
+		}
+
+		// 📡 SSE: Keep for backward compatibility
 		const eventData = {
 			type: 'visual_completed',
 			userId,
@@ -2037,18 +2055,11 @@ export class GenerationsService {
 			visual: {
 				type: visual.type,
 				status: visual.status,
-				image_url: visual.image_url, // This MUST NOT be null
+				image_url: visual.image_url,
 				generated_at: visual.generated_at,
 				prompt: visual.prompt
 			}
 		};
-
-		// 🚀 CRITICAL: Verify image_url in event data
-		if (!eventData.visual.image_url) {
-			this.logger.error(`❌ CRITICAL ERROR: eventData.visual.image_url is NULL before emitGenerationUpdate!`);
-			this.logger.error(`Event data:`, JSON.stringify(eventData, null, 2));
-		}
-
 		this.emitGenerationUpdate(generationId, eventData);
 	}
 
@@ -2056,6 +2067,18 @@ export class GenerationsService {
 	 * Emit visual processing event
 	 */
 	emitVisualProcessing(generationId: string, userId: string, visualIndex: number, visualType: string): void {
+		// 🔌 Socket.IO: Send to frontend via WebSocket gateway
+		try {
+			this.generationGateway.emitVisualProcessing(generationId, {
+				type: visualType,
+				index: visualIndex,
+				status: 'processing',
+			});
+		} catch (err) {
+			this.logger.error(`❌ Socket.IO emitVisualProcessing failed:`, err);
+		}
+
+		// 📡 SSE: Keep for backward compatibility
 		this.emitGenerationUpdate(generationId, {
 			type: 'visual_processing',
 			userId,
@@ -2094,6 +2117,20 @@ export class GenerationsService {
 	 * Emit generation_done event when all visuals are processed
 	 */
 	emitGenerationDone(generationId: string, userId: string, stats: { completed: number; failed: number; total: number; status: string }): void {
+		// 🔌 Socket.IO: Send generation_complete to frontend via WebSocket gateway
+		try {
+			this.generationGateway.emitComplete(generationId, {
+				status: stats.status === 'failed' ? 'failed' : 'completed',
+				completed: stats.completed,
+				total: stats.total,
+				visuals: [], // Full visuals come from the HTTP response
+			});
+			this.logger.log(`✅ Socket.IO: generation_complete emitted`);
+		} catch (err) {
+			this.logger.error(`❌ Socket.IO emitComplete failed:`, err);
+		}
+
+		// 📡 SSE: Keep for backward compatibility
 		this.emitGenerationUpdate(generationId, {
 			type: 'generation_done',
 			userId,
