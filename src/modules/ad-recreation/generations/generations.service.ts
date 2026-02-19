@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
-import { S3Service } from '../../../common/s3/s3.service';
+import { FilesService } from '../../../files/files.service';
 import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-generation.entity';
 import { AdProduct } from '../../../database/entities/Ad-Recreation/ad-product.entity';
 import { Product } from '../../../database/entities/Product-Visuals/product.entity';
@@ -185,7 +185,7 @@ export class GenerationsService {
         private readonly adConceptsService: AdConceptsService,
         private readonly geminiService: GeminiService,
         private readonly configService: ConfigService,
-        private readonly s3Service: S3Service,
+        private readonly filesService: FilesService,
         private readonly generationGateway: GenerationGateway,
     ) { }
 
@@ -676,12 +676,12 @@ export class GenerationsService {
                     this.logger.log(`   ✅ Variation ${variationNum} generated (${(generatedImageBase64.length / 1024).toFixed(1)} KB base64)`);
                     console.log(`[AD-RECREATION] ✅ Variation ${variationNum} image received from Gemini`);
 
-                    // Upload to S3
-                    const generatedImageUrl = await this.s3Service.uploadBase64Image(
+                    // Save image (S3 if configured, otherwise local disk)
+                    const storedFile = await this.filesService.storeBase64Image(
                         generatedImageBase64,
-                        'generations',
                         imageMimeType,
                     );
+                    const generatedImageUrl = storedFile.url;
 
                     this.logger.log(`   S3 URL: ${generatedImageUrl}`);
                     console.log(`[AD-RECREATION] 📦 Variation ${variationNum} uploaded to S3: ${generatedImageUrl}`);
@@ -841,14 +841,14 @@ export class GenerationsService {
                 aspectRatio,
             );
 
-            // Upload image to S3
-            const imageUrl = await this.s3Service.uploadBase64Image(
+            // Save image (S3 if configured, otherwise local disk)
+            const storedFile = await this.filesService.storeBase64Image(
                 imageResult.data,
-                'generations',
                 'image/png',
             );
+            const imageUrl = storedFile.url;
 
-            this.logger.log(`Image uploaded to S3: ${imageUrl}`);
+            this.logger.log(`Image saved: ${imageUrl}`);
 
             generation.result_images = [
                 ...(generation.result_images || []),
@@ -965,12 +965,12 @@ export class GenerationsService {
             const generatedImageBase64 = imageResult.data;
             const imageMimeType = imageResult.mimeType || 'image/png';
 
-            // Upload image to S3
-            const generatedImageUrl = await this.s3Service.uploadBase64Image(
+            // Save image (S3 if configured, otherwise local disk)
+            const storedFile = await this.filesService.storeBase64Image(
                 generatedImageBase64,
-                'generations',
                 imageMimeType,
             );
+            const generatedImageUrl = storedFile.url;
 
             this.logger.log(`Regenerated variation ${variationIndex}: ${generatedImageUrl}`);
 

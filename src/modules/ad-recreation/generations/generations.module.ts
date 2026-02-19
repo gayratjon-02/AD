@@ -10,6 +10,7 @@ import { AdConceptsModule } from '../ad-concepts/ad-concepts.module';
 import { AiModule } from '../../../ai/ai.module';
 import { Product } from '../../../database/entities/Product-Visuals/product.entity';
 import { GenerationsModule as ProductVisualsGenerationsModule } from '../../../generations/generations.module';
+import { FilesModule } from '../../../files/files.module';
 
 /**
  * Generations Module - Phase 2: Ad Recreation
@@ -27,6 +28,7 @@ import { GenerationsModule as ProductVisualsGenerationsModule } from '../../../g
         AdConceptsModule,
         AiModule, // Provides GeminiService for image generation
         ProductVisualsGenerationsModule, // Provides GenerationGateway for real-time Socket.IO events
+        FilesModule, // Provides FilesService for local/S3 image storage
     ],
     controllers: [GenerationsController],
     providers: [GenerationsService],
