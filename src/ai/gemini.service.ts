@@ -835,16 +835,16 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 
 				// Check if it's a URL or file path
 				if (image.startsWith('http://') || image.startsWith('https://')) {
-					// 🔧 Check if this is our own backend URL - read locally instead of HTTP fetch
+					// 🔧 Check if this is our own backend URL - try local first, fallback to HTTP fetch
 					// This fixes Docker container networking issues where container can't reach its own external IP
 					const uploadBaseUrl = process.env.UPLOAD_BASE_URL || '';
 					if (uploadBaseUrl && image.startsWith(uploadBaseUrl)) {
 						// Extract the path after the base URL and read locally
 						const relativePath = image.replace(uploadBaseUrl, '').replace(/^\/+/, '');
 						const localPath = path.join(process.cwd(), relativePath);
-						this.logger.log(`📂 Reading local file instead of fetch: ${localPath}`);
 
 						if (fs.existsSync(localPath)) {
+							this.logger.log(`📂 Reading local file: ${localPath}`);
 							const buffer = fs.readFileSync(localPath);
 							base64Data = buffer.toString('base64');
 							// Detect mime type from extension
@@ -852,8 +852,16 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 							else if (localPath.endsWith('.webp')) mimeType = 'image/webp';
 							else if (localPath.endsWith('.jpg') || localPath.endsWith('.jpeg')) mimeType = 'image/jpeg';
 						} else {
-							this.logger.warn(`Local file not found: ${localPath}`);
-							continue;
+							// Local file not found — fallback to HTTP fetch (files may be on S3)
+							this.logger.log(`📂 Local file not found, fetching via HTTP: ${image}`);
+							const response = await fetch(image);
+							if (!response.ok) {
+								this.logger.warn(`Failed to fetch image: ${image} (${response.status})`);
+								continue;
+							}
+							const buffer = Buffer.from(await response.arrayBuffer());
+							base64Data = buffer.toString('base64');
+							mimeType = response.headers.get('content-type') || 'image/jpeg';
 						}
 					} else {
 						// Fetch from external URL
