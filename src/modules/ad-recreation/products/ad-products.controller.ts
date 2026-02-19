@@ -28,7 +28,7 @@ import { CreateAdProductDto, UpdateAdProductDto } from '../../../libs/dto/AdRecr
 import { AdProductMessage } from '../../../libs/messages';
 import { FilesService } from '../../../files/files.service';
 
-@Controller('products')
+@Controller('ad-recreation/products')
 @UseGuards(JwtAuthGuard)
 export class AdProductsController {
     private readonly logger = new Logger(AdProductsController.name);
