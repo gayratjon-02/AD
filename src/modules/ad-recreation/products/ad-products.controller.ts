@@ -19,6 +19,7 @@ import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { FILE_SIZE_LIMIT } from '../../../libs/config';
 import { AdProductsService } from './ad-products.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
@@ -63,25 +64,7 @@ export class AdProductsController {
     // ═══════════════════════════════════════════════════════════
 
     @Post('analyze')
-    @UseInterceptors(
-        FileInterceptor('reference_image', {
-            storage: diskStorage({
-                destination: './uploads/ad-products/images',
-                filename: (_req, file, cb) => {
-                    const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
-                    cb(null, uniqueName);
-                },
-            }),
-            fileFilter: (_req, file, cb) => {
-                if (file.mimetype.match(/\/(jpg|jpeg|png|gif|svg\+xml|webp)$/)) {
-                    cb(null, true);
-                } else {
-                    cb(new BadRequestException(AdProductMessage.ONLY_IMAGES_ALLOWED), false);
-                }
-            },
-            limits: { fileSize: 30 * 1024 * 1024 },
-        }),
-    )
+    @UseInterceptors(FileInterceptor('reference_image', { limits: FILE_SIZE_LIMIT }))
     async analyzeProduct(
         @CurrentUser() user: User,
         @UploadedFile() file: Express.Multer.File,
