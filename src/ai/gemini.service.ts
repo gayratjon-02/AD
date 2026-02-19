@@ -9,6 +9,7 @@ import { PRODUCT_ANALYSIS_PROMPT } from './prompts/product-analysis.prompt';
 import { DA_ANALYSIS_PROMPT } from './prompts/da-analysis.prompt';
 import * as fs from 'fs';
 import * as path from 'path';
+import { GoogleAuth } from 'google-auth-library';
 
 // Custom error types for better error handling
 export class GeminiTimeoutError extends Error {
@@ -320,12 +321,13 @@ High quality studio lighting, sharp details, clean background.`;
 	): Promise<GeminiImageResult> {
 		const maxRetries = 2;
 		const startTime = Date.now();
+		let isQuotaExhausted = false;
 
 		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
 				if (attempt > 0) {
 					this.logger.log(`🔄 Retry attempt ${attempt + 1}/${maxRetries}...`);
-					await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds before retry
+					await new Promise(resolve => setTimeout(resolve, 3000));
 				}
 
 				const result = await this.generateImages(prompt, aspectRatio, resolution, userApiKey);
@@ -344,14 +346,21 @@ High quality studio lighting, sharp details, clean background.`;
 				const isLastAttempt = attempt === maxRetries - 1;
 				const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
-				// Don't retry on timeout - it already waited long enough
+				// Detect 429 quota exhausted — don't retry, use Vertex AI fallback
+				if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('quota')) {
+					this.logger.warn(`⚠️ Gemini API quota exhausted — trying Vertex AI Imagen fallback...`);
+					isQuotaExhausted = true;
+					break;
+				}
+
+				// Don't retry on timeout
 				if (error instanceof InternalServerErrorException &&
 					error.message.includes('timed out')) {
 					this.logger.error(`⏱️ Timeout error - not retrying`);
 					throw error;
 				}
 
-				// Don't retry on policy violations - they won't succeed
+				// Don't retry on policy violations
 				if (error.message && (
 					error.message.includes('violates') ||
 					error.message.includes('policy') ||
@@ -368,6 +377,11 @@ High quality studio lighting, sharp details, clean background.`;
 
 				this.logger.warn(`⚠️ Attempt ${attempt + 1} failed after ${elapsedTime}s: ${error.message}`);
 			}
+		}
+
+		// Fallback to Vertex AI Imagen on quota exhaustion
+		if (isQuotaExhausted) {
+			return this.generateWithVertexImagen(prompt, aspectRatio);
 		}
 
 		throw new InternalServerErrorException(AIMessage.GEMINI_API_ERROR);
@@ -641,11 +655,120 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 			console.log('╚══════════════════════════════════════════════════════════════════╝');
 			console.log(`   Time elapsed: ${elapsedTime}s`);
 			console.log(`   Error: ${error.message}`);
+
+			// On 429 quota exhaustion — try Vertex AI Imagen
+			if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('quota')) {
+				console.log('');
+				console.log('🔄 Quota exhausted — falling back to Vertex AI Imagen...');
+				console.log('═════════════════════════════════════════════════════════════════════\n');
+				return this.generateWithVertexImagen(prompt, aspectRatio);
+			}
+
 			console.log('');
 			console.log('🔄 Falling back to text-only generation...');
 			console.log('═════════════════════════════════════════════════════════════════════\n');
 
 			return this.generateImage(prompt, undefined, aspectRatio, resolution, userApiKey);
+		}
+	}
+
+	/**
+	 * 🆕 Vertex AI Imagen 3 fallback — used when Gemini API key quota is exhausted (429)
+	 * Uses REST API + Application Default Credentials (gcloud auth)
+	 */
+	private async generateWithVertexImagen(prompt: string, aspectRatio?: string): Promise<GeminiImageResult> {
+		const projectId = this.configService.get<string>('VERTEX_PROJECT_ID');
+		const location = this.configService.get<string>('VERTEX_LOCATION') || 'us-central1';
+		const model = this.configService.get<string>('VERTEX_IMAGEN_MODEL') || 'imagen-3.0-generate-002';
+
+		if (!projectId) {
+			throw new GeminiGenerationError('Vertex AI fallback failed: VERTEX_PROJECT_ID not set in .env');
+		}
+
+		this.logger.log(`🎨 ========== VERTEX AI IMAGEN FALLBACK ==========`);
+		this.logger.log(`📋 Project: ${projectId}, Location: ${location}, Model: ${model}`);
+		this.logger.log(`📐 Aspect Ratio: ${aspectRatio || '1:1'}`);
+
+		const startTime = Date.now();
+
+		try {
+			// Get access token via ADC
+			const auth = new GoogleAuth({
+				scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+			});
+			const client = await auth.getClient();
+			const tokenResponse = await client.getAccessToken();
+			const accessToken = tokenResponse.token;
+
+			if (!accessToken) {
+				throw new GeminiGenerationError('Vertex AI fallback: Could not get access token. Run: gcloud auth application-default login');
+			}
+
+			// Sanitize prompt (max 1024 chars for Imagen)
+			const sanitizedPrompt = prompt.length > 1000
+				? prompt.substring(0, 1000)
+				: prompt;
+
+			// Map aspect ratio
+			const vertexAspectMap: Record<string, string> = {
+				'1:1': '1:1', '9:16': '9:16', '16:9': '16:9',
+				'4:5': '3:4', '4:3': '4:3', '3:4': '3:4', '3:2': '3:2', '2:3': '2:3',
+			};
+			const vertexAspect = vertexAspectMap[aspectRatio || '1:1'] || '1:1';
+
+			// Build REST API request
+			const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:predict`;
+
+			const requestBody = {
+				instances: [{
+					prompt: sanitizedPrompt,
+				}],
+				parameters: {
+					sampleCount: 1,
+					aspectRatio: vertexAspect,
+				},
+			};
+
+			this.logger.log(`📤 Calling Vertex AI Imagen: ${endpoint}`);
+			this.logger.log(`📝 Prompt length: ${sanitizedPrompt.length} chars`);
+
+			const response = await fetch(endpoint, {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${accessToken}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(requestBody),
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				this.logger.error(`❌ Vertex AI Imagen failed: ${response.status} ${errorText.substring(0, 300)}`);
+				throw new GeminiGenerationError(`Vertex AI Imagen error: ${response.status} - ${errorText.substring(0, 200)}`);
+			}
+
+			const result = await response.json() as any;
+
+			if (!result.predictions || result.predictions.length === 0) {
+				throw new GeminiGenerationError('Vertex AI Imagen returned no predictions');
+			}
+
+			const base64Image = result.predictions[0].bytesBase64Encoded;
+			const mimeType = result.predictions[0].mimeType || 'image/png';
+
+			if (!base64Image) {
+				throw new GeminiGenerationError('Vertex AI Imagen returned empty image data');
+			}
+
+			const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+			this.logger.log(`✅ Vertex AI Imagen SUCCESS! ${(base64Image.length / 1024).toFixed(1)} KB in ${elapsed}s`);
+
+			return { mimeType, data: base64Image };
+
+		} catch (error: any) {
+			const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+			this.logger.error(`❌ Vertex AI Imagen fallback failed after ${elapsed}s: ${error.message}`);
+			throw new GeminiGenerationError(`All generation methods failed. Gemini: quota exhausted. Vertex AI: ${error.message}`);
 		}
 	}
 
