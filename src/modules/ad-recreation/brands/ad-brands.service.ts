@@ -22,71 +22,98 @@ import {
 import { AdBrandMessage } from '../../../libs/messages';
 
 // ═══════════════════════════════════════════════════════════
-// PROMPT CONSTANTS
+// STRICT EXTRACTION PROMPT (ZERO HALLUCINATION)
 // ═══════════════════════════════════════════════════════════
 
-const BRAND_ANALYSIS_SYSTEM_PROMPT = `You are a Senior Brand Strategist with 15+ years of experience extracting visual identity systems and product profiles from brand guideline documents.
+const STRICT_EXTRACTION_SYSTEM_PROMPT = `You are a STRICT information extraction engine for the ROMIMI Platform.
+Your job is NOT to be creative. Your job is to extract ONLY what is explicitly provided by the user.
 
-Your job: Analyze the attached Brand Guidelines PDF and extract strict, structured data covering visual identity, product identity, target audience, and compliance.
+ABSOLUTE RULES (ZERO TOLERANCE)
+1) DO NOT add new rules, new claims, new benefits, new compliance notes, new "donts", or any inferred details.
+2) DO NOT paraphrase or upgrade claims (e.g. "back-pain friendly" MUST NOT become "back-pain relief").
+3) DO NOT generalize. If the user did not say it, it must not appear in JSON.
+4) If a field is missing, set it to null and add a validation_issue.
+5) NEVER invent disclaimers like "must include disclaimers" unless explicitly provided.
+6) NEVER create "product_identity" for service brands unless the user explicitly provided product name/type.
+7) Outputs must be VALID JSON ONLY. No markdown. No commentary outside JSON.
 
-RULES:
-- Return ONLY valid JSON. No markdown, no explanation, no conversational text.
-- If a value is not found in the PDF, make your best professional inference based on the visual design and content shown.
-- All color values must be valid hex codes (e.g., "#1E3A5F").
-- Font names should be as specific as possible (e.g., "Montserrat Bold", not just "Montserrat").
-- For product_identity: describe the PRIMARY product shown or referenced in the document. Be specific about its physical appearance for image generation.`;
+SOURCE EVIDENCE REQUIREMENT
+- Every non-null field in the output MUST include evidence: the exact substring quote from the input.
+- If you cannot quote it, you must NOT output it (set null) and record a validation_issue.
 
-const BRAND_ANALYSIS_USER_PROMPT = `Analyze this Brand Guidelines PDF and extract the following structured data.
+MEDICAL / COMPLIANCE GUARDRAILS
+- If the input contains potentially medical language, you MUST preserve it exactly as written.
+- You MUST NOT transform into stronger medical claims.
+- If you detect a risky claim in input, do NOT remove it; keep it but flag it in compliance_risks with evidence.`;
 
-Return EXACTLY this JSON structure (no extra keys, no missing keys):
+const STRICT_EXTRACTION_USER_PROMPT = `Extract brand information from the provided input.
+
+Return EXACTLY this JSON object (no extra keys, no markdown, no explanation):
 
 {
-  "colors": {
-    "primary": "#HEXCODE",
-    "secondary": "#HEXCODE",
-    "accent": "#HEXCODE",
-    "palette": ["#HEX1", "#HEX2", "#HEX3"]
+  "version": "brand_playbook_extraction_v1",
+  "data": {
+    "brand_name": "string or null",
+    "industry": "string or null",
+    "website": "string or null",
+    "currency": "string or null",
+    "target_audience": {
+      "gender": "string or null",
+      "age_range": "string or null",
+      "personas": ["string"] or null
+    },
+    "brand_colors": {
+      "primary": "#HEX or null",
+      "secondary": "#HEX or null",
+      "background": "#HEX or null",
+      "accent": "#HEX or null",
+      "text_dark": "#HEX or null",
+      "text_light": "#HEX or null"
+    },
+    "typography": {
+      "headline": "string or null",
+      "body": "string or null"
+    },
+    "tone_of_voice": "string or null",
+    "tone_keywords": ["string"] or null,
+    "usps": ["string"] or null,
+    "compliance": {
+      "region": "string or null",
+      "rules": ["string"] or null
+    },
+    "current_offer": {
+      "discount": "string or null",
+      "price_original": "string or null",
+      "price_sale": "string or null",
+      "free_gifts": ["string"] or null,
+      "free_gifts_value": "string or null",
+      "delivery": "string or null"
+    },
+    "logo_rules": {
+      "clear_space": "string or null",
+      "forbidden_usage": ["string"] or null
+    }
   },
-  "fonts": {
-    "heading": "Font Name (e.g., Montserrat Bold)",
-    "body": "Font Name (e.g., Open Sans Regular)",
-    "usage_rules": "Summary of when/how to use each font"
+  "evidence_map": {
+    "field_path": "exact substring quote from input that supports this value"
   },
-  "tone_of_voice": {
-    "style": "e.g., Professional, Playful, Luxury",
-    "keywords": ["word1", "word2", "word3"],
-    "donts": ["avoid this", "never say that"]
-  },
-  "logo_rules": {
-    "clear_space": "e.g., Minimum 16px around logo",
-    "forbidden_usage": ["don't rotate", "don't change color", "don't place on busy backgrounds"]
-  },
-  "product_identity": {
-    "product_name": "The primary product name as stated in the document",
-    "product_type": "Category (e.g., Foldable Pilates Reformer, Running Shoe, SaaS Platform)",
-    "visual_description": "A detailed paragraph describing the product's physical appearance for image generation. Include shape, size, material, texture, and distinguishing visual features.",
-    "key_features": ["feature1", "feature2", "feature3"],
-    "colors": {"part_name": "#HEX", "another_part": "#HEX"},
-    "negative_traits": ["What the product is NOT (e.g., NOT a traditional X)", "Does NOT have Y"]
-  },
-  "target_audience": {
-    "gender": "Female / Male / All",
-    "age_range": "e.g., 25-45",
-    "body_type": "For human model selection (e.g., Fit and athletic, Average build)",
-    "clothing_style": "For model wardrobe (e.g., Premium activewear, Business casual)",
-    "personas": ["Persona 1 description", "Persona 2 description"]
-  },
-  "compliance": {
-    "region": "UK / USA / Global",
-    "rules": ["Regulatory constraint 1", "Regulatory constraint 2"]
-  },
-  "usp_offers": {
-    "key_benefits": ["benefit1", "benefit2"],
-    "current_offer": "e.g., 50% off, Free Shipping, or null if not found"
-  }
+  "validation_issues": [
+    "description of any missing, ambiguous, or conflicting fields"
+  ],
+  "compliance_risks": [
+    "risky claims found IN the input (do NOT invent risks)"
+  ]
 }
 
-Return ONLY the JSON object. No markdown code fences. No explanation.`;
+RULES:
+- Use null for any field not explicitly found in the input.
+- Every non-null value in data MUST have a corresponding entry in evidence_map.
+- DO NOT paraphrase, upgrade, or infer. Extract ONLY what is written.
+- Return ONLY the JSON object.`;
+
+// Legacy prompt constants kept for ads/copy playbook types (not affected by this change)
+const BRAND_ANALYSIS_SYSTEM_PROMPT = STRICT_EXTRACTION_SYSTEM_PROMPT;
+const BRAND_ANALYSIS_USER_PROMPT = STRICT_EXTRACTION_USER_PROMPT;
 
 // ═══════════════════════════════════════════════════════════
 // ADS PLAYBOOK PROMPTS
@@ -432,34 +459,176 @@ export class AdBrandsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // JSON PARSING & VALIDATION
+    // STRICT EXTRACTION PARSER + EVIDENCE VALIDATION
     // ═══════════════════════════════════════════════════════════
 
     /**
-     * Parse Claude's response text into a validated BrandPlaybook.
-     * Strips markdown code fences if present.
+     * Parse Claude's strict extraction response and validate evidence.
+     * Returns the raw strict extraction result for logging/debugging,
+     * AND converts data → BrandPlaybook for the rest of the pipeline.
      */
-    private parseAndValidatePlaybook(responseText: string): BrandPlaybook {
-        // Strip markdown code fences if Claude wrapped the JSON
-        let cleaned = responseText.trim();
-        if (cleaned.startsWith('```json')) {
-            cleaned = cleaned.slice(7);
-        } else if (cleaned.startsWith('```')) {
-            cleaned = cleaned.slice(3);
-        }
-        if (cleaned.endsWith('```')) {
-            cleaned = cleaned.slice(0, -3);
-        }
-        cleaned = cleaned.trim();
+    private parseAndValidatePlaybook(responseText: string, inputText?: string): BrandPlaybook {
+        const parsed = this.parseJsonResponse(responseText);
 
-        let parsed: any;
-        try {
-            parsed = JSON.parse(cleaned);
-        } catch {
-            this.logger.error(`Failed to parse Claude response as JSON: ${cleaned.substring(0, 200)}...`);
-            throw new InternalServerErrorException(AdBrandMessage.AI_INVALID_JSON);
+        // ── Check if this is the new strict extraction format ──
+        if (parsed.version === 'brand_playbook_extraction_v1' && parsed.data) {
+            this.logger.log(`[STRICT EXTRACTION] v1 format detected`);
+            return this.processStrictExtraction(parsed, inputText);
         }
 
+        // ── Legacy format — passthrough with minimal validation ──
+        this.logger.warn(`[STRICT EXTRACTION] Legacy format detected — no evidence validation`);
+        return this.legacyParsePlaybook(parsed);
+    }
+
+    /**
+     * Process strict extraction result:
+     * 1. Validate evidence_map completeness
+     * 2. Log validation_issues and compliance_risks
+     * 3. Map to BrandPlaybook
+     */
+    private processStrictExtraction(extraction: any, inputText?: string): BrandPlaybook {
+        const { data, evidence_map, validation_issues, compliance_risks } = extraction;
+
+        // ── Log evidence coverage ──
+        const evidenceKeys = Object.keys(evidence_map || {});
+        this.logger.log(`[EVIDENCE] ${evidenceKeys.length} evidence entries provided`);
+        evidenceKeys.forEach(k => this.logger.log(`   ✅ ${k}: "${(evidence_map[k] || '').substring(0, 80)}..."`));
+
+        // ── Log validation issues ──
+        if (validation_issues?.length) {
+            this.logger.warn(`[VALIDATION ISSUES] ${validation_issues.length} issues found:`);
+            validation_issues.forEach((issue: string) => this.logger.warn(`   ⚠️ ${issue}`));
+        }
+
+        // ── Log compliance risks ──
+        if (compliance_risks?.length) {
+            this.logger.warn(`[COMPLIANCE RISKS] ${compliance_risks.length} risks found:`);
+            compliance_risks.forEach((risk: string) => this.logger.warn(`   🚨 ${risk}`));
+        }
+
+        // ── Evidence-against-input validation (for text analysis) ──
+        if (inputText && evidence_map) {
+            const inputLower = inputText.toLowerCase();
+            const invalidEvidence: string[] = [];
+            for (const [field, quote] of Object.entries(evidence_map)) {
+                if (quote && typeof quote === 'string') {
+                    // Check if evidence quote exists in the input (case-insensitive fuzzy match)
+                    const quoteLower = (quote as string).toLowerCase().trim();
+                    if (quoteLower.length > 3 && !inputLower.includes(quoteLower)) {
+                        invalidEvidence.push(`${field}: "${quote}"`);
+                    }
+                }
+            }
+            if (invalidEvidence.length > 0) {
+                this.logger.warn(`[EVIDENCE VALIDATION] ${invalidEvidence.length} evidence quotes NOT found in input:`);
+                invalidEvidence.forEach(e => this.logger.warn(`   ❌ ${e}`));
+            }
+        }
+
+        // ── Check for additional properties in data ──
+        const allowedDataKeys = [
+            'brand_name', 'industry', 'website', 'currency',
+            'target_audience', 'brand_colors', 'typography',
+            'tone_of_voice', 'tone_keywords', 'usps',
+            'compliance', 'current_offer', 'logo_rules',
+        ];
+        const extraKeys = Object.keys(data || {}).filter(k => !allowedDataKeys.includes(k));
+        if (extraKeys.length > 0) {
+            this.logger.warn(`[STRICT] Additional properties found (not in schema): ${extraKeys.join(', ')}`);
+        }
+
+        // ── Map to BrandPlaybook ──
+        return this.mapStrictToBrandPlaybook(data);
+    }
+
+    /**
+     * Maps the strict extraction data schema → BrandPlaybook
+     * so the rest of the pipeline (ad generation, image prompts) works unchanged.
+     */
+    private mapStrictToBrandPlaybook(data: any): BrandPlaybook {
+        const d = data || {};
+        const colors = d.brand_colors || {};
+        const typography = d.typography || {};
+        const ta = d.target_audience || {};
+        const compliance = d.compliance || {};
+        const offer = d.current_offer || {};
+        const logoRules = d.logo_rules || {};
+
+        // Build palette from available colors (only non-null)
+        const palette = [colors.primary, colors.secondary, colors.accent, colors.background]
+            .filter((c: string | null) => c != null) as string[];
+
+        // Build current_offer string
+        let currentOfferStr: string | undefined;
+        const offerParts: string[] = [];
+        if (offer.discount) offerParts.push(offer.discount);
+        if (offer.price_sale && offer.price_original) offerParts.push(`${offer.price_original} → ${offer.price_sale}`);
+        else if (offer.price_sale) offerParts.push(offer.price_sale);
+        if (offer.delivery) offerParts.push(offer.delivery);
+        if (offer.free_gifts?.length) offerParts.push(`Free: ${offer.free_gifts.join(', ')}`);
+        if (offerParts.length > 0) currentOfferStr = offerParts.join(' | ');
+
+        const playbook: BrandPlaybook = {
+            colors: {
+                primary: colors.primary || '#000000',
+                secondary: colors.secondary || '#666666',
+                accent: colors.accent || '#ff6b6b',
+                palette: palette.length > 0 ? palette : ['#000000', '#666666'],
+            },
+            fonts: {
+                heading: typography.headline || '',
+                body: typography.body || '',
+                usage_rules: '',
+            },
+            tone_of_voice: {
+                style: (typeof d.tone_of_voice === 'string') ? d.tone_of_voice : '',
+                keywords: Array.isArray(d.tone_keywords) ? d.tone_keywords : [],
+                donts: [], // Not in strict schema — never hallucinated
+            },
+            logo_rules: {
+                clear_space: logoRules.clear_space || '',
+                forbidden_usage: Array.isArray(logoRules.forbidden_usage) ? logoRules.forbidden_usage : [],
+            },
+        };
+
+        // Target audience (optional)
+        if (ta.gender || ta.age_range || ta.personas) {
+            playbook.target_audience = {
+                gender: ta.gender || 'All',
+                age_range: ta.age_range || '',
+                personas: Array.isArray(ta.personas) ? ta.personas : [],
+            };
+        }
+
+        // Compliance (optional)
+        if (compliance.region || compliance.rules?.length) {
+            playbook.compliance = {
+                region: compliance.region || 'Global',
+                rules: Array.isArray(compliance.rules) ? compliance.rules : [],
+            };
+        }
+
+        // USP offers (optional)
+        if (d.usps?.length || currentOfferStr) {
+            playbook.usp_offers = {
+                key_benefits: Array.isArray(d.usps) ? d.usps : [],
+                current_offer: currentOfferStr,
+            };
+        }
+
+        this.logger.log(`[MAPPER] Strict → BrandPlaybook mapped successfully`);
+        this.logger.log(`   Colors: ${playbook.colors.primary} / ${playbook.colors.secondary}`);
+        this.logger.log(`   Fonts: ${playbook.fonts.heading || 'N/A'} / ${playbook.fonts.body || 'N/A'}`);
+        if (playbook.target_audience) this.logger.log(`   Audience: ${playbook.target_audience.gender}, ${playbook.target_audience.age_range}`);
+
+        return playbook;
+    }
+
+    /**
+     * Legacy playbook parser — for backward compatibility with old-format responses.
+     */
+    private legacyParsePlaybook(parsed: any): BrandPlaybook {
         // Validate required top-level keys
         const requiredKeys = ['colors', 'fonts', 'tone_of_voice', 'logo_rules'];
         for (const key of requiredKeys) {
@@ -469,70 +638,29 @@ export class AdBrandsService {
             }
         }
 
-        // Validate colors structure
         if (!parsed.colors.primary || !parsed.colors.secondary) {
             this.logger.error('Missing primary/secondary colors in playbook');
             throw new InternalServerErrorException(AdBrandMessage.AI_INVALID_JSON);
         }
 
-        // Ensure palette is an array
         if (!Array.isArray(parsed.colors.palette)) {
             parsed.colors.palette = [parsed.colors.primary, parsed.colors.secondary];
         }
+        if (!Array.isArray(parsed.tone_of_voice.keywords)) parsed.tone_of_voice.keywords = [];
+        if (!Array.isArray(parsed.tone_of_voice.donts)) parsed.tone_of_voice.donts = [];
+        if (!Array.isArray(parsed.logo_rules.forbidden_usage)) parsed.logo_rules.forbidden_usage = [];
 
-        // Ensure arrays exist
-        if (!Array.isArray(parsed.tone_of_voice.keywords)) {
-            parsed.tone_of_voice.keywords = [];
-        }
-        if (!Array.isArray(parsed.tone_of_voice.donts)) {
-            parsed.tone_of_voice.donts = [];
-        }
-        if (!Array.isArray(parsed.logo_rules.forbidden_usage)) {
-            parsed.logo_rules.forbidden_usage = [];
-        }
-
-        // Validate product_identity (optional but normalize if present)
         if (parsed.product_identity) {
-            if (!parsed.product_identity.product_name) {
-                parsed.product_identity.product_name = '';
-            }
-            if (!parsed.product_identity.product_type) {
-                parsed.product_identity.product_type = '';
-            }
-            if (!parsed.product_identity.visual_description) {
-                parsed.product_identity.visual_description = '';
-            }
-            if (!Array.isArray(parsed.product_identity.key_features)) {
-                parsed.product_identity.key_features = [];
-            }
-            if (!parsed.product_identity.colors || typeof parsed.product_identity.colors !== 'object') {
-                parsed.product_identity.colors = {};
-            }
-            if (!Array.isArray(parsed.product_identity.negative_traits)) {
-                parsed.product_identity.negative_traits = [];
-            }
+            parsed.product_identity.product_name = parsed.product_identity.product_name || '';
+            parsed.product_identity.product_type = parsed.product_identity.product_type || '';
+            parsed.product_identity.visual_description = parsed.product_identity.visual_description || '';
+            if (!Array.isArray(parsed.product_identity.key_features)) parsed.product_identity.key_features = [];
+            if (!parsed.product_identity.colors || typeof parsed.product_identity.colors !== 'object') parsed.product_identity.colors = {};
+            if (!Array.isArray(parsed.product_identity.negative_traits)) parsed.product_identity.negative_traits = [];
         }
-
-        // Validate target_audience (optional)
-        if (parsed.target_audience) {
-            if (!Array.isArray(parsed.target_audience.personas)) {
-                parsed.target_audience.personas = [];
-            }
-        }
-
-        // Validate compliance (optional)
-        if (parsed.compliance) {
-            if (!Array.isArray(parsed.compliance.rules)) {
-                parsed.compliance.rules = [];
-            }
-        }
-
-        // Validate usp_offers (optional)
-        if (parsed.usp_offers) {
-            if (!Array.isArray(parsed.usp_offers.key_benefits)) {
-                parsed.usp_offers.key_benefits = [];
-            }
-        }
+        if (parsed.target_audience && !Array.isArray(parsed.target_audience.personas)) parsed.target_audience.personas = [];
+        if (parsed.compliance && !Array.isArray(parsed.compliance.rules)) parsed.compliance.rules = [];
+        if (parsed.usp_offers && !Array.isArray(parsed.usp_offers.key_benefits)) parsed.usp_offers.key_benefits = [];
 
         return parsed as BrandPlaybook;
     }
@@ -906,8 +1034,9 @@ export class AdBrandsService {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // ANALYZE TEXT WITH CLAUDE (for manual text input or TXT files)
-    // Uses enhanced prompt for strict JSON output with all required fields
+    // ANALYZE TEXT WITH CLAUDE — STRICT EXTRACTION MODE
+    // Uses the same zero-hallucination prompt as PDF analysis.
+    // Passes inputText for evidence-against-input validation.
     // ═══════════════════════════════════════════════════════════
 
     private async analyzeTextWithClaude(
@@ -917,77 +1046,16 @@ export class AdBrandsService {
         logoLightPath?: string,
         logoDarkPath?: string,
     ): Promise<any> {
-        this.logger.log(`Analyzing brand from text input for: ${brandName}`);
+        this.logger.log(`[STRICT TEXT ANALYSIS] Analyzing brand from text input for: ${brandName}`);
 
         const client = this.getAnthropicClient();
 
-        const systemPrompt = `Role: You are an expert Brand Strategist and Creative Director. Your task is to analyze raw brand documents (PDF text, website copy, or manual descriptions) and extract a strictly structured JSON Playbook.
+        // Use the same strict extraction prompt — NO inference, NO paraphrasing
+        const systemPrompt = STRICT_EXTRACTION_SYSTEM_PROMPT;
 
-Objective: Extract specific brand details to ensure future AI-generated ads are on-brand and legally compliant. You must not summarize vaguely; be specific.
+        const userPrompt = `${STRICT_EXTRACTION_USER_PROMPT}
 
-Strict JSON Output Schema: You must return ONLY a valid JSON object matching this exact structure. Do not include markdown formatting (like \`\`\`json).
-
-{
-  "colors": {
-    "primary": "#HEXCODE",
-    "secondary": "#HEXCODE",
-    "accent": "#HEXCODE",
-    "palette": ["#HEX1", "#HEX2", "#HEX3"]
-  },
-  "fonts": {
-    "heading": "Font Name (e.g., Montserrat Bold)",
-    "body": "Font Name (e.g., Open Sans Regular)",
-    "usage_rules": "Summary of when/how to use each font"
-  },
-  "tone_of_voice": {
-    "style": "e.g., Professional, Playful, Luxury",
-    "keywords": ["word1", "word2", "word3"],
-    "donts": ["avoid this", "never say that"]
-  },
-  "logo_rules": {
-    "clear_space": "e.g., Minimum 16px around logo",
-    "forbidden_usage": ["don't rotate", "don't change color"]
-  },
-  "product_identity": {
-    "product_name": "The primary product name",
-    "product_type": "Category (e.g., Foldable Pilates Reformer, Running Shoe)",
-    "visual_description": "Detailed paragraph describing the product's physical appearance for image generation",
-    "key_features": ["feature1", "feature2", "feature3"],
-    "colors": {"part_name": "#HEX"},
-    "negative_traits": ["What the product is NOT"]
-  },
-  "target_audience": {
-    "gender": "Female / Male / All",
-    "age_range": "e.g., 25-45",
-    "body_type": "For model selection (e.g., Fit and athletic)",
-    "clothing_style": "For model wardrobe (e.g., Premium activewear)",
-    "personas": ["Persona 1", "Persona 2"]
-  },
-  "compliance": {
-    "region": "UK / USA / Global",
-    "rules": ["Constraint 1", "Constraint 2"]
-  },
-  "usp_offers": {
-    "key_benefits": ["benefit1", "benefit2"],
-    "current_offer": "e.g., 50% off, or null"
-  }
-}
-
-Instructions:
-
-1. Analyze Deeply: Read the input text thoroughly. Look for explicit mentions of colors, fonts, product details, and rules.
-
-2. Infer if Necessary:
-   - If Colors are named (e.g., "Lavender") but no Hex is provided, provide a standard Hex code for that color (e.g., #E6E6FA).
-   - If Compliance is not explicitly stated, infer standard rules based on the industry.
-   - If Personas are described in a paragraph, extract them into the list.
-   - For product_identity: describe the PRIMARY product. Be specific about physical appearance for image generation.
-
-3. Formatting: Ensure all Hex codes start with #. Ensure specific fields like compliance and personas are NEVER empty arrays if context allows inference.
-
-CRITICAL: Return ONLY the JSON object. No explanation, no markdown.`;
-
-        const userPrompt = `Input Text to Analyze:
+Input Text to Analyze:
 
 Brand Name: ${brandName}
 Website: ${website}
@@ -995,10 +1063,10 @@ Website: ${website}
 Brand Description/Guidelines:
 ${textContent}`;
 
-        this.logger.log(`=== CLAUDE TEXT ANALYSIS REQUEST ===`);
+        this.logger.log(`=== CLAUDE STRICT TEXT ANALYSIS REQUEST ===`);
         this.logger.log(`Model: ${this.model}`);
-        this.logger.log(`System Prompt (first 300 chars): ${systemPrompt.substring(0, 300)}...`);
-        this.logger.log(`User Prompt: ${userPrompt}`);
+        this.logger.log(`System Prompt: STRICT_EXTRACTION_SYSTEM_PROMPT (zero hallucination mode)`);
+        this.logger.log(`Input text length: ${textContent.length} chars`);
         this.logger.log(`Logo Light: ${logoLightPath || 'NONE'}, Logo Dark: ${logoDarkPath || 'NONE'}`);
 
         // Build content: text + optional logo images
@@ -1011,7 +1079,7 @@ ${textContent}`;
             contentBlocks.push(...logoImages);
             contentBlocks.push({
                 type: 'text',
-                text: userPrompt + '\n\nIMPORTANT: I have also attached the brand logos (light and/or dark versions). Please analyze these logos carefully and include detailed logo_rules in your response based on the actual logo design, colors, and style you observe.',
+                text: userPrompt + '\n\nI have also attached the brand logos (light and/or dark versions). Extract logo_rules ONLY from what you actually observe in the logos. Do NOT invent rules.',
             });
             messageContent = contentBlocks;
         } else {
@@ -1036,19 +1104,19 @@ ${textContent}`;
                 throw new Error('No text response from Claude');
             }
 
-            this.logger.log(`=== CLAUDE TEXT ANALYSIS RESPONSE ===`);
+            this.logger.log(`=== CLAUDE STRICT TEXT ANALYSIS RESPONSE ===`);
             this.logger.log(`Input tokens: ${message.usage?.input_tokens}`);
             this.logger.log(`Output tokens: ${message.usage?.output_tokens}`);
             this.logger.log(`Raw response (first 500 chars): ${textBlock.text.substring(0, 500)}`);
 
-            // Parse and validate through the same pipeline as PDF analysis
-            const playbook = this.parseAndValidatePlaybook(textBlock.text);
-            this.logger.log(`Text analysis complete for ${brandName}`);
+            // Parse with evidence validation — pass the original textContent for quote checking
+            const playbook = this.parseAndValidatePlaybook(textBlock.text, textContent);
+            this.logger.log(`Strict text analysis complete for ${brandName}`);
             this.logger.log(`=== PARSED PLAYBOOK ===`);
             this.logger.log(JSON.stringify(playbook, null, 2));
             return playbook;
         } catch (error) {
-            this.logger.error(`Text analysis failed: ${error.message}`);
+            this.logger.error(`Strict text analysis failed: ${error.message}`);
             // Return default playbook on error
             return this.generateDefaultPlaybook(brandName, website);
         }
