@@ -9,7 +9,7 @@ import { PRODUCT_ANALYSIS_PROMPT } from './prompts/product-analysis.prompt';
 import { DA_ANALYSIS_PROMPT } from './prompts/da-analysis.prompt';
 import * as fs from 'fs';
 import * as path from 'path';
-import { GoogleAuth } from 'google-auth-library';
+
 
 // Custom error types for better error handling
 export class GeminiTimeoutError extends Error {
@@ -33,7 +33,7 @@ export class GeminiService {
 
 	// QATIYAN: Faqat gemini-3-pro-image-preview modelidan foydalanish
 	private readonly MODEL = GEMINI_MODEL;
-	private readonly ANALYSIS_MODEL = 'gemini-2.0-flash'; // Optimized for multimodal analysis
+	private readonly ANALYSIS_MODEL = 'gemini-2.5-flash'; // Optimized for multimodal analysis
 
 	// ⏱️ Timeout: 3 daqiqa (180 sekund) - image generation can take longer
 	private readonly TIMEOUT_MS = 180 * 1000; // 3 minutes in milliseconds
@@ -321,7 +321,6 @@ High quality studio lighting, sharp details, clean background.`;
 	): Promise<GeminiImageResult> {
 		const maxRetries = 2;
 		const startTime = Date.now();
-		let isQuotaExhausted = false;
 
 		for (let attempt = 0; attempt < maxRetries; attempt++) {
 			try {
@@ -346,11 +345,10 @@ High quality studio lighting, sharp details, clean background.`;
 				const isLastAttempt = attempt === maxRetries - 1;
 				const elapsedTime = ((Date.now() - startTime) / 1000).toFixed(2);
 
-				// Detect 429 quota exhausted — don't retry, use Vertex AI fallback
+				// Don't retry on quota exhaustion (429)
 				if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('quota')) {
-					this.logger.warn(`⚠️ Gemini API quota exhausted — trying Vertex AI Imagen fallback...`);
-					isQuotaExhausted = true;
-					break;
+					this.logger.error(`❌ Gemini API quota exhausted — not retrying`);
+					throw new InternalServerErrorException('Gemini API quota exhausted. Please wait and try again later.');
 				}
 
 				// Don't retry on timeout
@@ -377,11 +375,6 @@ High quality studio lighting, sharp details, clean background.`;
 
 				this.logger.warn(`⚠️ Attempt ${attempt + 1} failed after ${elapsedTime}s: ${error.message}`);
 			}
-		}
-
-		// Fallback to Vertex AI Imagen on quota exhaustion
-		if (isQuotaExhausted) {
-			return this.generateWithVertexImagen(prompt, aspectRatio);
 		}
 
 		throw new InternalServerErrorException(AIMessage.GEMINI_API_ERROR);
@@ -656,12 +649,12 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 			console.log(`   Time elapsed: ${elapsedTime}s`);
 			console.log(`   Error: ${error.message}`);
 
-			// On 429 quota exhaustion — try Vertex AI Imagen
+			// On 429 quota exhaustion — throw error (no Vertex fallback)
 			if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED') || error.message?.includes('quota')) {
 				console.log('');
-				console.log('🔄 Quota exhausted — falling back to Vertex AI Imagen...');
+				console.log('❌ Gemini API quota exhausted — no fallback configured');
 				console.log('═════════════════════════════════════════════════════════════════════\n');
-				return this.generateWithVertexImagen(prompt, aspectRatio);
+				throw new InternalServerErrorException('Gemini API quota exhausted. Please wait and try again later.');
 			}
 
 			console.log('');
@@ -672,164 +665,7 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 		}
 	}
 
-	/**
-	 * 🆕 Vertex AI Imagen 3 fallback — used when Gemini API key quota is exhausted (429)
-	 * Uses REST API + Application Default Credentials (gcloud auth)
-	 */
-	private async generateWithVertexImagen(prompt: string, aspectRatio?: string): Promise<GeminiImageResult> {
-		const projectId = this.configService.get<string>('VERTEX_PROJECT_ID');
-		const location = this.configService.get<string>('VERTEX_LOCATION') || 'us-central1';
-		const model = this.configService.get<string>('VERTEX_IMAGEN_MODEL') || 'imagen-3.0-generate-002';
 
-		if (!projectId) {
-			throw new GeminiGenerationError('Vertex AI fallback failed: VERTEX_PROJECT_ID not set in .env');
-		}
-
-		this.logger.log(`🎨 ========== VERTEX AI IMAGEN FALLBACK ==========`);
-		this.logger.log(`📋 Project: ${projectId}, Location: ${location}, Model: ${model}`);
-		this.logger.log(`📐 Aspect Ratio: ${aspectRatio || '1:1'}`);
-
-		const startTime = Date.now();
-
-		try {
-			// Get access token via ADC
-			const auth = new GoogleAuth({
-				scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-			});
-			const client = await auth.getClient();
-			const tokenResponse = await client.getAccessToken();
-			const accessToken = tokenResponse.token;
-
-			if (!accessToken) {
-				throw new GeminiGenerationError('Vertex AI fallback: Could not get access token. Run: gcloud auth application-default login');
-			}
-
-			// Extract a clean, descriptive prompt for Imagen
-			// The original prompt is 18KB+ with compliance rules — Imagen needs a simple description
-			const imagenPrompt = this.extractImagenPrompt(prompt);
-
-			// Map aspect ratio
-			const vertexAspectMap: Record<string, string> = {
-				'1:1': '1:1', '9:16': '9:16', '16:9': '16:9',
-				'4:5': '3:4', '4:3': '4:3', '3:4': '3:4', '3:2': '3:2', '2:3': '2:3',
-			};
-			const vertexAspect = vertexAspectMap[aspectRatio || '1:1'] || '1:1';
-
-			// Build REST API request
-			const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:predict`;
-
-			const requestBody = {
-				instances: [{
-					prompt: imagenPrompt,
-				}],
-				parameters: {
-					sampleCount: 1,
-					aspectRatio: vertexAspect,
-				},
-			};
-
-			this.logger.log(`📤 Calling Vertex AI Imagen: ${endpoint}`);
-			this.logger.log(`📝 Imagen prompt (${imagenPrompt.length} chars): ${imagenPrompt.substring(0, 200)}...`);
-
-			const response = await fetch(endpoint, {
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${accessToken}`,
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify(requestBody),
-			});
-
-			const resultText = await response.text();
-
-			if (!response.ok) {
-				this.logger.error(`❌ Vertex AI Imagen failed: ${response.status} ${resultText.substring(0, 300)}`);
-				throw new GeminiGenerationError(`Vertex AI Imagen error: ${response.status} - ${resultText.substring(0, 200)}`);
-			}
-
-			const result = JSON.parse(resultText) as any;
-			this.logger.log(`📥 Vertex AI response keys: ${Object.keys(result).join(', ')}`);
-
-			if (!result.predictions || result.predictions.length === 0) {
-				this.logger.error(`❌ Vertex AI Imagen: no predictions. Full response: ${resultText.substring(0, 500)}`);
-				throw new GeminiGenerationError('Vertex AI Imagen returned no predictions — prompt may have been filtered');
-			}
-
-			const base64Image = result.predictions[0].bytesBase64Encoded;
-			const mimeType = result.predictions[0].mimeType || 'image/png';
-
-			if (!base64Image) {
-				throw new GeminiGenerationError('Vertex AI Imagen returned empty image data');
-			}
-
-			const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-			this.logger.log(`✅ Vertex AI Imagen SUCCESS! ${(base64Image.length / 1024).toFixed(1)} KB in ${elapsed}s`);
-
-			return { mimeType, data: base64Image };
-
-		} catch (error: any) {
-			const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
-			this.logger.error(`❌ Vertex AI Imagen fallback failed after ${elapsed}s: ${error.message}`);
-			throw new GeminiGenerationError(`All generation methods failed. Gemini: quota exhausted. Vertex AI: ${error.message}`);
-		}
-	}
-
-	/**
-	 * Extract a clean, simple prompt for Imagen from the large 18KB ad-recreation prompt.
-	 * Imagen doesn't understand compliance rules — it needs a direct image description.
-	 */
-	private extractImagenPrompt(fullPrompt: string): string {
-		// Strategy 1: Look for "SCENE DIRECTION" section which has the actual image description
-		const sceneMatch = fullPrompt.match(/SCENE DIRECTION[^]*?(?=\n═|PRIORITY|$)/);
-		if (sceneMatch && sceneMatch[0].length > 100) {
-			const scene = sceneMatch[0]
-				.replace(/SCENE DIRECTION[^\n]*\n/, '')
-				.replace(/[═─╔╗╚╝║▪•]/g, '')
-				.replace(/PRIORITY \d+/g, '')
-				.replace(/\[.*?\]/g, '')
-				.trim();
-			if (scene.length > 50) {
-				return `Professional product advertisement photo: ${scene}`.substring(0, 480);
-			}
-		}
-
-		// Strategy 2: Look for the raw image_prompt (from ad copy generation)
-		const imagePromptMatch = fullPrompt.match(/image[_\s]prompt[:\s]*([^═]+)/i);
-		if (imagePromptMatch && imagePromptMatch[1].length > 50) {
-			return imagePromptMatch[1].trim().substring(0, 480);
-		}
-
-		// Strategy 3: Look for descriptive phrases
-		const descriptiveMatch = fullPrompt.match(/(A (?:complete|photorealistic|professional|editorial|luxury)[^.]+\.(?:[^.]+\.)?)/i);
-		if (descriptiveMatch && descriptiveMatch[1].length > 50) {
-			return descriptiveMatch[1].trim().substring(0, 480);
-		}
-
-		// Strategy 4: Fallback — strip all the rules/headers and take whatever is left
-		const cleaned = fullPrompt
-			.replace(/═+|─+|╔+|╗+|╚+|╝+|║+/g, '')
-			.replace(/PRIORITY \d+[^\n]*/g, '')
-			.replace(/\[COMPLIANCE[^\]]*\]/g, '')
-			.replace(/\[ABSOLUTE[^\]]*\]/g, '')
-			.replace(/OVERRIDE ALL[^\n]*/g, '')
-			.replace(/CRITICAL:[^\n]*/g, '')
-			.replace(/DO NOT[^\n]*/g, '')
-			.replace(/MUST NOT[^\n]*/g, '')
-			.replace(/NEVER[^\n]*/g, '')
-			.replace(/\n{2,}/g, '\n')
-			.trim();
-
-		// Take the last meaningful chunk — the actual scene description is usually at the end
-		const lines = cleaned.split('\n').filter(l => l.trim().length > 20);
-		const lastSection = lines.slice(-10).join(' ').trim();
-
-		if (lastSection.length > 50) {
-			return `Professional product photo for advertisement: ${lastSection}`.substring(0, 480);
-		}
-
-		// Last resort — generic prompt
-		return 'Professional product advertisement photo, high quality studio lighting, editorial e-commerce photography, white background';
-	}
 
 	/**
 	 * Generate batch of images sequentially
