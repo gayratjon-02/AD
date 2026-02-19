@@ -704,10 +704,9 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 				throw new GeminiGenerationError('Vertex AI fallback: Could not get access token. Run: gcloud auth application-default login');
 			}
 
-			// Sanitize prompt (max 1024 chars for Imagen)
-			const sanitizedPrompt = prompt.length > 1000
-				? prompt.substring(0, 1000)
-				: prompt;
+			// Extract a clean, descriptive prompt for Imagen
+			// The original prompt is 18KB+ with compliance rules — Imagen needs a simple description
+			const imagenPrompt = this.extractImagenPrompt(prompt);
 
 			// Map aspect ratio
 			const vertexAspectMap: Record<string, string> = {
@@ -721,7 +720,7 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 
 			const requestBody = {
 				instances: [{
-					prompt: sanitizedPrompt,
+					prompt: imagenPrompt,
 				}],
 				parameters: {
 					sampleCount: 1,
@@ -730,7 +729,7 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 			};
 
 			this.logger.log(`📤 Calling Vertex AI Imagen: ${endpoint}`);
-			this.logger.log(`📝 Prompt length: ${sanitizedPrompt.length} chars`);
+			this.logger.log(`📝 Imagen prompt (${imagenPrompt.length} chars): ${imagenPrompt.substring(0, 200)}...`);
 
 			const response = await fetch(endpoint, {
 				method: 'POST',
@@ -741,16 +740,19 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 				body: JSON.stringify(requestBody),
 			});
 
+			const resultText = await response.text();
+
 			if (!response.ok) {
-				const errorText = await response.text();
-				this.logger.error(`❌ Vertex AI Imagen failed: ${response.status} ${errorText.substring(0, 300)}`);
-				throw new GeminiGenerationError(`Vertex AI Imagen error: ${response.status} - ${errorText.substring(0, 200)}`);
+				this.logger.error(`❌ Vertex AI Imagen failed: ${response.status} ${resultText.substring(0, 300)}`);
+				throw new GeminiGenerationError(`Vertex AI Imagen error: ${response.status} - ${resultText.substring(0, 200)}`);
 			}
 
-			const result = await response.json() as any;
+			const result = JSON.parse(resultText) as any;
+			this.logger.log(`📥 Vertex AI response keys: ${Object.keys(result).join(', ')}`);
 
 			if (!result.predictions || result.predictions.length === 0) {
-				throw new GeminiGenerationError('Vertex AI Imagen returned no predictions');
+				this.logger.error(`❌ Vertex AI Imagen: no predictions. Full response: ${resultText.substring(0, 500)}`);
+				throw new GeminiGenerationError('Vertex AI Imagen returned no predictions — prompt may have been filtered');
 			}
 
 			const base64Image = result.predictions[0].bytesBase64Encoded;
@@ -770,6 +772,63 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 			this.logger.error(`❌ Vertex AI Imagen fallback failed after ${elapsed}s: ${error.message}`);
 			throw new GeminiGenerationError(`All generation methods failed. Gemini: quota exhausted. Vertex AI: ${error.message}`);
 		}
+	}
+
+	/**
+	 * Extract a clean, simple prompt for Imagen from the large 18KB ad-recreation prompt.
+	 * Imagen doesn't understand compliance rules — it needs a direct image description.
+	 */
+	private extractImagenPrompt(fullPrompt: string): string {
+		// Strategy 1: Look for "SCENE DIRECTION" section which has the actual image description
+		const sceneMatch = fullPrompt.match(/SCENE DIRECTION[^]*?(?=\n═|PRIORITY|$)/);
+		if (sceneMatch && sceneMatch[0].length > 100) {
+			const scene = sceneMatch[0]
+				.replace(/SCENE DIRECTION[^\n]*\n/, '')
+				.replace(/[═─╔╗╚╝║▪•]/g, '')
+				.replace(/PRIORITY \d+/g, '')
+				.replace(/\[.*?\]/g, '')
+				.trim();
+			if (scene.length > 50) {
+				return `Professional product advertisement photo: ${scene}`.substring(0, 480);
+			}
+		}
+
+		// Strategy 2: Look for the raw image_prompt (from ad copy generation)
+		const imagePromptMatch = fullPrompt.match(/image[_\s]prompt[:\s]*([^═]+)/i);
+		if (imagePromptMatch && imagePromptMatch[1].length > 50) {
+			return imagePromptMatch[1].trim().substring(0, 480);
+		}
+
+		// Strategy 3: Look for descriptive phrases
+		const descriptiveMatch = fullPrompt.match(/(A (?:complete|photorealistic|professional|editorial|luxury)[^.]+\.(?:[^.]+\.)?)/i);
+		if (descriptiveMatch && descriptiveMatch[1].length > 50) {
+			return descriptiveMatch[1].trim().substring(0, 480);
+		}
+
+		// Strategy 4: Fallback — strip all the rules/headers and take whatever is left
+		const cleaned = fullPrompt
+			.replace(/═+|─+|╔+|╗+|╚+|╝+|║+/g, '')
+			.replace(/PRIORITY \d+[^\n]*/g, '')
+			.replace(/\[COMPLIANCE[^\]]*\]/g, '')
+			.replace(/\[ABSOLUTE[^\]]*\]/g, '')
+			.replace(/OVERRIDE ALL[^\n]*/g, '')
+			.replace(/CRITICAL:[^\n]*/g, '')
+			.replace(/DO NOT[^\n]*/g, '')
+			.replace(/MUST NOT[^\n]*/g, '')
+			.replace(/NEVER[^\n]*/g, '')
+			.replace(/\n{2,}/g, '\n')
+			.trim();
+
+		// Take the last meaningful chunk — the actual scene description is usually at the end
+		const lines = cleaned.split('\n').filter(l => l.trim().length > 20);
+		const lastSection = lines.slice(-10).join(' ').trim();
+
+		if (lastSection.length > 50) {
+			return `Professional product photo for advertisement: ${lastSection}`.substring(0, 480);
+		}
+
+		// Last resort — generic prompt
+		return 'Professional product advertisement photo, high quality studio lighting, editorial e-commerce photography, white background';
 	}
 
 	/**
