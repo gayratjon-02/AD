@@ -12,6 +12,7 @@ import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { S3Service } from '../../../common/s3/s3.service';
 import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-generation.entity';
+import { AdProduct } from '../../../database/entities/Ad-Recreation/ad-product.entity';
 import { Product } from '../../../database/entities/Product-Visuals/product.entity';
 import { AdBrandsService } from '../brands/ad-brands.service';
 import { AdConceptsService } from '../ad-concepts/ad-concepts.service';
@@ -176,6 +177,8 @@ export class GenerationsService {
     constructor(
         @InjectRepository(AdGeneration)
         private generationsRepository: Repository<AdGeneration>,
+        @InjectRepository(AdProduct)
+        private adProductRepository: Repository<AdProduct>,
         @InjectRepository(Product)
         private productRepository: Repository<Product>,
         private readonly adBrandsService: AdBrandsService,
@@ -259,64 +262,103 @@ export class GenerationsService {
 
         this.logger.log(`Playbook validated: product="${playbook.product_identity.product_name}"`);
 
-        // Step 3.5: Fetch product images if product_id provided
+        // Step 3.5: Fetch product images — check AdProduct (Phase 2) first, then Product (Phase 1)
         let productImageUrls: string[] = [];
-        let productData: Product | null = null;
+        let productAnalyzedJson: Record<string, any> | null = null;
+        let productName = '';
+        let productDescription = ''; // Manual product description (fabrics, fits, designs)
 
         if (dto.product_id) {
-            this.logger.log(`[STEP 3.5] Fetching product images for product_id: ${dto.product_id}`);
-            productData = await this.productRepository.findOne({ where: { id: dto.product_id } });
+            this.logger.log(`[STEP 3.5] Fetching product for product_id: ${dto.product_id}`);
+            const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
 
-            if (productData) {
-                const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
-
-                // Collect all product image URLs
-                const fixUrl = (url: string): string => {
-                    if (url.includes('localhost:3000')) {
-                        return url.replace('http://localhost:3000', uploadBaseUrl);
-                    }
-                    return url;
-                };
-
-                if (productData.front_image_url) {
-                    productImageUrls.push(fixUrl(productData.front_image_url));
+            const fixUrl = (url: string): string => {
+                if (url.includes('localhost:3000')) {
+                    return url.replace('http://localhost:3000', uploadBaseUrl);
                 }
-                if (productData.back_image_url) {
-                    productImageUrls.push(fixUrl(productData.back_image_url));
-                }
-                if (productData.reference_images && Array.isArray(productData.reference_images)) {
-                    for (const refUrl of productData.reference_images) {
-                        if (refUrl && refUrl.trim()) {
-                            productImageUrls.push(fixUrl(refUrl));
-                        }
-                    }
+                return url;
+            };
+
+            // ── Priority: AdProduct table (Phase 2 — ad-recreation products) ──
+            const adProduct = await this.adProductRepository.findOne({ where: { id: dto.product_id } });
+
+            if (adProduct) {
+                this.logger.log(`   ✅ Found AdProduct (Phase 2): "${adProduct.name}" (ID: ${adProduct.id})`);
+                productName = adProduct.name;
+                if (adProduct.description) {
+                    productDescription = adProduct.description;
+                    this.logger.log(`   📝 AdProduct manual description: "${productDescription.substring(0, 100)}..."`);
                 }
 
-                this.logger.log(`   Product found: "${productData.name}"`);
-                this.logger.log(`   Product images collected: ${productImageUrls.length}`);
-                productImageUrls.forEach((url, i) => this.logger.log(`     [${i}] ${url}`));
+                if (adProduct.front_image_url) {
+                    productImageUrls.push(fixUrl(adProduct.front_image_url));
+                    this.logger.log(`   📸 AdProduct front_image_url: ${adProduct.front_image_url}`);
+                }
+                if (adProduct.back_image_url) {
+                    productImageUrls.push(fixUrl(adProduct.back_image_url));
+                    this.logger.log(`   📸 AdProduct back_image_url: ${adProduct.back_image_url}`);
+                }
 
-                // If product has analyzed JSON, enhance the playbook's product_identity
-                if (productData.analyzed_product_json) {
-                    const pj = productData.analyzed_product_json;
-                    this.logger.log(`   Merging analyzed product JSON into prompt context...`);
-
-                    // Enrich product_identity with analyzed data if it was auto-generated
-                    if (playbook.product_identity.visual_description?.includes('For better results')) {
-                        playbook.product_identity.product_name = pj.general_info?.product_name || productData.name || playbook.product_identity.product_name;
-                        playbook.product_identity.visual_description = [
-                            pj.texture_description || '',
-                            Array.isArray(pj.materials) ? `Materials: ${pj.materials.join(', ')}` : '',
-                            Array.isArray(pj.design_elements) ? `Details: ${pj.design_elements.join(', ')}` : '',
-                        ].filter(Boolean).join('. ') || playbook.product_identity.visual_description;
-
-                        if (Array.isArray(pj.style_keywords) && pj.style_keywords.length > 0) {
-                            playbook.product_identity.key_features = pj.style_keywords;
-                        }
-                    }
+                if (adProduct.analyzed_product_json) {
+                    productAnalyzedJson = adProduct.analyzed_product_json;
+                    this.logger.log(`   📊 AdProduct has analyzed_product_json — will use for prompt`);
+                } else {
+                    this.logger.warn(`   ⚠️ AdProduct has NO analyzed_product_json`);
                 }
             } else {
-                this.logger.warn(`Product with ID ${dto.product_id} not found — continuing without product images`);
+                // ── Fallback: Product table (Phase 1 — product visuals) ──
+                this.logger.log(`   AdProduct not found — checking Phase 1 Product table...`);
+                const phase1Product = await this.productRepository.findOne({ where: { id: dto.product_id } });
+
+                if (phase1Product) {
+                    this.logger.log(`   ✅ Found Phase 1 Product: "${phase1Product.name}"`);
+                    productName = phase1Product.name;
+
+                    if (phase1Product.front_image_url) {
+                        productImageUrls.push(fixUrl(phase1Product.front_image_url));
+                    }
+                    if (phase1Product.back_image_url) {
+                        productImageUrls.push(fixUrl(phase1Product.back_image_url));
+                    }
+                    if (phase1Product.reference_images && Array.isArray(phase1Product.reference_images)) {
+                        for (const refUrl of phase1Product.reference_images) {
+                            if (refUrl && refUrl.trim()) {
+                                productImageUrls.push(fixUrl(refUrl));
+                            }
+                        }
+                    }
+                    if (phase1Product.analyzed_product_json) {
+                        productAnalyzedJson = phase1Product.analyzed_product_json;
+                    }
+                } else {
+                    this.logger.warn(`   ❌ Product ID ${dto.product_id} not found in AdProduct OR Product tables`);
+                }
+            }
+
+            this.logger.log(`   Total product images collected: ${productImageUrls.length}`);
+            productImageUrls.forEach((url, i) => this.logger.log(`     [img ${i}] ${url}`));
+
+            // Enrich playbook product_identity with analyzed product JSON
+            if (productAnalyzedJson) {
+                const pj = productAnalyzedJson;
+                this.logger.log(`   Merging analyzed product JSON into prompt context...`);
+
+                playbook.product_identity.product_name = pj.general_info?.product_name || productName || playbook.product_identity.product_name;
+
+                const descParts: string[] = [];
+                if (pj.texture_description) descParts.push(pj.texture_description);
+                if (Array.isArray(pj.materials) && pj.materials.length) descParts.push(`Materials: ${pj.materials.join(', ')}`);
+                if (Array.isArray(pj.design_elements) && pj.design_elements.length) descParts.push(`Details: ${pj.design_elements.join(', ')}`);
+                if (pj.general_info?.product_description) descParts.push(pj.general_info.product_description);
+
+                if (descParts.length > 0) {
+                    playbook.product_identity.visual_description = descParts.join('. ');
+                    this.logger.log(`   ✅ product_identity.visual_description updated from analyzed JSON`);
+                }
+
+                if (Array.isArray(pj.style_keywords) && pj.style_keywords.length > 0) {
+                    playbook.product_identity.key_features = pj.style_keywords;
+                }
             }
         }
 
@@ -341,7 +383,14 @@ export class GenerationsService {
 
         // Step 5: Build prompt for text generation (fully JSON-driven)
         this.logger.log(`[STEP 5] Building text generation prompt...`);
-        const productJson = productData?.analyzed_product_json;
+        const productJson = productAnalyzedJson;
+
+        // Enrich playbook with manual product description (fabrics, fits, designs)
+        if (productDescription && playbook.product_identity) {
+            const existing = playbook.product_identity.visual_description || '';
+            playbook.product_identity.visual_description = `${existing}\n\nManual Product Details (fabrics, fits & designs): ${productDescription}`;
+            this.logger.log(`   📝 Injected manual product description into visual_description`);
+        }
 
         const userPrompt = this.buildUserPrompt(
             brand.name,
@@ -437,6 +486,46 @@ export class GenerationsService {
                 allReferenceImages.push(pUrl);
             }
         }
+
+        // Priority 4: Brand logo (so Gemini can reproduce exact logo in the ad)
+        if (brand.assets?.logo_light) {
+            let logoUrl = brand.assets.logo_light;
+            if (logoUrl.includes('localhost:3000')) {
+                logoUrl = logoUrl.replace('http://localhost:3000', uploadBaseUrl);
+            }
+            allReferenceImages.push(logoUrl);
+            this.logger.log(`[BRAND LOGO] logo_light → ${logoUrl}`);
+        } else if (brand.assets?.logo_dark) {
+            let logoUrl = brand.assets.logo_dark;
+            if (logoUrl.includes('localhost:3000')) {
+                logoUrl = logoUrl.replace('http://localhost:3000', uploadBaseUrl);
+            }
+            allReferenceImages.push(logoUrl);
+            this.logger.log(`[BRAND LOGO] logo_dark → ${logoUrl}`);
+        } else {
+            this.logger.warn(`[BRAND LOGO] ⚠️ No brand logo found in brand.assets — logo will NOT be sent as reference image`);
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // 📊 COMPREHENSIVE REFERENCE IMAGE LOG
+        // ═══════════════════════════════════════════════════════════════════
+        console.log('\n');
+        console.log('╔══════════════════════════════════════════════════════════════════╗');
+        console.log('║  📊 REFERENCE IMAGES SENT TO GEMINI                              ║');
+        console.log('╚══════════════════════════════════════════════════════════════════╝');
+        console.log(`   Total reference images: ${allReferenceImages.length}`);
+        allReferenceImages.forEach((url, i) => {
+            let label = 'UNKNOWN';
+            if (i === 0 && dto.mapped_assets?.selected_image_url) label = 'HERO (user-selected product image)';
+            else if (url === concept.original_image_url || url === concept.original_image_url?.replace('http://localhost:3000', uploadBaseUrl)) label = 'CONCEPT (inspiration/DA image)';
+            else if (url === brand.assets?.logo_light || url === brand.assets?.logo_dark || url === brand.assets?.logo_light?.replace('http://localhost:3000', uploadBaseUrl) || url === brand.assets?.logo_dark?.replace('http://localhost:3000', uploadBaseUrl)) label = 'BRAND LOGO';
+            else label = 'PRODUCT IMAGE';
+            console.log(`   [${i}] ${label}: ${url}`);
+        });
+        if (productDescription) {
+            console.log(`   📝 Manual product description: "${productDescription.substring(0, 150)}..."`);
+        }
+        console.log('═════════════════════════════════════════════════════════════════════\n');
 
         this.logger.log(`[REFERENCE IMAGES] Total: ${allReferenceImages.length}`);
         allReferenceImages.forEach((url, i) => this.logger.log(`   [${i}] ${url}`));

@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { GenerationsController } from './generations.controller';
 import { GenerationsService } from './generations.service';
 import { AdGeneration } from '../../../database/entities/Ad-Recreation/ad-generation.entity';
+import { AdProduct } from '../../../database/entities/Ad-Recreation/ad-product.entity';
 import { AdBrandsModule } from '../brands/ad-brands.module';
 import { AdConceptsModule } from '../ad-concepts/ad-concepts.module';
 import { AiModule } from '../../../ai/ai.module';
@@ -21,7 +22,7 @@ import { GenerationsModule as ProductVisualsGenerationsModule } from '../../../g
 @Module({
     imports: [
         ConfigModule,
-        TypeOrmModule.forFeature([AdGeneration, Product]),
+        TypeOrmModule.forFeature([AdGeneration, Product, AdProduct]),
         AdBrandsModule,
         AdConceptsModule,
         AiModule, // Provides GeminiService for image generation
