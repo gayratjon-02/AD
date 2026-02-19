@@ -1,7 +1,6 @@
-// TEST: gemini-2.0-flash-preview-image-generation (faster, more stable)
-// PRODUCTION: gemini-3-pro-image-preview (highest quality, 4K)
+// PRODUCTION: gemini-3-pro-image-preview (Nano Banana Pro — highest quality, 4K)
 // Reference: https://ai.google.dev/gemini-api/docs/image-generation
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-preview-image-generation';
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-pro-image-preview';
 
 // Image generation result type
 export type GeminiImageResult = {
