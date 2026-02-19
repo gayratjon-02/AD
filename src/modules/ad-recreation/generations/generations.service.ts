@@ -570,32 +570,45 @@ export class GenerationsService {
             '\n[VARIATION DIRECTION: Subtle palette shift. Different negative space distribution.]',
         ];
 
-        for (let i = 0; i < variationsCount; i++) {
-            const variationNum = i + 1;
-            this.logger.log(`\n   ── VARIATION ${variationNum}/${variationsCount} ──`);
-            console.log(`[AD-RECREATION] 🎨 Starting image generation for variation ${variationNum}/${variationsCount}`);
+        // ─── PARALLEL GENERATION: Run 2 variations at a time ───
+        // This cuts total time roughly in half (2 batches × ~120s vs 4 × 120s)
+        const BATCH_SIZE = 2;
+        const batches: number[][] = [];
+        for (let i = 0; i < variationsCount; i += BATCH_SIZE) {
+            batches.push(
+                Array.from({ length: Math.min(BATCH_SIZE, variationsCount - i) }, (_, j) => i + j)
+            );
+        }
 
-            // 🛡️ RATE LIMIT PROTECTION: Add delay between API calls (skip first)
-            if (i > 0) {
-                const delayMs = 3000; // 3 seconds between each Gemini call
-                console.log(`[AD-RECREATION] ⏱️ Waiting ${delayMs / 1000}s before variation ${variationNum} (rate limit protection)...`);
+        this.logger.log(`[PARALLEL] Running ${variationsCount} variations in ${batches.length} batches of up to ${BATCH_SIZE}`);
+
+        for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+            const batch = batches[batchIdx];
+
+            // 🛡️ RATE LIMIT PROTECTION: 3s delay between batches (skip first)
+            if (batchIdx > 0) {
+                const delayMs = 3000;
+                console.log(`[AD-RECREATION] ⏱️ Waiting ${delayMs / 1000}s before batch ${batchIdx + 1}/${batches.length} (rate limit protection)...`);
                 await new Promise(resolve => setTimeout(resolve, delayMs));
             }
 
-            // Calculate progress: spread image generation across 50% → 90%
-            const progressPerVariation = 40 / variationsCount;
-            const currentProgress = Math.round(50 + (i * progressPerVariation));
-            await this.generationsRepository.update(generationId, { progress: currentProgress });
+            this.logger.log(`\n   ── BATCH ${batchIdx + 1}/${batches.length} (variations ${batch.map(i => i + 1).join(', ')}) ──`);
 
-            // Emit progress via Socket.IO so frontend can track
+            // Update progress at batch start
+            const batchStartProgress = Math.round(50 + (batchIdx * BATCH_SIZE / variationsCount) * 40);
+            await this.generationsRepository.update(generationId, { progress: batchStartProgress });
             this.generationGateway.emitProgress(generationId, {
-                progress_percent: currentProgress,
+                progress_percent: batchStartProgress,
                 completed: resultImages.length,
                 total: variationsCount,
                 elapsed_seconds: 0,
             });
 
-            try {
+            // Run batch variations in parallel
+            const batchPromises = batch.map(async (i) => {
+                const variationNum = i + 1;
+                console.log(`[AD-RECREATION] 🎨 Starting variation ${variationNum}/${variationsCount} (parallel)`);
+
                 const variationPrompt = guardedImagePrompt + (variationSeeds[i] || variationSeeds[i % variationSeeds.length]);
 
                 // 🛡️ RETRY LOGIC: Up to 3 attempts with exponential backoff
@@ -606,7 +619,7 @@ export class GenerationsService {
                 for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
                     try {
                         if (attempt > 1) {
-                            const backoffMs = attempt * 3000; // 3s, 6s, 9s
+                            const backoffMs = attempt * 3000;
                             console.log(`[AD-RECREATION] 🔄 Retry ${attempt}/${MAX_RETRIES} for variation ${variationNum} (waiting ${backoffMs / 1000}s)...`);
                             await new Promise(resolve => setTimeout(resolve, backoffMs));
                         }
@@ -628,7 +641,6 @@ export class GenerationsService {
                             );
                         }
 
-                        // Success — break retry loop
                         lastError = null;
                         break;
 
@@ -637,7 +649,6 @@ export class GenerationsService {
                         const errMsg = retryError instanceof Error ? retryError.message : String(retryError);
                         console.log(`[AD-RECREATION] ⚠️ Attempt ${attempt}/${MAX_RETRIES} failed for variation ${variationNum}: ${errMsg}`);
 
-                        // Don't retry on policy violations — they won't succeed
                         if (errMsg.includes('violates') || errMsg.includes('policy') || errMsg.includes('refused')) {
                             console.log(`[AD-RECREATION] 🚫 Policy violation — skipping retries for variation ${variationNum}`);
                             break;
@@ -645,78 +656,87 @@ export class GenerationsService {
                     }
                 }
 
-                // If all retries failed, throw the last error
                 if (lastError || !imageResult) {
                     throw lastError || new Error(`All ${MAX_RETRIES} attempts failed for variation ${variationNum}`);
                 }
 
-                const generatedImageBase64 = imageResult.data;
-                const imageMimeType = imageResult.mimeType || 'image/png';
+                return { i, variationNum, imageResult };
+            });
 
-                this.logger.log(`   ✅ Variation ${variationNum} generated (${(generatedImageBase64.length / 1024).toFixed(1)} KB base64)`);
-                console.log(`[AD-RECREATION] ✅ Variation ${variationNum} image received from Gemini`);
+            // Wait for all variations in this batch
+            const batchResults = await Promise.allSettled(batchPromises);
 
-                // Upload image to S3
-                const generatedImageUrl = await this.s3Service.uploadBase64Image(
-                    generatedImageBase64,
-                    'generations',
-                    imageMimeType,
-                );
+            // Process results
+            for (const result of batchResults) {
+                if (result.status === 'fulfilled') {
+                    const { i, variationNum, imageResult } = result.value;
+                    const generatedImageBase64 = imageResult.data;
+                    const imageMimeType = imageResult.mimeType || 'image/png';
 
-                this.logger.log(`   S3 URL: ${generatedImageUrl}`);
-                console.log(`[AD-RECREATION] 📦 Variation ${variationNum} uploaded to S3: ${generatedImageUrl}`);
+                    this.logger.log(`   ✅ Variation ${variationNum} generated (${(generatedImageBase64.length / 1024).toFixed(1)} KB base64)`);
+                    console.log(`[AD-RECREATION] ✅ Variation ${variationNum} image received from Gemini`);
 
-                const imageEntry = {
-                    id: uuidv4(),
-                    url: generatedImageUrl,
-                    format: aspectRatio,
-                    angle: dto.marketing_angle_id,
-                    variation_index: variationNum,
-                    generated_at: new Date().toISOString(),
-                };
+                    // Upload to S3
+                    const generatedImageUrl = await this.s3Service.uploadBase64Image(
+                        generatedImageBase64,
+                        'generations',
+                        imageMimeType,
+                    );
 
-                resultImages.push(imageEntry);
+                    this.logger.log(`   S3 URL: ${generatedImageUrl}`);
+                    console.log(`[AD-RECREATION] 📦 Variation ${variationNum} uploaded to S3: ${generatedImageUrl}`);
 
-                // Save progress after each variation (so partial results survive crashes)
-                const newProgress = Math.round(50 + ((i + 1) * progressPerVariation));
-                await this.generationsRepository.update(generationId, {
-                    result_images: resultImages,
-                    progress: newProgress,
-                });
+                    const imageEntry = {
+                        id: uuidv4(),
+                        url: generatedImageUrl,
+                        format: aspectRatio,
+                        angle: dto.marketing_angle_id,
+                        variation_index: variationNum,
+                        generated_at: new Date().toISOString(),
+                    };
 
-                // 🔥 REAL-TIME: Emit visual_completed via Socket.IO so frontend shows image immediately
-                console.log(`[AD-RECREATION] 📡 Emitting visual_completed for variation ${variationNum} via Socket.IO`);
-                this.generationGateway.emitVisualCompleted(generationId, {
-                    type: `variation_${variationNum}`,
-                    index: i,
-                    image_url: generatedImageUrl,
-                    generated_at: imageEntry.generated_at,
-                    status: 'completed',
-                });
+                    resultImages.push(imageEntry);
 
-                // Also emit progress update
-                this.generationGateway.emitProgress(generationId, {
-                    progress_percent: newProgress,
-                    completed: resultImages.length,
-                    total: variationsCount,
-                    elapsed_seconds: 0,
-                });
+                    // Emit visual_completed via Socket.IO
+                    console.log(`[AD-RECREATION] 📡 Emitting visual_completed for variation ${variationNum} via Socket.IO`);
+                    this.generationGateway.emitVisualCompleted(generationId, {
+                        type: `variation_${variationNum}`,
+                        index: i,
+                        image_url: generatedImageUrl,
+                        generated_at: imageEntry.generated_at,
+                        status: 'completed',
+                    });
 
-            } catch (error) {
-                this.logger.error(`   ❌ Variation ${variationNum} failed: ${error instanceof Error ? error.message : String(error)}`);
-                console.log(`[AD-RECREATION] ❌ Variation ${variationNum} FAILED: ${error instanceof Error ? error.message : String(error)}`);
+                } else {
+                    // Failed variation
+                    const errMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
+                    this.logger.error(`   ❌ Variation failed: ${errMsg}`);
+                    console.log(`[AD-RECREATION] ❌ Variation FAILED: ${errMsg}`);
 
-                // Emit failure via Socket.IO
-                this.generationGateway.emitVisualCompleted(generationId, {
-                    type: `variation_${variationNum}`,
-                    index: i,
-                    image_url: '',
-                    generated_at: new Date().toISOString(),
-                    status: 'failed',
-                    error: error instanceof Error ? error.message : String(error),
-                });
-                // Continue with remaining variations — don't fail the whole generation
+                    this.generationGateway.emitVisualCompleted(generationId, {
+                        type: `variation_unknown`,
+                        index: -1,
+                        image_url: '',
+                        generated_at: new Date().toISOString(),
+                        status: 'failed',
+                        error: errMsg,
+                    });
+                }
             }
+
+            // Save progress after each batch
+            const batchEndProgress = Math.round(50 + ((batchIdx + 1) * BATCH_SIZE / variationsCount) * 40);
+            await this.generationsRepository.update(generationId, {
+                result_images: resultImages,
+                progress: Math.min(batchEndProgress, 90),
+            });
+
+            this.generationGateway.emitProgress(generationId, {
+                progress_percent: Math.min(batchEndProgress, 90),
+                completed: resultImages.length,
+                total: variationsCount,
+                elapsed_seconds: 0,
+            });
         }
 
         this.logger.log(`\n   Image generation complete: ${resultImages.length}/${variationsCount} variations succeeded`);
