@@ -1,4 +1,4 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsString, IsOptional, MaxLength, IsObject } from 'class-validator';
 
 /**
  * Update Ad Product DTO
@@ -13,4 +13,8 @@ export class UpdateAdProductDto {
     @IsString()
     @IsOptional()
     description?: string;
+
+    @IsObject()
+    @IsOptional()
+    analyzed_product_json?: Record<string, any>;
 }
