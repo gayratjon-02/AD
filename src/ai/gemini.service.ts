@@ -460,45 +460,53 @@ High quality studio lighting, sharp details, clean background.`;
 		const ratioText = this.mapAspectRatioToGemini(aspectRatio ?? '4:5');
 		const resolutionText = this.mapResolutionToGemini(resolution);
 
-		// Enhanced prompt with reference instruction - EXACT PRODUCT REPRODUCTION
-		const referencePrompt = `🎯 CRITICAL: Use the provided reference images as EXACT VISUAL GUIDE.
-You MUST match ALL details from reference images precisely:
+		// Enhanced prompt with reference instruction - ROLE-AWARE IMAGE HANDLING
+		// The incoming `prompt` contains an IMAGE ROLE MAP telling Gemini how to use each image.
+		// This wrapper adds product fidelity instructions that complement (not conflict with) the role map.
+		const referencePrompt = `🎯 CRITICAL: The reference images serve DIFFERENT ROLES. Read the IMAGE ROLE MAP in the prompt below to understand each image's purpose.
+
+📸 FOR PRODUCT REFERENCE IMAGES (first images — see IMAGE ROLE MAP):
+These show the EXACT product you MUST reproduce. Match ALL details precisely:
 
 🎨 POCKET PATCHES & DESIGN ELEMENTS (HIGHEST PRIORITY):
-- EXACT pocket patch pattern, embossing, and monogram from reference images
+- EXACT pocket patch pattern, embossing, and monogram from PRODUCT reference images
 - EXACT pocket patch material appearance (leather, fabric), color, and texture
 - EXACT pocket patch shape, size, and position on the garment
 - Embossed/debossed patterns must match PRECISELY - same motif, same density, same depth
 - Every distinctive design element (patches, panels, overlays) must be reproduced IDENTICALLY
-- The pocket patch must look THE SAME in every shot - no variation allowed
 
-🏷️ LOGO/BRANDING:
-- EXACT logo text, font, and typography from reference
-- EXACT logo position, size, and proportions
-- EXACT logo colors and contrast
-- Text must be SHARP and LEGIBLE even at small sizes
-- If reference has embroidered/printed logo, match that technique exactly
-- NO approximations - match character-by-character
+🏷️ BRAND LOGO (see IMAGE ROLE MAP for which image is the logo):
+- Reproduce this EXACT logo in the ad — match typography, colors, proportions
+- Place the logo NATURALLY on the product or prominently in the ad layout
+- Position it where a real brand would: on the garment, on a patch, or in the ad header
+- Logo must be SHARP, LEGIBLE, and properly integrated
 
-👕 GARMENT DETAILS:
+👕 GARMENT DETAILS FROM PRODUCT IMAGES:
 - EXACT pocket count and positions (count every pocket!)
 - EXACT button count and placement
-- EXACT color (sample HEX from reference)
+- EXACT color (sample HEX from product reference)
 - EXACT fabric texture and material appearance
 - EXACT collar/cuff/seam details
 - EXACT zipper/hardware placement
 
-Generate a NEW professional product photography based on these references.
-The generated image must be VISUALLY IDENTICAL to the reference product.
-Every design element, patch, pocket, embossing, and detail must match the reference EXACTLY.
-The product must look IDENTICAL across all generated shots - same patches, same patterns, same details.
+🎨 FOR CONCEPT/STYLE IMAGE (LAST image — see IMAGE ROLE MAP):
+⚠️ This image is ONLY for style, layout, composition, and mood reference.
+🚫 DO NOT COPY the product shown in this concept image!
+✅ REPLACE whatever product is in the concept image with the EXACT product from the PRODUCT reference images.
+✅ Use it ONLY for: camera angle, lighting style, background mood, text placement, composition.
 
-🚫 DO NOT INCLUDE: collar labels, neck tags, size labels, care labels, washing instruction tags, or any inner garment tags. Only show the OUTER garment design elements visible in the reference images.
+Generate a NEW professional advertisement that:
+1. Shows the EXACT product from the PRODUCT reference images
+2. Has the brand logo placed naturally and prominently
+3. Uses the style, layout, and composition from the CONCEPT image
+4. REPLACES the concept image's product with the user's actual product
 
-PHOTOGRAPHY REQUIREMENTS:
+🚫 DO NOT INCLUDE: collar labels, neck tags, size labels, care labels, washing instruction tags, or any inner garment tags. Only show the OUTER garment design elements visible in the product reference images.
+
+PHOTOGRAPHY & AD REQUIREMENTS:
 ${this.sanitizePromptForImageGeneration(prompt)}
 
-HIGH QUALITY OUTPUT: Professional e-commerce photography, studio lighting, sharp details. Crisp detail rendering on all patches and embossing.`;
+HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sharp details. Crisp detail rendering on all patches, embossing, and logo.`;
 
 		console.log('🔧 ENHANCED PROMPT (sent to Gemini):');
 		console.log('─────────────────────────────────────────────────────────────────────');

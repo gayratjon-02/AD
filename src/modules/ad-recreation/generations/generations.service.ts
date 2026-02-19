@@ -424,23 +424,12 @@ export class GenerationsService {
         }
 
         // Step 7: Build GUARDED image prompt (dynamic 6-layer guardrails with hierarchy)
-        this.logger.log(`[STEP 7] Building guarded image prompt with dynamic hierarchy...`);
+        // NOTE: This is built below, AFTER reference images are collected,
+        // so we can include IMAGE ROLE MAP with correct indices.
+        // See "[STEP 7 - MOVED]" below.
         await this.generationsRepository.update(generationId, { progress: 50 });
 
-        const guardedImagePrompt = this.buildGuardedImagePrompt(
-            adCopy.image_prompt,
-            dto.marketing_angle_id,
-            angle,
-            playbook,
-            concept.analysis_json,
-            format,
-            productJson,
-        );
-
         const aspectRatio = FORMAT_RATIO_MAP[dto.format_id] || '1:1';
-        this.logger.log(`   Aspect Ratio: ${aspectRatio}`);
-        this.logger.log(`   Raw image_prompt: ${adCopy.image_prompt.length} chars`);
-        this.logger.log(`   Guarded image_prompt: ${guardedImagePrompt.length} chars`);
 
         // ─── P0: Generate N variations (default 4) ─────────────────
         const variationsCount = dto.variations_count || 4;
@@ -455,44 +444,43 @@ export class GenerationsService {
             generated_at: string;
         }> = [];
 
-        // Build combined reference images: mapped hero (priority) + inspiration + product images
+        // Build combined reference images with CLEAR ROLE ORDER:
+        // Product images FIRST → Brand logo → Concept/inspiration LAST
+        // This order is critical: Gemini gives more weight to earlier images.
         const allReferenceImages: string[] = [];
         const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
 
-        // Priority 1: User-mapped hero image (most important — first reference for Gemini)
+        // ── ROLE 1: PRODUCT IMAGES (FIRST — highest priority for Gemini) ──
+        // These show the EXACT product to reproduce. Hero image first if mapped.
+        let productImageCount = 0;
         if (dto.mapped_assets?.selected_image_url) {
             let heroUrl = dto.mapped_assets.selected_image_url;
             if (heroUrl.includes('localhost:3000')) {
                 heroUrl = heroUrl.replace('http://localhost:3000', uploadBaseUrl);
             }
             allReferenceImages.push(heroUrl);
-            this.logger.log(`[HERO IMAGE] Mapped hero zone "${dto.mapped_assets.hero_zone_id}" → ${heroUrl}`);
+            productImageCount++;
+            this.logger.log(`[PRODUCT IMG ${productImageCount}] Hero image → ${heroUrl}`);
         }
 
-        // Priority 2: Inspiration image (concept/style reference)
-        if (concept.original_image_url) {
-            let refImageUrl = concept.original_image_url;
-            if (refImageUrl.includes('localhost:3000')) {
-                refImageUrl = refImageUrl.replace('http://localhost:3000', uploadBaseUrl);
-                this.logger.log(`🔧 Fixed legacy image URL: ${concept.original_image_url} -> ${refImageUrl}`);
-            }
-            allReferenceImages.push(refImageUrl);
-        }
-
-        // Priority 3: Remaining product images (excluding already-added hero image)
+        // Remaining product images (front/back, excluding hero to avoid duplicates)
         const heroUrl = dto.mapped_assets?.selected_image_url;
         for (const pUrl of productImageUrls) {
             if (pUrl !== heroUrl) {
                 allReferenceImages.push(pUrl);
+                productImageCount++;
+                this.logger.log(`[PRODUCT IMG ${productImageCount}] → ${pUrl}`);
             }
         }
 
-        // Priority 4: Brand logo (so Gemini can reproduce exact logo in the ad)
+        // ── ROLE 2: BRAND LOGO (so Gemini can place the exact logo on the product) ──
+        let brandLogoIndex = -1;
         if (brand.assets?.logo_light) {
             let logoUrl = brand.assets.logo_light;
             if (logoUrl.includes('localhost:3000')) {
                 logoUrl = logoUrl.replace('http://localhost:3000', uploadBaseUrl);
             }
+            brandLogoIndex = allReferenceImages.length;
             allReferenceImages.push(logoUrl);
             this.logger.log(`[BRAND LOGO] logo_light → ${logoUrl}`);
         } else if (brand.assets?.logo_dark) {
@@ -500,10 +488,26 @@ export class GenerationsService {
             if (logoUrl.includes('localhost:3000')) {
                 logoUrl = logoUrl.replace('http://localhost:3000', uploadBaseUrl);
             }
+            brandLogoIndex = allReferenceImages.length;
             allReferenceImages.push(logoUrl);
             this.logger.log(`[BRAND LOGO] logo_dark → ${logoUrl}`);
         } else {
-            this.logger.warn(`[BRAND LOGO] ⚠️ No brand logo found in brand.assets — logo will NOT be sent as reference image`);
+            this.logger.warn(`[BRAND LOGO] ⚠️ No brand logo found in brand.assets`);
+        }
+
+        // ── ROLE 3: CONCEPT/INSPIRATION IMAGE (LAST — style/layout reference ONLY) ──
+        // This image is ONLY for layout, style, and composition.
+        // Its product must be REPLACED with the user's product from Role 1.
+        let conceptImageIndex = -1;
+        if (concept.original_image_url) {
+            let refImageUrl = concept.original_image_url;
+            if (refImageUrl.includes('localhost:3000')) {
+                refImageUrl = refImageUrl.replace('http://localhost:3000', uploadBaseUrl);
+                this.logger.log(`🔧 Fixed legacy image URL: ${concept.original_image_url} -> ${refImageUrl}`);
+            }
+            conceptImageIndex = allReferenceImages.length;
+            allReferenceImages.push(refImageUrl);
+            this.logger.log(`[CONCEPT IMAGE] (style/layout ONLY) → ${refImageUrl}`);
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -511,15 +515,18 @@ export class GenerationsService {
         // ═══════════════════════════════════════════════════════════════════
         console.log('\n');
         console.log('╔══════════════════════════════════════════════════════════════════╗');
-        console.log('║  📊 REFERENCE IMAGES SENT TO GEMINI                              ║');
+        console.log('║  📊 REFERENCE IMAGES SENT TO GEMINI (Role-Ordered)              ║');
         console.log('╚══════════════════════════════════════════════════════════════════╝');
         console.log(`   Total reference images: ${allReferenceImages.length}`);
+        console.log(`   Product images: ${productImageCount} (indices 0-${productImageCount - 1})`);
+        console.log(`   Brand logo: ${brandLogoIndex >= 0 ? `index ${brandLogoIndex}` : 'NOT AVAILABLE'}`);
+        console.log(`   Concept image: ${conceptImageIndex >= 0 ? `index ${conceptImageIndex} (LAST — style/layout ONLY)` : 'NOT AVAILABLE'}`);
+        console.log('');
         allReferenceImages.forEach((url, i) => {
             let label = 'UNKNOWN';
-            if (i === 0 && dto.mapped_assets?.selected_image_url) label = 'HERO (user-selected product image)';
-            else if (url === concept.original_image_url || url === concept.original_image_url?.replace('http://localhost:3000', uploadBaseUrl)) label = 'CONCEPT (inspiration/DA image)';
-            else if (url === brand.assets?.logo_light || url === brand.assets?.logo_dark || url === brand.assets?.logo_light?.replace('http://localhost:3000', uploadBaseUrl) || url === brand.assets?.logo_dark?.replace('http://localhost:3000', uploadBaseUrl)) label = 'BRAND LOGO';
-            else label = 'PRODUCT IMAGE';
+            if (i < productImageCount) label = `PRODUCT IMAGE #${i + 1} (reproduce EXACTLY)`;
+            else if (i === brandLogoIndex) label = 'BRAND LOGO (place on product)';
+            else if (i === conceptImageIndex) label = 'CONCEPT/STYLE REF (layout only — REPLACE its product)';
             console.log(`   [${i}] ${label}: ${url}`);
         });
         if (productDescription) {
@@ -527,8 +534,29 @@ export class GenerationsService {
         }
         console.log('═════════════════════════════════════════════════════════════════════\n');
 
-        this.logger.log(`[REFERENCE IMAGES] Total: ${allReferenceImages.length}`);
+        this.logger.log(`[REFERENCE IMAGES] Total: ${allReferenceImages.length} (${productImageCount} product + ${brandLogoIndex >= 0 ? 1 : 0} logo + ${conceptImageIndex >= 0 ? 1 : 0} concept)`);
         allReferenceImages.forEach((url, i) => this.logger.log(`   [${i}] ${url}`));
+
+        // ────────────────────────────────────────────────────────────────
+        // [STEP 7 — MOVED] Build GUARDED image prompt AFTER images are
+        // collected so we can embed the IMAGE ROLE MAP with correct indices.
+        // ────────────────────────────────────────────────────────────────
+        this.logger.log(`[STEP 7] Building guarded image prompt with dynamic hierarchy + image role map...`);
+
+        const guardedImagePrompt = this.buildGuardedImagePrompt(
+            adCopy.image_prompt,
+            dto.marketing_angle_id,
+            angle,
+            playbook,
+            concept.analysis_json,
+            format,
+            productJson,
+            { productImageCount, brandLogoIndex, conceptImageIndex },
+        );
+
+        this.logger.log(`   Aspect Ratio: ${aspectRatio}`);
+        this.logger.log(`   Raw image_prompt: ${adCopy.image_prompt.length} chars`);
+        this.logger.log(`   Guarded image_prompt: ${guardedImagePrompt.length} chars`);
 
         // Variation seed suffixes for visual diversity
         const variationSeeds = [
@@ -1332,7 +1360,12 @@ ${userPrompt}`;
         conceptAnalysis?: any,
         format?: import('../configurations/constants/ad-formats').AdFormat,
         productJson?: any,
+        imageRoleMap?: { productImageCount: number; brandLogoIndex: number; conceptImageIndex: number },
     ): string {
+        const productImageCount = imageRoleMap?.productImageCount || 0;
+        const brandLogoIndex = imageRoleMap?.brandLogoIndex ?? -1;
+        const conceptImageIndex = imageRoleMap?.conceptImageIndex ?? -1;
+
         // ━━━ LAYER 1: COMPLIANCE LOCK (ABSOLUTE — overrides everything) ━━━
         const complianceLock = this.buildComplianceLock(playbook);
 
@@ -1371,13 +1404,34 @@ ${'═'.repeat(60)}
 ${complianceLock}
 
 ${'═'.repeat(60)}
-🚨 PRODUCT REPLACEMENT MANDATE (ABSOLUTE — OVERRIDE ALL REFERENCES)
+🚨 PRODUCT REPLACEMENT MANDATE + IMAGE ROLE MAP (ABSOLUTE — OVERRIDE ALL)
 ${'═'.repeat(60)}
-IGNORE any product, item, or merchandise shown in the Inspiration/Reference image.
-The Inspiration image is ONLY a style, layout, and composition reference — NEVER copy its product.
-You MUST replace the inspiration product with the User's Product defined in the Product Injection section below.
-If the Inspiration shows sneakers but the User's Product is a jacket, the ad MUST feature the jacket.
-This rule is NON-NEGOTIABLE and overrides all other creative direction.
+
+[IMAGE ROLE MAP — HOW TO USE EACH REFERENCE IMAGE]
+The reference images are ordered by ROLE. Read this map BEFORE looking at the images:
+
+📸 IMAGES 1-${productImageCount || 'N'}: PRODUCT REFERENCE (HIGHEST PRIORITY)
+   These images show the EXACT product you MUST reproduce in the ad.
+   - Copy EVERY detail: fabric texture, color, pockets, buttons, stitching, design elements
+   - The product in the final ad must be VISUALLY IDENTICAL to these reference images
+   - These are real product photos — match them with photographic accuracy
+
+${brandLogoIndex >= 0 ? `🏷️ IMAGE ${brandLogoIndex + 1}: BRAND LOGO
+   This is the brand's official logo. You MUST:
+   - Place this EXACT logo naturally and prominently on the product or in the ad layout
+   - Match the logo's exact typography, colors, and proportions
+   - Position it where a real brand would place it (on the garment, on a label, or in the ad header)
+   - The logo must be SHARP, LEGIBLE, and properly integrated into the design
+` : ''}
+${conceptImageIndex >= 0 ? `🎨 IMAGE ${conceptImageIndex + 1} (LAST IMAGE): CONCEPT/STYLE REFERENCE ONLY
+   ⚠️ WARNING: This image is ONLY for style, layout, composition, and mood reference.
+   🚫 DO NOT COPY the product shown in this image!
+   🚫 COMPLETELY IGNORE whatever product/item appears in this concept image.
+   ✅ ONLY use it for: camera angle, lighting style, background mood, text placement, overall composition
+   ✅ REPLACE the concept image's product with the EXACT product from Images 1-${productImageCount || 'N'}
+` : ''}
+This rule is NON-NEGOTIABLE. If the Concept image shows sneakers but the Product images show a jacket,
+the ad MUST feature the jacket from the Product images, NOT the sneakers from the Concept.
 
 ${'═'.repeat(60)}
 PRIORITY 2 — BRAND IDENTITY (Product Fidelity + Visual Identity)
