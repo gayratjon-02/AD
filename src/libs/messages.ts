@@ -94,6 +94,7 @@ export enum AdProductMessage {
     PRODUCT_FOUND = 'Ad Product retrieved successfully',
     PRODUCT_UPDATED = 'Ad Product updated successfully',
     PRODUCT_DELETED = 'Ad Product deleted successfully',
+    PRODUCT_ANALYZED = 'Ad Product analyzed successfully',
 
     // Not Found
     PRODUCT_NOT_FOUND = 'Ad Product not found',
@@ -103,6 +104,7 @@ export enum AdProductMessage {
 
     // File Validation
     ONLY_IMAGES_ALLOWED = 'Only image files are allowed (jpg, jpeg, png, gif, svg, webp)',
+    REFERENCE_IMAGE_REQUIRED = 'Reference image is required for product analysis',
 }
 
 // ═══════════════════════════════════════════════════════════

@@ -32,10 +32,10 @@ export class AdProduct {
     user: User;
 
     // ─── Category Relation ───────────────────────────────────
-    @Column({ type: 'uuid' })
+    @Column({ type: 'uuid', nullable: true })
     category_id: string;
 
-    @ManyToOne(() => AdCategory, (category) => category.products, { onDelete: 'CASCADE' })
+    @ManyToOne(() => AdCategory, (category) => category.products, { onDelete: 'CASCADE', nullable: true })
     @JoinColumn({ name: 'category_id' })
     category: AdCategory;
 
@@ -52,6 +52,10 @@ export class AdProduct {
 
     @Column({ type: 'varchar', length: 500, nullable: true })
     back_image_url: string;
+
+    // ─── Analysis ────────────────────────────────────────────
+    @Column({ type: 'jsonb', nullable: true })
+    analyzed_product_json: Record<string, any>;
 
     // ─── Relations ───────────────────────────────────────────
     @OneToMany(() => AdGeneration, (generation) => generation.product)

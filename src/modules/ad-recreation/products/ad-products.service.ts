@@ -3,6 +3,7 @@ import {
     Logger,
     NotFoundException,
     ForbiddenException,
+    BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,6 +11,7 @@ import { AdProduct } from '../../../database/entities/Ad-Recreation/ad-product.e
 import { AdCategory } from '../../../database/entities/Ad-Recreation/ad-category.entity';
 import { CreateAdProductDto, UpdateAdProductDto } from '../../../libs/dto/AdRecreation/products';
 import { AdProductMessage, AdCategoryMessage } from '../../../libs/messages';
+import { ClaudeService } from '../../../ai/claude.service';
 
 @Injectable()
 export class AdProductsService {
@@ -20,6 +22,7 @@ export class AdProductsService {
         private productsRepository: Repository<AdProduct>,
         @InjectRepository(AdCategory)
         private categoriesRepository: Repository<AdCategory>,
+        private readonly claudeService: ClaudeService,
     ) {}
 
     // ═══════════════════════════════════════════════════════════
@@ -126,5 +129,54 @@ export class AdProductsService {
         const product = await this.findOne(id, userId);
         await this.productsRepository.remove(product);
         this.logger.log(`Deleted Ad Product: ${id}`);
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // ANALYZE PRODUCT (Single Reference Image)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Accepts a single reference image URL, creates an AdProduct record,
+     * analyzes it with Claude (same quality as Product Visuals), and
+     * returns the product_id + full analysis JSON for use in generation.
+     */
+    async analyzeProductDirect(
+        userId: string,
+        referenceImageUrl: string,
+    ): Promise<{
+        product_id: string;
+        image_url: string;
+        analysis: Record<string, any>;
+    }> {
+        if (!referenceImageUrl) {
+            throw new BadRequestException(AdProductMessage.REFERENCE_IMAGE_REQUIRED);
+        }
+
+        this.logger.log(`🔍 Analyzing Ad product image for user ${userId}`);
+
+        // Analyze with Claude — treat the reference image as the front image
+        const analysis = await this.claudeService.analyzeProductDirect({
+            frontImages: [referenceImageUrl],
+            backImages: [],
+            referenceImages: [],
+        });
+
+        // Create product record without requiring a category
+        // category_id is nullable for ad-recreation direct uploads
+        const partial: Partial<AdProduct> = {
+            user_id: userId,
+            name: (analysis as any).general_info?.product_name || 'Ad Reference Product',
+            front_image_url: referenceImageUrl,
+            analyzed_product_json: analysis as unknown as Record<string, any>,
+        };
+        const product = this.productsRepository.create(partial as AdProduct);
+        const saved: AdProduct = await this.productsRepository.save(product);
+        this.logger.log(`💾 Ad Product analyzed & saved: ${saved.id}`);
+
+        return {
+            product_id: saved.id,
+            image_url: referenceImageUrl,
+            analysis: analysis as unknown as Record<string, any>,
+        };
     }
 }

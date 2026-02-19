@@ -9,12 +9,13 @@ import {
     Query,
     UseGuards,
     UseInterceptors,
+    UploadedFile,
     UploadedFiles,
     Logger,
     ParseUUIDPipe,
     BadRequestException,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
@@ -25,13 +26,17 @@ import { User } from '../../../database/entities/Product-Visuals/user.entity';
 import { AdProduct } from '../../../database/entities/Ad-Recreation/ad-product.entity';
 import { CreateAdProductDto, UpdateAdProductDto } from '../../../libs/dto/AdRecreation/products';
 import { AdProductMessage } from '../../../libs/messages';
+import { FilesService } from '../../../files/files.service';
 
 @Controller('products')
 @UseGuards(JwtAuthGuard)
 export class AdProductsController {
     private readonly logger = new Logger(AdProductsController.name);
 
-    constructor(private readonly adProductsService: AdProductsService) {}
+    constructor(
+        private readonly adProductsService: AdProductsService,
+        private readonly filesService: FilesService,
+    ) {}
 
     // ═══════════════════════════════════════════════════════════
     // POST /products - Create Product
@@ -50,6 +55,61 @@ export class AdProductsController {
             success: true,
             message: AdProductMessage.PRODUCT_CREATED,
             product,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // POST /products/analyze - Analyze Single Reference Image
+    // ═══════════════════════════════════════════════════════════
+
+    @Post('analyze')
+    @UseInterceptors(
+        FileInterceptor('reference_image', {
+            storage: diskStorage({
+                destination: './uploads/ad-products/images',
+                filename: (_req, file, cb) => {
+                    const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
+                    cb(null, uniqueName);
+                },
+            }),
+            fileFilter: (_req, file, cb) => {
+                if (file.mimetype.match(/\/(jpg|jpeg|png|gif|svg\+xml|webp)$/)) {
+                    cb(null, true);
+                } else {
+                    cb(new BadRequestException(AdProductMessage.ONLY_IMAGES_ALLOWED), false);
+                }
+            },
+            limits: { fileSize: 30 * 1024 * 1024 },
+        }),
+    )
+    async analyzeProduct(
+        @CurrentUser() user: User,
+        @UploadedFile() file: Express.Multer.File,
+    ): Promise<{
+        success: boolean;
+        message: string;
+        product_id: string;
+        image_url: string;
+        analysis: Record<string, any>;
+    }> {
+        if (!file) {
+            throw new BadRequestException(AdProductMessage.REFERENCE_IMAGE_REQUIRED);
+        }
+
+        this.logger.log(`Analyzing Ad product image: ${file.filename}`);
+
+        // Store the file and get URL
+        const stored = await this.filesService.storeImage(file);
+
+        // Analyze and save
+        const result = await this.adProductsService.analyzeProductDirect(user.id, stored.url);
+
+        return {
+            success: true,
+            message: AdProductMessage.PRODUCT_ANALYZED,
+            product_id: result.product_id,
+            image_url: result.image_url,
+            analysis: result.analysis,
         };
     }
 
@@ -153,9 +213,7 @@ export class AdProductsController {
                         cb(new BadRequestException(AdProductMessage.ONLY_IMAGES_ALLOWED), false);
                     }
                 },
-                limits: {
-                    fileSize: 5 * 1024 * 1024,
-                },
+                limits: { fileSize: 5 * 1024 * 1024 },
             },
         ),
     )
