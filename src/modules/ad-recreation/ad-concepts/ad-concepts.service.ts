@@ -28,88 +28,124 @@ const FORMAT_RESOLUTIONS: Record<string, { width: number; height: number }> = {
     '16:9': { width: 1920, height: 1080 },
 };
 
-const CONCEPT_ANALYSIS_SYSTEM_PROMPT = `Role: You are an expert Ad Creative Director specializing in reverse-engineering Visual DNA from advertisement images for recreation by a DIFFERENT brand.
+const CONCEPT_ANALYSIS_SYSTEM_PROMPT = `You are a STRICT visual pattern extraction engine for the ROMIMI Ad Recreation system.
 
-Task: Analyze the uploaded ad image and return a strictly structured JSON object describing its Layout Pattern, Visual Style, and Content Strategy.
+Your job is to analyze a static ad inspiration image and extract ONLY the structural pattern.
+
+You are NOT allowed to:
+- Copy competitor brand names, product names, or exact copy text
+- Paraphrase or summarize their marketing message
+- Infer missing elements — if it's not visible, don't include it
+- Invent zones that do not exist
+- Assume fixed dimensions (like 1080x1920)
+
+You MUST:
+- Read the real image width and height from the image itself
+- Base all y_start/y_end coordinates on actual image pixel dimensions
+- Extract only structural and visual patterns
+- Use GENERIC PLACEHOLDERS in descriptions (e.g. "Brand logo placement" not "Nike logo")
+- Return VALID JSON only — no markdown, no commentary
 
 ═══════════════════════════════════════════════════════════
-ABSOLUTE RULES (VIOLATION = INVALID OUTPUT)
+CONTROLLED VOCABULARIES (use ONLY these values)
 ═══════════════════════════════════════════════════════════
 
-1. ABSOLUTE PIXELS ONLY — NEVER PERCENTAGES
-   First, detect the ad format aspect ratio from the image dimensions.
-   Then map ALL y_start and y_end values to ABSOLUTE PIXEL coordinates
-   based on these standard resolutions:
-     • 9:16 → 1080×1920  (height = 1920px)
-     • 1:1  → 1080×1080  (height = 1080px)
-     • 4:5  → 1080×1350  (height = 1350px)
-     • 16:9 → 1920×1080  (height = 1080px)
-   Example: A headline at the top 15% of a 9:16 ad → y_start: 0, y_end: 288
-   NEVER return values like 0-100. Always return actual pixel integers.
+layout.type ALLOWED VALUES:
+  product_hero_center, product_left_text_right, product_right_text_left,
+  split_screen, text_only, testimonial_grid, product_with_overlays,
+  ugc_style, app_screenshot, feature_stack, minimalist_product, custom_layout
 
-2. EXTRACT THE VISUAL PATTERN — NOT THE CONTENT
-   You are extracting the STRUCTURE and LAYOUT PATTERN, not the competitor's content.
-   • NEVER output the competitor's brand name, product name, or exact copy text.
-   • Use GENERIC PLACEHOLDERS in descriptions:
-     WRONG: "Nike logo in top-left"
-     RIGHT: "Brand logo placement, top-left corner"
-     WRONG: "Text says 'Just Do It'"
-     RIGHT: "Short motivational hook, centered, bold sans-serif"
+content_type ALLOWED VALUES:
+  headline, subheadline, feature_badges, product_image, image,
+  testimonial_overlay, composite_product_social_proof, cta_button,
+  cta_subtext, social_proof_line, background_only, logo, ui_element, body
 
-3. ZONE COVERAGE
-   Zones MUST cover the full vertical span of the image (from pixel 0 to full height).
-   Every zone must have: id, y_start (int px), y_end (int px), content_type.
-   Zone y_start of one zone should equal y_end of the previous zone (no gaps).
+hook_type ALLOWED VALUES:
+  pattern_interrupt, contrast_statement, direct_benefit, problem_agitation,
+  bold_claim, social_proof_hook, question_hook, feature_announcement,
+  comparison_hook
 
-4. STRICT JSON
-   Return ONLY valid JSON. No markdown. No code fences. No explanation.
-   No conversational text before or after the JSON object.`;
+═══════════════════════════════════════════════════════════
+ZONE RULES (CRITICAL)
+═══════════════════════════════════════════════════════════
+
+1. Zones MUST NOT overlap (y_start of zone N+1 >= y_end of zone N)
+2. Coordinates must use ACTUAL image height (read from image, not assumed)
+3. If a product image has floating testimonial bubbles → use "composite_product_social_proof"
+4. If CTA area has a button AND subtext → create TWO separate zones
+5. Every zone must have: id, y_start, y_end, content_type
+6. height_percent (0-100) should be calculated from real image height`;
 
 const CONCEPT_ANALYSIS_USER_PROMPT = `Analyze this ad image and extract its Visual DNA for recreation by a different brand.
 
-STEP 1: Detect the aspect ratio (9:16, 1:1, 4:5, or 16:9) from the image.
-STEP 2: Determine the reference height in pixels (9:16→1920, 1:1→1080, 4:5→1350, 16:9→1080).
-STEP 3: Map each visual zone to ABSOLUTE PIXEL y_start and y_end values.
+STEP 1 — Read the actual image width and height.
+STEP 2 — Classify the layout type using ONLY the allowed list.
+STEP 3 — Map each visual zone with ABSOLUTE PIXEL y_start and y_end values.
+STEP 4 — Classify the hook type using ONLY the controlled vocabulary.
+STEP 5 — Extract visual style (background, lighting, product position).
+STEP 6 — Identify CTA structure (button vs subtext).
 
 Return ONLY this JSON structure:
 
 {
-  "concept_name": "string — short descriptive name for this ad concept (e.g. 'Split Screen Benefits Ad', 'Notes App Testimonial', 'Product Hero Showcase')",
-  "concept_tags": ["string — 3-6 descriptive tags for filtering (e.g. 'notes_app', 'split_screen', 'editorial', 'dark_mode', 'testimonial', 'product_hero')"],
+  "concept_name": "string — short descriptive name (3-6 words)",
+  "concept_tags": ["string — 3-6 lowercase_underscore tags"],
+  "image_meta": {
+    "width": number,
+    "height": number,
+    "aspect_ratio": number,
+    "orientation": "vertical|square|horizontal"
+  },
   "layout": {
-    "type": "split_screen | centered_hero | notes_app | tweet_style | text_overlay | product_showcase",
-    "format": "9:16 | 1:1 | 4:5 | 16:9",
+    "type": "one of allowed layout types",
+    "format": "auto-detected aspect ratio (e.g. 9:16, 1:1, 4:5, 16:9)",
     "zones": [
       {
-        "id": "string (e.g. header, headline, body, cta, image_main, logo)",
+        "id": "string (e.g. header, headline, hero_image, cta)",
         "y_start": 0,
         "y_end": 288,
-        "content_type": "headline | body | cta_button | image | logo | ui_element",
-        "typography_style": "string (e.g. Bold Sans-Serif White, Elegant Serif Black)",
-        "description": "string — describe the PATTERN, not the competitor's content"
+        "height_percent": 15,
+        "content_type": "one of allowed content_type values",
+        "structural_role": "string describing role (e.g. primary_headline, hero_product_area)",
+        "typography_style": "string (e.g. Bold Sans-Serif White)",
+        "description": "describe the PATTERN, not competitor content"
       }
     ]
   },
   "visual_style": {
-    "mood": "string (energetic | calm | luxury | native_ugc | clean_editorial | bold_graphic)",
+    "mood": "energetic|calm|luxury|native_ugc|clean_editorial|bold_graphic",
     "background": {
-      "type": "solid_color | image | gradient",
+      "type": "solid_color|image|gradient|textured",
       "hex": "#HEXCODE or null"
     },
-    "overlay": "dark_dim_layer | white_box_opacity | none"
+    "overlay": "dark_dim_layer|white_box_opacity|none",
+    "dominant_background_color": "#HEX or null",
+    "product_position": "center|left|right|bottom|null",
+    "lighting_style": "flat|studio|natural|high_contrast|null",
+    "ui_elements_present": false
   },
   "content_pattern": {
-    "hook_type": "question | direct_benefit | controversial_statement | revolutionary_claim | social_proof",
-    "narrative_structure": "problem_solution | feature_highlight | storytelling | before_after | disruptive_product_announcement",
-    "cta_style": "pill_button | text_link_with_arrow | swipe_up_icon | implicit_editorial_style",
+    "hook_type": "one of allowed hook_type values",
+    "narrative_structure": "problem_solution|feature_highlight|storytelling|before_after|disruptive_product_announcement",
+    "cta_style": "pill_button|text_link_with_arrow|swipe_up_icon|implicit_editorial_style",
     "requires_product_image": true
+  },
+  "cta_structure": {
+    "has_cta_button": true,
+    "has_cta_subtext": false
   }
 }
 
-REMINDER: y_start and y_end are ABSOLUTE PIXEL values (integers), NOT percentages.
-concept_name must be a short, descriptive title (3-6 words).
-concept_tags must be lowercase, underscore-separated, 3-6 tags.
-Return ONLY the JSON. No markdown. No explanation.`;
+STRICT VALIDATION RULES:
+1. If zones overlap → INVALID
+2. If image height is assumed without reading → INVALID
+3. If competitor brand name appears in JSON → INVALID
+4. If full headline text is copied → INVALID
+5. If content_type not in allowed list → INVALID
+6. If hook_type not in controlled vocabulary → INVALID
+
+Return VALID JSON ONLY. No explanations. No markdown.`;
+
 
 // ═══════════════════════════════════════════════════════════
 // MEDIA TYPE MAP
@@ -329,13 +365,36 @@ export class AdConceptsService {
         // Step 4: Parse JSON and validate
         const analysis = this.parseAndValidateAnalysis(responseText);
 
-        this.logger.log(`Concept extracted: ${analysis.layout.type} (${analysis.layout.format}), ${analysis.layout.zones.length} zones, mood: ${analysis.visual_style.mood}, hook: ${analysis.content_pattern.hook_type}`);
+        this.logger.log(`[STRICT] Concept extracted: ${analysis.layout.type} (${analysis.layout.format || 'auto'}), ${analysis.layout.zones.length} zones, mood: ${analysis.visual_style.mood}, hook: ${analysis.content_pattern.hook_type}`);
         return analysis;
     }
 
     // ═══════════════════════════════════════════════════════════
-    // JSON PARSING & VALIDATION
+    // STRICT EXTRACTION PARSER + VALIDATION
     // ═══════════════════════════════════════════════════════════
+
+    // Controlled vocabularies for validation
+    private static readonly ALLOWED_LAYOUT_TYPES = [
+        'product_hero_center', 'product_left_text_right', 'product_right_text_left',
+        'split_screen', 'text_only', 'testimonial_grid', 'product_with_overlays',
+        'ugc_style', 'app_screenshot', 'feature_stack', 'minimalist_product', 'custom_layout',
+        // Legacy values (backward compat)
+        'centered_hero', 'notes_app', 'tweet_style', 'text_overlay', 'product_showcase',
+    ];
+
+    private static readonly ALLOWED_CONTENT_TYPES = [
+        'headline', 'subheadline', 'body', 'feature_badges', 'product_image', 'image',
+        'testimonial_overlay', 'composite_product_social_proof', 'cta_button',
+        'cta_subtext', 'social_proof_line', 'background_only', 'logo', 'ui_element',
+    ];
+
+    private static readonly ALLOWED_HOOK_TYPES = [
+        'pattern_interrupt', 'contrast_statement', 'direct_benefit', 'problem_agitation',
+        'bold_claim', 'social_proof_hook', 'question_hook', 'feature_announcement',
+        'comparison_hook',
+        // Legacy values (backward compat)
+        'question', 'controversial_statement', 'revolutionary_claim', 'social_proof',
+    ];
 
     private parseAndValidateAnalysis(responseText: string): AdConceptAnalysis {
         // Strip markdown code fences if Claude wrapped the JSON
@@ -358,29 +417,50 @@ export class AdConceptsService {
             throw new InternalServerErrorException(AdConceptMessage.AI_INVALID_JSON);
         }
 
-        // Validate required top-level keys
+        // ── Validate required top-level keys ──
         if (!parsed.layout || !parsed.visual_style) {
             this.logger.error('Missing required keys: layout or visual_style');
             throw new InternalServerErrorException(AdConceptMessage.AI_INVALID_JSON);
         }
 
-        // Validate layout structure
-        if (!parsed.layout.type || !parsed.layout.format) {
-            this.logger.error('Missing layout.type or layout.format');
+        if (!parsed.layout.type) {
+            this.logger.error('Missing layout.type');
             throw new InternalServerErrorException(AdConceptMessage.AI_INVALID_JSON);
         }
 
-        // Determine expected height from format
-        const format = parsed.layout.format;
-        const resolution = FORMAT_RESOLUTIONS[format];
-        const maxHeight = resolution ? resolution.height : 1920;
+        // ── Validate layout.type against controlled vocabulary ──
+        if (!AdConceptsService.ALLOWED_LAYOUT_TYPES.includes(parsed.layout.type)) {
+            this.logger.warn(`[STRICT] layout.type "${parsed.layout.type}" not in allowed list — keeping but flagging`);
+        }
 
-        // Ensure zones is an array
+        // ── Determine image height (prefer real dimensions from image_meta) ──
+        let maxHeight: number;
+        if (parsed.image_meta?.height && parsed.image_meta.height > 100) {
+            maxHeight = parsed.image_meta.height;
+            this.logger.log(`[STRICT] Using real image height: ${maxHeight}px (${parsed.image_meta.width}x${maxHeight})`);
+        } else {
+            const format = parsed.layout.format;
+            const resolution = FORMAT_RESOLUTIONS[format];
+            maxHeight = resolution ? resolution.height : 1920;
+            this.logger.warn(`[STRICT] No image_meta — falling back to format-based height: ${maxHeight}px`);
+        }
+
+        // ── Auto-detect format from image_meta if missing ──
+        if (!parsed.layout.format && parsed.image_meta?.width && parsed.image_meta?.height) {
+            const ratio = parsed.image_meta.width / parsed.image_meta.height;
+            if (ratio < 0.7) parsed.layout.format = '9:16';
+            else if (ratio < 0.85) parsed.layout.format = '4:5';
+            else if (ratio < 1.15) parsed.layout.format = '1:1';
+            else parsed.layout.format = '16:9';
+            this.logger.log(`[STRICT] Auto-detected format: ${parsed.layout.format} (ratio: ${ratio.toFixed(2)})`);
+        }
+        if (!parsed.layout.format) parsed.layout.format = '9:16';
+
+        // ── Validate zones ──
         if (!Array.isArray(parsed.layout.zones)) {
             parsed.layout.zones = [];
         }
 
-        // Validate each zone: enforce absolute pixel coordinates
         for (let i = 0; i < parsed.layout.zones.length; i++) {
             const zone = parsed.layout.zones[i];
             if (!zone.id) zone.id = `zone_${i + 1}`;
@@ -389,9 +469,9 @@ export class AdConceptsService {
             zone.y_start = typeof zone.y_start === 'number' ? Math.round(zone.y_start) : 0;
             zone.y_end = typeof zone.y_end === 'number' ? Math.round(zone.y_end) : maxHeight;
 
-            // Auto-fix: if values look like percentages (0-100 range for tall formats), convert to pixels
+            // Auto-fix: if values look like percentages (0-100 range for tall formats)
             if (maxHeight > 100 && zone.y_end <= 100 && zone.y_start <= 100) {
-                this.logger.warn(`Zone "${zone.id}" has percentage-like values (${zone.y_start}-${zone.y_end}), converting to pixels`);
+                this.logger.warn(`[STRICT] Zone "${zone.id}" has percentage-like values (${zone.y_start}-${zone.y_end}), converting to pixels`);
                 zone.y_start = Math.round((zone.y_start / 100) * maxHeight);
                 zone.y_end = Math.round((zone.y_end / 100) * maxHeight);
             }
@@ -405,15 +485,44 @@ export class AdConceptsService {
                 zone.y_end = Math.min(zone.y_start + 100, maxHeight);
             }
 
+            // Calculate height_percent if not provided
+            if (zone.height_percent === undefined) {
+                zone.height_percent = Math.round(((zone.y_end - zone.y_start) / maxHeight) * 100);
+            }
+
+            // Validate content_type against controlled vocabulary
+            if (zone.content_type && !AdConceptsService.ALLOWED_CONTENT_TYPES.includes(zone.content_type)) {
+                this.logger.warn(`[STRICT] Zone "${zone.id}" content_type "${zone.content_type}" not in allowed list`);
+                // Map legacy "image" to "product_image" if it looks like a product zone
+                if (zone.content_type === 'image') {
+                    // Keep as-is — "image" is in allowed list
+                }
+            }
+
             if (!zone.content_type) zone.content_type = 'headline';
             if (!zone.typography_style) zone.typography_style = 'Sans-Serif Regular';
             if (!zone.description) zone.description = '';
         }
 
-        // Validate visual_style
+        // ── ZONE OVERLAP DETECTION ──
+        const sortedZones = [...parsed.layout.zones].sort((a: any, b: any) => a.y_start - b.y_start);
+        for (let i = 1; i < sortedZones.length; i++) {
+            const prev = sortedZones[i - 1];
+            const curr = sortedZones[i];
+            if (curr.y_start < prev.y_end) {
+                this.logger.warn(`[STRICT] ⚠️ ZONE OVERLAP: "${prev.id}" (${prev.y_start}-${prev.y_end}) overlaps with "${curr.id}" (${curr.y_start}-${curr.y_end})`);
+                // Auto-fix: snap current zone's start to previous zone's end
+                curr.y_start = prev.y_end;
+                if (curr.y_end <= curr.y_start) {
+                    curr.y_end = curr.y_start + 50;
+                }
+            }
+        }
+
+        // ── Validate visual_style ──
         if (!parsed.visual_style.mood) parsed.visual_style.mood = 'neutral';
         if (!parsed.visual_style.background || typeof parsed.visual_style.background !== 'object') {
-            const oldHex = parsed.visual_style.background_hex;
+            const oldHex = parsed.visual_style.background_hex || parsed.visual_style.dominant_background_color;
             parsed.visual_style.background = {
                 type: 'solid_color',
                 hex: oldHex || '#FFFFFF',
@@ -423,7 +532,7 @@ export class AdConceptsService {
         if (parsed.visual_style.background.hex === undefined) parsed.visual_style.background.hex = '#FFFFFF';
         if (!parsed.visual_style.overlay) parsed.visual_style.overlay = 'none';
 
-        // Validate content_pattern
+        // ── Validate content_pattern ──
         if (!parsed.content_pattern || typeof parsed.content_pattern !== 'object') {
             parsed.content_pattern = {
                 hook_type: 'direct_benefit',
@@ -433,27 +542,31 @@ export class AdConceptsService {
             };
         }
         if (!parsed.content_pattern.hook_type) parsed.content_pattern.hook_type = 'direct_benefit';
+
+        // Validate hook_type against controlled vocabulary
+        if (!AdConceptsService.ALLOWED_HOOK_TYPES.includes(parsed.content_pattern.hook_type)) {
+            this.logger.warn(`[STRICT] hook_type "${parsed.content_pattern.hook_type}" not in controlled vocabulary`);
+        }
+
         if (!parsed.content_pattern.narrative_structure) parsed.content_pattern.narrative_structure = 'feature_highlight';
         if (!parsed.content_pattern.cta_style) parsed.content_pattern.cta_style = 'pill_button';
         if (parsed.content_pattern.requires_product_image === undefined) parsed.content_pattern.requires_product_image = false;
 
-        // Validate concept_name (auto-generated by Claude)
+        // ── Validate concept_name ──
         if (parsed.concept_name && typeof parsed.concept_name !== 'string') {
             parsed.concept_name = String(parsed.concept_name);
         }
 
-        // Validate concept_tags (auto-generated by Claude)
+        // ── Validate concept_tags ──
         if (parsed.concept_tags) {
             if (!Array.isArray(parsed.concept_tags)) {
                 parsed.concept_tags = [];
             } else {
-                // Ensure all tags are lowercase strings with underscores
                 parsed.concept_tags = parsed.concept_tags
                     .filter((t: any) => typeof t === 'string' && t.trim().length > 0)
                     .map((t: string) => t.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''));
             }
         } else {
-            // Auto-generate tags from layout type and mood if Claude didn't provide them
             const autoTags: string[] = [];
             if (parsed.layout?.type) autoTags.push(parsed.layout.type);
             if (parsed.visual_style?.mood) autoTags.push(parsed.visual_style.mood);
@@ -462,16 +575,25 @@ export class AdConceptsService {
             parsed.concept_tags = autoTags;
         }
 
-        // Auto-generate concept_name if Claude didn't provide one
+        // ── Auto-generate concept_name if missing ──
         if (!parsed.concept_name) {
             const layoutLabel = (parsed.layout?.type || 'unknown').replace(/_/g, ' ');
             const moodLabel = parsed.visual_style?.mood || '';
             parsed.concept_name = `${this.capitalizeWords(layoutLabel)} ${this.capitalizeWords(moodLabel)} Ad`.trim();
         }
 
-        // Clean up legacy flat fields
+        // ── Clean up legacy flat fields ──
         delete parsed.visual_style.background_hex;
         delete parsed.visual_style.font_color_primary;
+
+        // ── Log strict extraction summary ──
+        this.logger.log(`[STRICT EXTRACTION] ✅ Validated: ${parsed.layout.zones.length} zones, layout=${parsed.layout.type}, hook=${parsed.content_pattern.hook_type}`);
+        if (parsed.image_meta) {
+            this.logger.log(`[STRICT EXTRACTION] Image: ${parsed.image_meta.width}x${parsed.image_meta.height} (${parsed.image_meta.orientation})`);
+        }
+        if (parsed.cta_structure) {
+            this.logger.log(`[STRICT EXTRACTION] CTA: button=${parsed.cta_structure.has_cta_button}, subtext=${parsed.cta_structure.has_cta_subtext}`);
+        }
 
         return parsed as AdConceptAnalysis;
     }
