@@ -250,6 +250,50 @@ export class AdBrandsController {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // POST /brands/:id/angles - Create Custom Angle
+    // ═══════════════════════════════════════════════════════════
+
+    @Post(':id/angles')
+    async createCustomAngle(
+        @Param('id', ParseUUIDPipe) id: string,
+        @CurrentUser() user: User,
+        @Body() body: { name: string; description: string; hook: string },
+    ): Promise<{ success: boolean; message: string; brand: AdBrand }> {
+        this.logger.log(`Creating custom angle for brand ${id}`);
+
+        if (!body.name || !body.description || !body.hook) {
+            throw new BadRequestException('name, description, and hook are required for a custom angle');
+        }
+
+        const brand = await this.adBrandsService.addCustomAngle(id, user.id, body);
+
+        return {
+            success: true,
+            message: 'Custom angle created successfully',
+            brand,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // GET /brands/:id/angles - Get All Angles (Predefined + Custom)
+    // ═══════════════════════════════════════════════════════════
+
+    @Get(':id/angles')
+    async getAngles(
+        @Param('id', ParseUUIDPipe) id: string,
+        @CurrentUser() user: User,
+    ): Promise<{ success: boolean; angles: any[] }> {
+        this.logger.log(`Fetching angles for brand ${id}`);
+
+        const angles = await this.adBrandsService.getAngles(id, user.id);
+
+        return {
+            success: true,
+            angles,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // POST /ad-brands/:id/assets - Upload Brand Assets
     // Both logo_light and logo_dark are MANDATORY.
     // ═══════════════════════════════════════════════════════════

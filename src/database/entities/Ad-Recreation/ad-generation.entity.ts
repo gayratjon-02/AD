@@ -83,12 +83,11 @@ export class AdGeneration {
 
     // ─── AI Generated Copy (JSONB) ───────────────────────────
     @Column({ type: 'jsonb', nullable: true })
-    generated_copy: {
-        headline: string;
-        subheadline: string;
-        cta: string;
-        image_prompt: string;
-    };
+    generated_copy: any; // Now stores array of generated copies for multiple angles
+
+    // ─── Merged Generation JSONs (JSONB) ─────────────────────
+    @Column({ type: 'jsonb', nullable: true })
+    merged_jsons: any;
 
     // ─── Mapped Assets (Hero Image Selection) ───────────────
     @Column({ type: 'jsonb', nullable: true })

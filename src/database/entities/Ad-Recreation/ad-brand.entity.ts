@@ -17,6 +17,7 @@ import {
     BrandAssets,
 } from '../../../libs/types/AdRecreation';
 import { AdCollection } from './ad-collection.entity';
+import { AdProduct } from './ad-product.entity';
 
 /**
  * AdBrand Entity - Phase 2 Ad Recreation
@@ -64,9 +65,21 @@ export class AdBrand {
     @Column({ type: 'jsonb', nullable: true })
     copy_playbook: CopyPlaybook;
 
+    // ─── Custom Angles (JSONB) ───────────────────────────────
+    @Column({ type: 'jsonb', nullable: true })
+    custom_angles: any[];
+
     // ─── Optional Extra PDF ──────────────────────────────────
     @Column({ type: 'varchar', length: 500, nullable: true })
     style_guide_url: string;
+
+    // ─── Product Relation (Fallback/Default) ─────────────────
+    @Column({ type: 'uuid', nullable: true })
+    product_id: string;
+
+    @ManyToOne(() => AdProduct, { onDelete: 'SET NULL' })
+    @JoinColumn({ name: 'product_id' })
+    product: AdProduct;
 
     // ─── Collections ────────────────────────────────────────
     @OneToMany(() => AdCollection, (collection) => collection.brand)

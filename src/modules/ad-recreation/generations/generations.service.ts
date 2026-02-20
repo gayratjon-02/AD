@@ -1153,10 +1153,10 @@ ${'═'.repeat(60)}
 [IMAGE ROLE MAP — HOW TO USE EACH REFERENCE IMAGE]
 The reference images are ordered by ROLE. Read this map BEFORE looking at the images:
 
-📸 IMAGES 1-${productImageCount || 'N'}: PRODUCT REFERENCE (HIGHEST PRIORITY)
-   These images show the EXACT product you MUST reproduce in the ad.
-   - Copy EVERY microscopic detail: fabric texture, color hex, pocket placement, exact number of buttons, stitching gauge, and design elements.
-   - The product in the final ad must be VISUALLY IDENTICAL to these reference images. If the viewer cannot tell it's the exact same item, YOU HAVE FAILED.
+📸 IMAGES 1-${productImageCount || 'N'}: PRODUCT REFERENCE ANGLES (HIGHEST PRIORITY)
+   These images show multiple angles (front, back, side, details) of the EXACT ONE product you MUST reproduce in the ad.
+   - You MUST cross-reference all angle images to capture EVERY micro-detail: exact threading, zipper texture, pocket orientation, button count, metallic hardware finish, and weave type.
+   - The product in the final ad must be VISUALLY IDENTICAL to these reference images down to the microscopic level. If the viewer cannot tell it's the exact same item, YOU HAVE FAILED.
    - These are real product photos — match them with forensic photographic accuracy.
 
 ${brandLogoIndex >= 0 ? `🏷️ IMAGE ${brandLogoIndex + 1}: BRAND LOGO
@@ -1584,10 +1584,16 @@ rules above to describe a specific, compliant environment.If a certain setting i
 
         return `You are a professional ad copywriter and image prompt engineer for the brand "${brandName}".
 
-You are writing ad copy AND an ultra - detailed image generation prompt for Gemini Imagen.
-The image_prompt you write will be sent DIRECTLY to an AI image model.It must be so specific that the model has ZERO room to hallucinate or improvise.
+You are writing ad copy AND an ultra-detailed, forensic-level image generation prompt for Gemini Imagen.
+The image_prompt you write will be sent DIRECTLY to an AI image model. It must be so overwhelmingly specific that the model has ZERO room to hallucinate or improvise.
 
-Follow the STRICT PRIORITY HIERARCHY below.Higher - priority sections OVERRIDE lower ones.
+🚨 ULTIMATE FIDELITY MANDATE (MICRO-DETAIL EXTRACTION) 🚨
+Your image_prompt MUST describe the product with microscopic precision:
+1. Specify exact materials (not just "leather", but "matte heavy-grain calfskin").
+2. Specify exact physical features (number of buttons, types of seams, hardware finish, logo placement, pocket alignment).
+3. Do not generalize anything. If the Product Fidelity section describes intricate stitching, you MUST explicitly command the renderer to show that stitching.
+
+Follow the STRICT PRIORITY HIERARCHY below. Higher-priority sections OVERRIDE lower ones.
     ${complianceSection}
 
 ${'═'.repeat(60)}

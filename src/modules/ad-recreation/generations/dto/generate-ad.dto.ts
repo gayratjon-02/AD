@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString, IsUUID, IsInt, Min, Max, ValidateNested } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsUUID, IsInt, Min, Max, ValidateNested, IsArray, ArrayMinSize } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /**
@@ -32,13 +32,15 @@ export class GenerateAdDto {
     @IsNotEmpty()
     concept_id: string;
 
-    @IsString()
-    @IsNotEmpty()
-    marketing_angle_id: string;
+    @IsArray()
+    @IsString({ each: true })
+    @ArrayMinSize(1)
+    marketing_angle_ids: string[];
 
-    @IsString()
-    @IsNotEmpty()
-    format_id: string;
+    @IsArray()
+    @IsString({ each: true })
+    @ArrayMinSize(1)
+    format_ids: string[];
 
     @IsUUID()
     @IsNotEmpty()

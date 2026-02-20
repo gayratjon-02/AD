@@ -105,6 +105,24 @@ export class GenerationsController {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // GET /ad-recreation/:id/status - Get Generation Status (Polling)
+    // ═══════════════════════════════════════════════════════════
+
+    @Get(':id/status')
+    async getGenerationStatus(
+        @Param('id', ParseUUIDPipe) id: string,
+        @CurrentUser() user: User,
+    ): Promise<{ success: boolean; status: string; progress: number }> {
+        const generation = await this.generationsService.findOne(id, user.id);
+
+        return {
+            success: true,
+            status: generation.status,
+            progress: generation.progress,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // GET /ad-recreation/:id - Get Generation by ID
     // ═══════════════════════════════════════════════════════════
 

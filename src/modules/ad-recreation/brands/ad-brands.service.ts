@@ -20,6 +20,8 @@ import {
     BrandAssets,
 } from '../../../libs/types/AdRecreation';
 import { AdBrandMessage } from '../../../libs/messages';
+import { MARKETING_ANGLES } from '../configurations/constants/marketing-angles';
+import { v4 as uuidv4 } from 'uuid';
 
 // ═══════════════════════════════════════════════════════════
 // STRICT EXTRACTION PROMPT (ZERO HALLUCINATION)
@@ -303,6 +305,39 @@ export class AdBrandsService {
 
         this.logger.log(`Updated assets for Ad Brand ${id}`);
         return saved;
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // CUSTOM ANGLES
+    // ═══════════════════════════════════════════════════════════
+
+    async addCustomAngle(brandId: string, userId: string, angleData: { name: string; description: string; hook: string }): Promise<AdBrand> {
+        const brand = await this.findOne(brandId, userId);
+
+        const newAngle = {
+            id: `custom_${uuidv4()}`,
+            category: 'custom',
+            name: angleData.name,
+            label: angleData.name,
+            description: angleData.description,
+            hook: angleData.hook,
+            created_at: new Date().toISOString(),
+        };
+
+        const currentAngles = brand.custom_angles || [];
+        brand.custom_angles = [...currentAngles, newAngle];
+
+        const saved = await this.adBrandsRepository.save(brand);
+        this.logger.log(`Added custom angle to Brand ${brandId}`);
+        return saved;
+    }
+
+    async getAngles(brandId: string, userId: string): Promise<any[]> {
+        const brand = await this.findOne(brandId, userId);
+        const customAngles = brand.custom_angles || [];
+
+        // Merge with predefined
+        return [...MARKETING_ANGLES, ...customAngles];
     }
 
     // ═══════════════════════════════════════════════════════════
