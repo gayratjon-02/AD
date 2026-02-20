@@ -28,26 +28,33 @@ const FORMAT_RESOLUTIONS: Record<string, { width: number; height: number }> = {
     '16:9': { width: 1920, height: 1080 },
 };
 
-const CONCEPT_ANALYSIS_SYSTEM_PROMPT = `You are an ELITE visual intelligence engine for the ROMIMI Ad Recreation system.
+const CONCEPT_ANALYSIS_SYSTEM_PROMPT = `You are an ULTRA-PRECISION visual intelligence engine for the ROMIMI Ad Recreation system.
 
-Your job is to perform a DEEP FORENSIC ANALYSIS of a competitor ad image and extract its complete Visual DNA — layout, typography, color, psychology, composition, and recreation instructions — so that a different brand can recreate the same structure with their own product.
+Your job is to perform a FORENSIC-LEVEL ANALYSIS of a competitor ad image and extract its COMPLETE Visual DNA — every single pixel-level detail about layout, typography, color, composition, photography, spacing, and psychology — so that a different brand can recreate the EXACT same visual structure with their own product.
 
-You are NOT allowed to:
+🚨 CRITICAL RULES — VIOLATION = REJECTED OUTPUT 🚨
+
+You are ABSOLUTELY NOT allowed to:
 - Copy competitor brand names, product names, or exact headline/body copy text
 - Paraphrase their marketing message word-for-word
-- Assume fixed dimensions (like 1080x1920) — always read real pixel dimensions from the image
+- Assume fixed dimensions (like 1080x1920) — ALWAYS read REAL pixel dimensions from the image
 - Invent zones that do not exist in the image
 - Leave any extractable field as null if it is visually present
+- Return approximate values when exact values are determinable
+- Skip ANY visible element, no matter how small
 
 You MUST:
-- Read the REAL image width and height from the image
+- Read the REAL image width and height from the image metadata
 - Base ALL y_start/y_end coordinates on actual pixel dimensions
 - Extract EVERY visual layer: colors, fonts, spacing, shadows, overlays, decorative elements
 - Describe PATTERNS, not competitor content (e.g. "Bold white sans-serif headline top-left" not "Nike Just Do It")
+- Provide EXACT pixel measurements for spacing, margins, and element positions
+- Analyze the PHOTOGRAPHY: camera angle, lens type, lighting setup, shadow direction
+- Identify BRAND INTEGRATION ZONES where a new brand's logo can be placed
 - Return VALID JSON only — no markdown, no commentary, no explanations
 
 ═══════════════════════════════════════════════════════════
-CONTROLLED VOCABULARIES
+CONTROLLED VOCABULARIES (USE THESE EXACT VALUES)
 ═══════════════════════════════════════════════════════════
 
 layout.type:
@@ -74,7 +81,7 @@ font_weight: thin, light, regular, medium, semibold, bold, extrabold, black
 font_case: uppercase, lowercase, titlecase, mixed
 
 ═══════════════════════════════════════════════════════════
-ZONE RULES (CRITICAL)
+ZONE RULES (CRITICAL — PIXEL PRECISION)
 ═══════════════════════════════════════════════════════════
 1. Zones MUST NOT overlap (y_start of zone N+1 >= y_end of zone N)
 2. Coordinates MUST use ACTUAL image height pixels
@@ -83,34 +90,43 @@ ZONE RULES (CRITICAL)
 5. Every zone MUST have: id, y_start, y_end, content_type
 6. height_percent calculated from real image height
 7. Each zone MUST include typography_details if it contains text
-8. Include x_position and width_percent for horizontal layout analysis`;
+8. Include x_position and width_percent for horizontal layout analysis
+9. Each zone MUST include padding_px (top, right, bottom, left) if determinable
+10. Each zone MUST include recreation_directive — a PRECISE, ACTIONABLE instruction`;
 
-const CONCEPT_ANALYSIS_USER_PROMPT = `Perform a DEEP FORENSIC ANALYSIS of this ad image. Extract its complete Visual DNA for recreation by a different brand with a different product.
+const CONCEPT_ANALYSIS_USER_PROMPT = `Perform an ULTRA-DEEP FORENSIC ANALYSIS of this ad image. Extract its COMPLETE Visual DNA for EXACT recreation by a different brand with a different product.
 
-ANALYSIS STEPS:
-STEP 1 — Measure actual image width and height in pixels.
-STEP 2 — Identify layout type, format, and overall composition grid.
-STEP 3 — Map EVERY visual zone with exact pixel coordinates (y_start, y_end, x_position, width_percent).
-STEP 4 — For each text zone: extract font weight, size class, color, alignment, letter-spacing style, case.
-STEP 5 — Extract complete color palette (background, text colors, accent colors, button colors) as HEX.
-STEP 6 — Analyze typography hierarchy (H1/H2/body/CTA font relationship).
-STEP 7 — Identify all psychological hooks, social proof elements, and emotional triggers.
-STEP 8 — Analyze product presentation (position, size, angle, cropping style, cutout/natural).
-STEP 9 — Extract decorative elements (borders, shadows, badges, overlays, icons, lines).
-STEP 10 — Write specific recreation directives for each zone.
+ANALYSIS STEPS (EXECUTE ALL 15 STEPS):
+STEP 1 — Measure actual image width and height in pixels from the image.
+STEP 2 — Identify layout type, format, overall composition grid, and visual weight distribution.
+STEP 3 — Map EVERY visual zone with EXACT pixel coordinates (y_start, y_end, x_position, width_percent).
+STEP 4 — For each text zone: extract font weight, size class, color, alignment, letter-spacing, case, shadow, outline.
+STEP 5 — Extract COMPLETE color palette (every single HEX color visible) with location mapping.
+STEP 6 — Analyze typography hierarchy with EXACT size ratios and font relationships.
+STEP 7 — Identify ALL psychological hooks, social proof elements, and emotional triggers.
+STEP 8 — Analyze product presentation: position, size, angle, cropping, cutout/natural, shadow type.
+STEP 9 — Extract ALL decorative elements (borders, shadows, badges, overlays, icons, lines, gradients).
+STEP 10 — Analyze PHOTOGRAPHY: camera angle, estimated lens mm, lighting direction, shadow hardness, color temperature.
+STEP 11 — Measure SPACING: margins from edges, gaps between elements, padding within zones.
+STEP 12 — Identify BRAND INTEGRATION ZONES: where a new brand logo could be placed naturally.
+STEP 13 — Write PIXEL-PRECISE recreation directives for each zone.
+STEP 14 — Analyze the overall ad effectiveness: what makes it work, what's the hook.
+STEP 15 — Create a COMPREHENSIVE overall_recreation_prompt (200+ words) for AI image generation.
 
 Return ONLY this JSON (no markdown, no commentary):
 
 {
   "concept_name": "short descriptive name (3-6 words, no brand names)",
-  "concept_tags": ["3-8 lowercase_underscore tags describing style/hook/format"],
+  "concept_tags": ["8-12 lowercase_underscore tags: style, hook, format, mood, layout, technique"],
 
   "image_meta": {
     "width": 1080,
     "height": 1920,
     "aspect_ratio": 0.5625,
     "orientation": "vertical|square|horizontal",
-    "format": "9:16|1:1|4:5|16:9"
+    "format": "9:16|1:1|4:5|16:9",
+    "estimated_dpi": 72,
+    "quality_level": "high|medium|low"
   },
 
   "layout": {
@@ -119,38 +135,55 @@ Return ONLY this JSON (no markdown, no commentary):
     "composition_grid": "single_column|two_column|asymmetric|overlay_stack|hero_with_text_band",
     "visual_weight_distribution": "top_heavy|bottom_heavy|center_focused|evenly_distributed",
     "whitespace_density": "dense|moderate|airy",
+    "golden_ratio_alignment": "yes|no|partial",
     "zones": [
       {
         "id": "zone_id (e.g. logo_bar, hero_headline, product_hero, social_proof_strip, cta_button)",
         "y_start": 0,
         "y_end": 144,
         "x_position": "left|center|right|full_width",
+        "x_offset_px": 0,
         "width_percent": 100,
         "height_percent": 7,
         "content_type": "one of allowed content_type values",
         "structural_role": "e.g. primary_headline | hero_product_area | trust_signal | action_trigger",
         "visual_prominence": "primary|secondary|tertiary|background",
+        "padding_px": {
+          "top": 20,
+          "right": 40,
+          "bottom": 20,
+          "left": 40
+        },
         "typography_details": {
           "font_weight": "bold|semibold|regular|light",
           "font_case": "uppercase|titlecase|lowercase|mixed",
           "font_family_class": "sans-serif|serif|monospace|display|handwritten",
           "approximate_size_class": "display|h1|h2|h3|body|caption|micro",
+          "estimated_font_size_px": 48,
           "color": "#HEXCODE",
           "alignment": "left|center|right",
           "letter_spacing": "tight|normal|wide|very_wide",
           "line_height": "tight|normal|relaxed",
+          "estimated_line_height_px": 56,
           "has_shadow": false,
+          "shadow_details": "e.g. 2px 2px 4px rgba(0,0,0,0.3) or null",
           "has_outline": false,
-          "background_contrast": "high|medium|low"
+          "has_gradient_text": false,
+          "background_contrast": "high|medium|low",
+          "max_line_count": 2,
+          "text_pattern": "Describe text PATTERN only — e.g. '2-3 word bold claim' or '1-line benefit statement'. No actual competitor text."
         },
         "background_in_zone": {
           "type": "transparent|solid|gradient|image_bleed",
           "color": "#HEXCODE or null",
-          "opacity": 1.0
+          "opacity": 1.0,
+          "gradient_direction": "top_bottom|left_right|diagonal|null",
+          "gradient_colors": ["#HEX1", "#HEX2"],
+          "blur_radius_px": 0
         },
-        "decorative_elements": ["e.g. underline_accent", "badge_border", "icon_left", "star_rating"],
-        "description": "Describe the PATTERN precisely: what type of content, how it is styled, its visual role. NO competitor brand names.",
-        "recreation_directive": "Exact instruction for recreating this zone with a different brand/product. E.g.: 'Place product name in extrabold uppercase white text, centered, 8% from top, full width, with a subtle dark gradient behind for contrast.'"
+        "decorative_elements": ["e.g. underline_accent", "badge_border", "icon_left", "star_rating", "divider_line"],
+        "description": "PRECISE PATTERN description: what type of content, how it is styled, its visual role. NO competitor brand names. Include exact measurements.",
+        "recreation_directive": "PIXEL-PRECISE instruction for recreating this zone. Example: 'Place brand name in 48px extrabold uppercase white sans-serif, centered horizontally, 8% from top (y:154px), with 2px text shadow rgba(0,0,0,0.3). Full width minus 40px side margins. Max 2 lines.'"
       }
     ]
   },
@@ -165,22 +198,28 @@ Return ONLY this JSON (no markdown, no commentary):
     "accent_color": "#HEXCODE or null",
     "overlay_color": "#HEXCODE or null",
     "overlay_opacity": 0.0,
-    "all_extracted_colors": ["#HEX1", "#HEX2", "#HEX3"],
+    "all_extracted_colors": ["#HEX1", "#HEX2", "#HEX3", "#HEX4", "#HEX5"],
     "color_temperature": "warm|cool|neutral",
-    "contrast_level": "high|medium|low"
+    "contrast_level": "high|medium|low",
+    "saturation_profile": "vibrant|muted|desaturated|mixed",
+    "color_harmony": "monochromatic|complementary|analogous|triadic|split_complementary"
   },
 
   "typography_system": {
     "headline_font_class": "sans-serif|serif|display|handwritten",
     "headline_weight": "black|extrabold|bold|semibold|medium",
+    "headline_estimated_size_px": 48,
     "body_font_class": "sans-serif|serif",
     "body_weight": "regular|medium|light",
-    "font_size_ratio": "headline_to_body pixel ratio estimate (e.g. 3:1)",
+    "body_estimated_size_px": 16,
+    "font_size_ratio": "headline_to_body pixel ratio (e.g. 3:1)",
     "dominant_text_color": "#HEXCODE",
     "uses_mixed_weights": true,
     "uses_mixed_colors": false,
     "max_font_size_class": "display|h1|h2",
-    "text_stroke_style": "none|thin_outline|thick_outline|drop_shadow"
+    "text_stroke_style": "none|thin_outline|thick_outline|drop_shadow",
+    "font_pairing_style": "same_family_different_weights|contrast_pair|single_font",
+    "vertical_rhythm_consistent": true
   },
 
   "visual_style": {
@@ -196,13 +235,43 @@ Return ONLY this JSON (no markdown, no commentary):
     "dominant_background_color": "#HEXCODE or null",
     "product_position": "center|top_center|bottom_center|left|right|full_bleed|floating|null",
     "product_size_in_frame": "hero_large|medium|small|thumbnail|null",
+    "product_area_percent": 45,
     "product_cutout": true,
     "product_shadow": false,
+    "product_shadow_type": "drop_shadow|reflection|ambient|none",
+    "product_rotation_degrees": 0,
+    "product_crop_style": "full_product|cropped_top|cropped_bottom|partial_bleed|none",
     "lighting_style": "flat|studio_white|studio_dark|natural|high_contrast|rim_light|null",
     "depth_of_field": "sharp_all|blurred_background|null",
     "grain_or_texture": false,
     "rounded_corners_on_image": false,
-    "ui_elements_present": false
+    "ui_elements_present": false,
+    "visual_hierarchy_clarity": "very_clear|clear|moderate|cluttered"
+  },
+
+  "photography_extraction": {
+    "camera_angle": "front_straight|3_quarter_front|side_profile|overhead_flat_lay|low_angle_hero|high_angle_down|dutch_angle",
+    "estimated_lens_mm": "35mm|50mm|85mm|100mm_macro|wide_angle|telephoto",
+    "lighting_direction": "front_flat|top_down|side_left|side_right|backlit|rim_light|multi_point",
+    "lighting_type": "studio_softbox|natural_window|ring_light|spot_light|ambient|mixed",
+    "lighting_color_temperature": "warm_3000K|neutral_5000K|cool_6500K|mixed",
+    "shadow_hardness": "hard_sharp|medium|soft_diffused|no_shadow",
+    "shadow_direction": "bottom_right|bottom_left|directly_below|none",
+    "reflection_present": false,
+    "background_separation": "strong_bokeh|moderate_depth|flat_even|greenscreen_cutout",
+    "post_processing_style": "clean_minimal|high_contrast|warm_toned|cool_toned|desaturated|hdr",
+    "product_photo_style": "studio_packshot|lifestyle_in_use|flat_lay|floating_3d|editorial_model|ghost_mannequin"
+  },
+
+  "spacing_and_rhythm": {
+    "edge_margin_px": { "top": 40, "right": 40, "bottom": 40, "left": 40 },
+    "inter_element_gap_px": 24,
+    "section_gap_px": 48,
+    "text_to_product_gap_px": 32,
+    "cta_bottom_margin_px": 60,
+    "consistent_rhythm": true,
+    "grid_columns": 1,
+    "alignment_axis": "center|left|right|mixed"
   },
 
   "content_pattern": {
@@ -211,30 +280,41 @@ Return ONLY this JSON (no markdown, no commentary):
     "narrative_structure": "problem_solution|feature_highlight|storytelling|before_after|disruptive_product_announcement|pure_lifestyle|direct_offer",
     "cta_style": "pill_button|rounded_rectangle_button|text_link_with_arrow|swipe_up_icon|implicit_editorial_style|ghost_button",
     "cta_urgency": "none|low|medium|high",
+    "cta_text_pattern": "e.g. 'SHOP NOW' pattern — action_verb + object, 2-3 words",
     "requires_product_image": true,
     "requires_human_model": false,
     "requires_lifestyle_scene": false,
     "text_to_image_ratio": "text_dominant|balanced|image_dominant",
-    "information_density": "minimal|moderate|information_rich"
+    "information_density": "minimal|moderate|information_rich",
+    "reading_flow": "top_to_bottom|left_to_right|z_pattern|f_pattern|center_spiral"
   },
 
   "social_proof_elements": {
     "has_star_rating": false,
+    "star_rating_value": null,
     "has_review_count": false,
+    "review_count_pattern": "e.g. '10,000+ reviews' or null",
     "has_testimonial_text": false,
     "has_user_photo": false,
     "has_press_mention": false,
     "has_certification_badge": false,
     "has_follower_count": false,
-    "trust_signal_count": 0
+    "trust_signal_count": 0,
+    "social_proof_style": "subtle|prominent|hero_element|none"
   },
 
   "cta_structure": {
     "has_cta_button": true,
     "cta_button_style": "filled|outlined|ghost|text_only|null",
     "cta_button_shape": "pill|rounded_rectangle|sharp_rectangle|null",
+    "cta_button_color": "#HEXCODE or null",
+    "cta_text_color": "#HEXCODE or null",
+    "cta_font_size_class": "body|h3|h2",
+    "cta_border_radius_px": 8,
+    "cta_padding_px": { "vertical": 12, "horizontal": 32 },
     "has_cta_subtext": false,
-    "cta_position_in_frame": "bottom|middle|top|floating|null"
+    "cta_position_in_frame": "bottom|middle|top|floating|null",
+    "cta_width_percent": 60
   },
 
   "decorative_design_elements": {
@@ -247,38 +327,87 @@ Return ONLY this JSON (no markdown, no commentary):
     "has_progress_or_list_indicators": false,
     "has_price_tag_element": false,
     "has_discount_callout": false,
-    "element_descriptions": ["describe each decorative element seen"]
+    "has_divider_lines": false,
+    "has_drop_shadows": false,
+    "element_descriptions": ["describe each decorative element with exact position and color"]
   },
 
   "emotional_triggers": {
     "primary_emotion_targeted": "desire|trust|urgency|fear_of_missing_out|curiosity|aspiration|belonging|pride",
     "secondary_emotion": "string or null",
-    "psychological_techniques": ["e.g. social_proof", "scarcity", "authority", "reciprocity", "identity_alignment"],
-    "target_audience_signal": "describe implied audience from visual cues (e.g. young professionals, luxury seekers, fitness enthusiasts)"
+    "psychological_techniques": ["social_proof", "scarcity", "authority", "reciprocity", "identity_alignment", "anchoring", "exclusivity"],
+    "target_audience_signal": "describe implied audience from visual cues",
+    "perceived_brand_tier": "budget|mid_range|premium|luxury|ultra_luxury"
+  },
+
+  "brand_integration_zones": {
+    "primary_logo_zone": {
+      "position": "top_left|top_center|top_right|bottom_left|bottom_center|bottom_right|on_product",
+      "y_start": 0,
+      "y_end": 80,
+      "x_start": 0,
+      "x_end": 200,
+      "max_width_percent": 20,
+      "recommended_logo_style": "wordmark|icon|monogram|full_lockup"
+    },
+    "secondary_brand_zone": {
+      "position": "description of secondary brand placement opportunity",
+      "available": false
+    },
+    "product_branding_area": "describe where brand logo/name appears ON the product in the original ad"
+  },
+
+  "product_placement_spec": {
+    "product_center_x_percent": 50,
+    "product_center_y_percent": 55,
+    "product_width_percent": 60,
+    "product_height_percent": 45,
+    "product_bounding_box": {
+      "x_start": 216,
+      "y_start": 576,
+      "x_end": 864,
+      "y_end": 1440
+    },
+    "product_angle": "front|3_quarter|side|top_down|angled",
+    "product_z_index": "foreground|midground|background",
+    "product_scale_relative_to_frame": "dominant|balanced|accent",
+    "cutout_required": true,
+    "shadow_type_needed": "drop_shadow|reflection|ambient|none",
+    "product_mask_shape": "rectangle|oval|organic|none",
+    "overlap_with_text": false,
+    "overlap_zones": []
   },
 
   "recreation_blueprint": {
     "complexity_level": "simple|moderate|complex|very_complex",
-    "key_success_factors": ["list the 3-5 most important visual/content elements that make this ad effective"],
-    "critical_zones": ["list zone IDs that are ESSENTIAL to replicate"],
+    "estimated_generation_difficulty": "easy|moderate|hard|very_hard",
+    "key_success_factors": ["list the 5-8 most important visual elements that make this ad effective"],
+    "critical_zones": ["list zone IDs that are ESSENTIAL to replicate exactly"],
     "flexible_zones": ["list zone IDs that can be adapted freely"],
-    "color_replacement_strategy": "describe how to adapt the color palette for a different brand",
-    "font_replacement_strategy": "describe font equivalents to use",
-    "product_placement_instructions": "precise instructions for placing the new product image in this layout",
-    "overall_recreation_prompt": "A single comprehensive paragraph instruction for an AI image generator to recreate this exact ad layout and visual style with a different brand's product, without copying the original brand."
+    "color_replacement_strategy": "describe EXACTLY how to adapt the color palette for a different brand (which colors to keep, which to replace)",
+    "font_replacement_strategy": "describe exact font equivalents to use and weight pairings",
+    "product_placement_instructions": "PIXEL-PRECISE instructions for placing the new product (exact coordinates, scale, angle, shadow)",
+    "brand_swap_instructions": "EXACT instructions for swapping the competitor brand with a new brand (logo placement, size, color adaptation)",
+    "overall_recreation_prompt": "A COMPREHENSIVE 200+ word paragraph instruction for an AI image generator to recreate this EXACT ad layout and visual style with a different brand and product. Include SPECIFIC measurements, colors (hex), positions (pixels/percentages), font sizes, spacing, lighting, and mood. This prompt must be so precise that two different AI models would generate nearly identical layouts."
   }
 }
 
-STRICT VALIDATION:
-1. No zone overlaps
-2. No assumed image dimensions
-3. No competitor brand/product names
+STRICT VALIDATION RULES:
+1. No zone overlaps (y_start of N+1 >= y_end of N)
+2. No assumed image dimensions — read from actual image
+3. No competitor brand/product names anywhere in the output
 4. No copied headline text
 5. All controlled vocabulary values must match allowed lists
-6. recreation_blueprint.overall_recreation_prompt MUST be detailed (100+ words)
-7. color_palette.all_extracted_colors must include minimum 3 colors
+6. recreation_blueprint.overall_recreation_prompt MUST be 200+ words with pixel measurements
+7. color_palette.all_extracted_colors must include minimum 5 colors
+8. Every zone MUST have a recreation_directive with EXACT measurements
+9. product_placement_spec MUST have pixel-level bounding box
+10. photography_extraction MUST be filled completely
+11. brand_integration_zones MUST identify at least one logo placement zone
+12. spacing_and_rhythm MUST have measured pixel values
 
 Return VALID JSON ONLY. No markdown. No explanations. No text before or after JSON.`;
+
 
 
 // ═══════════════════════════════════════════════════════════
@@ -754,6 +883,41 @@ export class AdConceptsService {
                 critical_zones: [],
                 flexible_zones: [],
                 overall_recreation_prompt: '',
+            };
+        }
+
+        // ── V6: Ensure new enriched sections have defaults ──
+        if (!parsed.photography_extraction || typeof parsed.photography_extraction !== 'object') {
+            parsed.photography_extraction = {
+                camera_angle: 'front_straight',
+                lighting_direction: 'front_flat',
+                lighting_type: 'studio_softbox',
+                shadow_hardness: 'soft_diffused',
+                product_photo_style: 'studio_packshot',
+            };
+        }
+        if (!parsed.spacing_and_rhythm || typeof parsed.spacing_and_rhythm !== 'object') {
+            parsed.spacing_and_rhythm = {
+                edge_margin_px: { top: 40, right: 40, bottom: 40, left: 40 },
+                inter_element_gap_px: 24,
+                consistent_rhythm: true,
+                alignment_axis: 'center',
+            };
+        }
+        if (!parsed.brand_integration_zones || typeof parsed.brand_integration_zones !== 'object') {
+            parsed.brand_integration_zones = {
+                primary_logo_zone: {
+                    position: 'top_center',
+                    recommended_logo_style: 'wordmark',
+                },
+            };
+        }
+        if (!parsed.product_placement_spec || typeof parsed.product_placement_spec !== 'object') {
+            parsed.product_placement_spec = {
+                product_center_x_percent: 50,
+                product_center_y_percent: 50,
+                product_scale_relative_to_frame: 'dominant',
+                cutout_required: false,
             };
         }
 
