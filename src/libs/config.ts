@@ -1,6 +1,6 @@
-// PRODUCTION: imagen-4.0-generate-001
+// PRODUCTION: imagen-3.0-generate-001
 // Reference: https://ai.google.dev/gemini-api/docs/image-generation
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'imagen-4.0-generate-001';
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'imagen-3.0-generate-001';
 
 // Image generation result type
 export type GeminiImageResult = {
