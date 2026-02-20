@@ -18,14 +18,44 @@ export class AnalyzeProductDirectDto {
 export interface GeneralInfo {
 	product_name: string;
 	category: string;
+	/** V6: More specific sub-category */
+	subcategory?: string;
 	fit_type: string;
 	gender_target: string;
+	/** V6: Seasonal relevance */
+	season?: string;
+	/** V6: Usage occasion */
+	occasion?: string;
+}
+
+export interface SecondaryColor {
+	name: string;
+	hex: string;
+	location: string;
 }
 
 export interface VisualSpecs {
-	color_name: string;
-	hex_code: string;
+	/** @deprecated use primary_color_name */
+	color_name?: string;
+	/** @deprecated use primary_hex_code */
+	hex_code?: string;
+	/** V6: Marketing-friendly primary color name */
+	primary_color_name?: string;
+	/** V6: Primary hex code sampled from main surface */
+	primary_hex_code?: string;
+	/** V6: Secondary/accent colors */
+	secondary_colors?: SecondaryColor[];
+	/** V6: Color scheme type */
+	color_scheme?: string;
 	fabric_texture: string;
+	/** V6: Full material composition breakdown */
+	material_composition?: string;
+	/** V6: Surface finish type */
+	finish?: string;
+	/** V6: Transparency level */
+	transparency?: string;
+	/** V6: Surface pattern */
+	surface_pattern?: string;
 }
 
 /** V5.3: Interior branding - neck tape, hanger loop, main label */
@@ -64,6 +94,8 @@ export interface DesignFront {
 	logo_text: string;
 	font_family?: string;
 	logo_type: string;
+	/** V6: How the logo is applied */
+	logo_application?: string;
 	logo_content: string;
 	logo_color: string;
 	placement: string;
@@ -224,13 +256,95 @@ export interface GarmentDetails {
 	seam_architecture?: string;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// V6: NEW INTERFACES — Universal Product Details
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** V6: Universal product details (dimensions, hardware, construction) */
+export interface ProductDetails {
+	key_features?: string[];
+	construction_quality?: string;
+	notable_elements?: string;
+	dimensions_estimate?: {
+		height_cm?: number;
+		width_cm?: number;
+		depth_cm?: number;
+		weight_category?: string;
+	};
+	hardware?: {
+		type?: string;
+		material?: string;
+		color?: string;
+		finish?: string;
+		count?: number;
+		details?: string;
+	};
+	closure_type?: string;
+	special_technologies?: string;
+}
+
+/** V6: Footwear-specific details */
+export interface FootwearDetails {
+	upper_material?: string;
+	midsole?: string;
+	outsole?: string;
+	heel_height_mm?: number;
+	toe_box_shape?: string;
+	lacing_system?: string;
+	insole?: string;
+	tongue?: string;
+	ankle_support?: string;
+	sole_drop_mm?: number;
+	special_features?: string;
+}
+
+/** V6: Ad marketing data — USPs, hooks, audience, positioning */
+export interface AdMarketingData {
+	unique_selling_points?: string[];
+	ad_copy_hooks?: string[];
+	target_audience?: {
+		age_range?: string;
+		lifestyle?: string;
+		occasions?: string[];
+	};
+	price_positioning?: string;
+	mood_and_aesthetic?: string;
+	competitive_advantages?: string[];
+	best_ad_angles?: string[];
+	recommended_backgrounds?: Array<{
+		type?: string;
+		color?: string;
+		description?: string;
+		mood?: string;
+	}>;
+}
+
+/** V6: Photography notes for AI image generation */
+export interface PhotographyNotes {
+	hero_angle?: string;
+	detail_shots?: string[];
+	lighting_recommendation?: string;
+	background_contrast?: string;
+	scale_reference?: string;
+	photogenic_details?: string[];
+}
+
 /**
- * Complete response interface for product analysis (V5)
+ * Complete response interface for product analysis (V6 — Enriched Universal)
  */
 export interface AnalyzeProductDirectResponse {
 	general_info: GeneralInfo;
 	visual_specs: VisualSpecs;
 	design_front: DesignFront;
 	design_back: DesignBack;
-	garment_details: GarmentDetails;
+	/** V6: Universal product details */
+	product_details?: ProductDetails;
+	/** V6: Footwear-specific details (null for non-footwear) */
+	footwear_details?: FootwearDetails | null;
+	/** V6: Ad marketing data */
+	ad_marketing_data?: AdMarketingData;
+	/** V6: Photography notes */
+	photography_notes?: PhotographyNotes;
+	/** Garment-specific details (null for non-apparel) */
+	garment_details?: GarmentDetails;
 }

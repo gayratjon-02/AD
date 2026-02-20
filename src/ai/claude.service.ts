@@ -135,7 +135,7 @@ export class ClaudeService {
 
         const response = await this.createMessage({
             content,
-            max_tokens: 4000,
+            max_tokens: 6000,
         });
 
         const text = this.extractText(response.content);
@@ -185,26 +185,40 @@ export class ClaudeService {
         }
 
         // ════════════════════════════════════════════════════════════════
-        // Response Building
+        // Response Building (V6 — Enriched Universal Output)
         // ════════════════════════════════════════════════════════════════
 
         const result: AnalyzeProductDirectResponse = {
             general_info: {
                 product_name: validatedData.general_info?.product_name || 'UNNAMED PRODUCT',
                 category: validatedData.general_info?.category || 'Apparel',
+                subcategory: validatedData.general_info?.subcategory || validatedData.general_info?.category || 'General',
                 fit_type: validatedData.general_info?.fit_type || 'Regular fit',
                 gender_target: validatedData.general_info?.gender_target || 'Unisex',
+                season: validatedData.general_info?.season || 'All-season',
+                occasion: validatedData.general_info?.occasion || 'Everyday',
             },
             visual_specs: {
-                color_name: validatedData.visual_specs?.color_name || 'BLACK',
-                hex_code: validatedData.visual_specs?.hex_code || '#000000',
-                fabric_texture: validatedData.visual_specs?.fabric_texture || 'Cotton blend fabric',
+                // V6 enriched color fields
+                primary_color_name: validatedData.visual_specs?.primary_color_name || validatedData.visual_specs?.color_name || 'BLACK',
+                primary_hex_code: validatedData.visual_specs?.primary_hex_code || validatedData.visual_specs?.hex_code || '#000000',
+                secondary_colors: validatedData.visual_specs?.secondary_colors || [],
+                color_scheme: validatedData.visual_specs?.color_scheme || 'Monochrome',
+                fabric_texture: validatedData.visual_specs?.fabric_texture || 'Standard material',
+                material_composition: validatedData.visual_specs?.material_composition || 'Not specified',
+                finish: validatedData.visual_specs?.finish || 'Matte',
+                transparency: validatedData.visual_specs?.transparency || 'Opaque',
+                surface_pattern: validatedData.visual_specs?.surface_pattern || 'Solid',
+                // Backward compat
+                color_name: validatedData.visual_specs?.primary_color_name || validatedData.visual_specs?.color_name || 'BLACK',
+                hex_code: validatedData.visual_specs?.primary_hex_code || validatedData.visual_specs?.hex_code || '#000000',
             },
             design_front: {
                 has_logo: validatedData.design_front?.has_logo ?? false,
                 logo_text: validatedData.design_front?.logo_text || 'N/A',
                 font_family: validatedData.design_front?.font_family,
                 logo_type: validatedData.design_front?.logo_type || '',
+                logo_application: validatedData.design_front?.logo_application || '',
                 logo_content: validatedData.design_front?.logo_content || '',
                 logo_color: validatedData.design_front?.logo_color || '',
                 placement: validatedData.design_front?.placement || '',
@@ -257,9 +271,58 @@ export class ClaudeService {
                 size_relative_pct: validatedData.design_back?.size_relative_pct,
                 micro_details: validatedData.design_back?.micro_details,
             },
-            garment_details: {
+
+            // ════════════════════════════════════════════════════════════════
+            // V6: NEW — Product Details (universal for all product types)
+            // ════════════════════════════════════════════════════════════════
+            product_details: validatedData.product_details ? {
+                key_features: validatedData.product_details.key_features || [],
+                construction_quality: validatedData.product_details.construction_quality || 'Standard',
+                notable_elements: validatedData.product_details.notable_elements || 'N/A',
+                dimensions_estimate: validatedData.product_details.dimensions_estimate || null,
+                hardware: validatedData.product_details.hardware || null,
+                closure_type: validatedData.product_details.closure_type || 'N/A',
+                special_technologies: validatedData.product_details.special_technologies || 'N/A',
+            } : undefined,
+
+            // ════════════════════════════════════════════════════════════════
+            // V6: NEW — Footwear Details (only for shoes)
+            // ════════════════════════════════════════════════════════════════
+            footwear_details: validatedData.footwear_details || null,
+
+            // ════════════════════════════════════════════════════════════════
+            // V6: NEW — Ad Marketing Data (USPs, hooks, audience, positioning)
+            // ════════════════════════════════════════════════════════════════
+            ad_marketing_data: validatedData.ad_marketing_data ? {
+                unique_selling_points: validatedData.ad_marketing_data.unique_selling_points || [],
+                ad_copy_hooks: validatedData.ad_marketing_data.ad_copy_hooks || [],
+                target_audience: validatedData.ad_marketing_data.target_audience || {
+                    age_range: 'All ages',
+                    lifestyle: 'General',
+                    occasions: ['Everyday'],
+                },
+                price_positioning: validatedData.ad_marketing_data.price_positioning || 'Mid-range',
+                mood_and_aesthetic: validatedData.ad_marketing_data.mood_and_aesthetic || 'Clean and modern',
+                competitive_advantages: validatedData.ad_marketing_data.competitive_advantages || [],
+                best_ad_angles: validatedData.ad_marketing_data.best_ad_angles || [],
+                recommended_backgrounds: validatedData.ad_marketing_data.recommended_backgrounds || [],
+            } : undefined,
+
+            // ════════════════════════════════════════════════════════════════
+            // V6: NEW — Photography Notes (for AI image generation guidance)
+            // ════════════════════════════════════════════════════════════════
+            photography_notes: validatedData.photography_notes ? {
+                hero_angle: validatedData.photography_notes.hero_angle || '3/4 front view',
+                detail_shots: validatedData.photography_notes.detail_shots || [],
+                lighting_recommendation: validatedData.photography_notes.lighting_recommendation || 'Soft studio lighting',
+                background_contrast: validatedData.photography_notes.background_contrast || 'Neutral background',
+                scale_reference: validatedData.photography_notes.scale_reference || 'Standard product scale',
+                photogenic_details: validatedData.photography_notes.photogenic_details || [],
+            } : undefined,
+
+            // Backward compat: garment_details (only if product is apparel)
+            garment_details: validatedData.garment_details ? {
                 pockets: validatedData.garment_details?.pockets || 'Standard pockets',
-                // V5.3: Individual pockets array with exact positioning
                 pockets_array: validatedData.garment_details?.pockets_array?.map((pocket: any) => ({
                     id: pocket.id || 0,
                     name: pocket.name || 'Unknown pocket',
@@ -276,7 +339,6 @@ export class ClaudeService {
                     closure: pocket.closure || 'N/A',
                     special_features: pocket.special_features,
                 })),
-                // Legacy: Lower pockets
                 lower_pockets: validatedData.garment_details?.lower_pockets ? {
                     count: validatedData.garment_details.lower_pockets.count || 0,
                     type: validatedData.garment_details.lower_pockets.type || 'N/A',
@@ -287,7 +349,6 @@ export class ClaudeService {
                     button_count: validatedData.garment_details.lower_pockets.button_count,
                     button_details: validatedData.garment_details.lower_pockets.button_details,
                 } : undefined,
-                // Legacy: Chest pocket
                 chest_pocket: validatedData.garment_details?.chest_pocket ? {
                     count: validatedData.garment_details.chest_pocket.count || 0,
                     type: validatedData.garment_details.chest_pocket.type || 'N/A',
@@ -304,7 +365,6 @@ export class ClaudeService {
                     special_features: validatedData.garment_details.sleeve_details.special_features,
                 } : undefined,
                 sleeve_branding: validatedData.garment_details?.sleeve_branding,
-                // V5.2: Shoulder construction with full details
                 shoulder_construction: validatedData.garment_details?.shoulder_construction ? {
                     has_overlay: validatedData.garment_details.shoulder_construction.has_overlay ?? false,
                     overlay_type: validatedData.garment_details.shoulder_construction.overlay_type,
@@ -323,7 +383,6 @@ export class ClaudeService {
                 bottom_termination: validatedData.garment_details?.bottom_termination || validatedData.garment_details?.bottom || 'Standard hem',
                 bottom_branding: validatedData.garment_details?.bottom_branding,
                 closure_details: validatedData.garment_details?.closure_details,
-                // V5: Button details with total_visible_buttons
                 buttons: validatedData.garment_details?.buttons ? {
                     front_closure_count: validatedData.garment_details.buttons.front_closure_count || 0,
                     total_visible_buttons: validatedData.garment_details.buttons.total_visible_buttons,
@@ -336,7 +395,7 @@ export class ClaudeService {
                 hardware_finish: validatedData.garment_details?.hardware_finish || 'No visible hardware',
                 neckline: validatedData.garment_details?.neckline || 'N/A',
                 seam_architecture: validatedData.garment_details?.seam_architecture,
-            },
+            } : undefined,
         };
 
         return result;

@@ -28,123 +28,257 @@ const FORMAT_RESOLUTIONS: Record<string, { width: number; height: number }> = {
     '16:9': { width: 1920, height: 1080 },
 };
 
-const CONCEPT_ANALYSIS_SYSTEM_PROMPT = `You are a STRICT visual pattern extraction engine for the ROMIMI Ad Recreation system.
+const CONCEPT_ANALYSIS_SYSTEM_PROMPT = `You are an ELITE visual intelligence engine for the ROMIMI Ad Recreation system.
 
-Your job is to analyze a static ad inspiration image and extract ONLY the structural pattern.
+Your job is to perform a DEEP FORENSIC ANALYSIS of a competitor ad image and extract its complete Visual DNA — layout, typography, color, psychology, composition, and recreation instructions — so that a different brand can recreate the same structure with their own product.
 
 You are NOT allowed to:
-- Copy competitor brand names, product names, or exact copy text
-- Paraphrase or summarize their marketing message
-- Infer missing elements — if it's not visible, don't include it
-- Invent zones that do not exist
-- Assume fixed dimensions (like 1080x1920)
+- Copy competitor brand names, product names, or exact headline/body copy text
+- Paraphrase their marketing message word-for-word
+- Assume fixed dimensions (like 1080x1920) — always read real pixel dimensions from the image
+- Invent zones that do not exist in the image
+- Leave any extractable field as null if it is visually present
 
 You MUST:
-- Read the real image width and height from the image itself
-- Base all y_start/y_end coordinates on actual image pixel dimensions
-- Extract only structural and visual patterns
-- Use GENERIC PLACEHOLDERS in descriptions (e.g. "Brand logo placement" not "Nike logo")
-- Return VALID JSON only — no markdown, no commentary
+- Read the REAL image width and height from the image
+- Base ALL y_start/y_end coordinates on actual pixel dimensions
+- Extract EVERY visual layer: colors, fonts, spacing, shadows, overlays, decorative elements
+- Describe PATTERNS, not competitor content (e.g. "Bold white sans-serif headline top-left" not "Nike Just Do It")
+- Return VALID JSON only — no markdown, no commentary, no explanations
 
 ═══════════════════════════════════════════════════════════
-CONTROLLED VOCABULARIES (use ONLY these values)
+CONTROLLED VOCABULARIES
 ═══════════════════════════════════════════════════════════
 
-layout.type ALLOWED VALUES:
+layout.type:
   product_hero_center, product_left_text_right, product_right_text_left,
   split_screen, text_only, testimonial_grid, product_with_overlays,
   ugc_style, app_screenshot, feature_stack, minimalist_product, custom_layout
 
-content_type ALLOWED VALUES:
+content_type:
   headline, subheadline, feature_badges, product_image, image,
   testimonial_overlay, composite_product_social_proof, cta_button,
   cta_subtext, social_proof_line, background_only, logo, ui_element, body
 
-hook_type ALLOWED VALUES:
+hook_type:
   pattern_interrupt, contrast_statement, direct_benefit, problem_agitation,
   bold_claim, social_proof_hook, question_hook, feature_announcement,
   comparison_hook
 
+mood:
+  energetic, calm, luxury, native_ugc, clean_editorial, bold_graphic,
+  minimalist, playful, authoritative, aspirational, urgent
+
+text_alignment: left, center, right, justified
+font_weight: thin, light, regular, medium, semibold, bold, extrabold, black
+font_case: uppercase, lowercase, titlecase, mixed
+
 ═══════════════════════════════════════════════════════════
 ZONE RULES (CRITICAL)
 ═══════════════════════════════════════════════════════════
-
 1. Zones MUST NOT overlap (y_start of zone N+1 >= y_end of zone N)
-2. Coordinates must use ACTUAL image height (read from image, not assumed)
-3. If a product image has floating testimonial bubbles → use "composite_product_social_proof"
-4. If CTA area has a button AND subtext → create TWO separate zones
-5. Every zone must have: id, y_start, y_end, content_type
-6. height_percent (0-100) should be calculated from real image height`;
+2. Coordinates MUST use ACTUAL image height pixels
+3. If product image has floating testimonial bubbles → use "composite_product_social_proof"
+4. If CTA area has a button AND subtext → TWO separate zones
+5. Every zone MUST have: id, y_start, y_end, content_type
+6. height_percent calculated from real image height
+7. Each zone MUST include typography_details if it contains text
+8. Include x_position and width_percent for horizontal layout analysis`;
 
-const CONCEPT_ANALYSIS_USER_PROMPT = `Analyze this ad image and extract its Visual DNA for recreation by a different brand.
+const CONCEPT_ANALYSIS_USER_PROMPT = `Perform a DEEP FORENSIC ANALYSIS of this ad image. Extract its complete Visual DNA for recreation by a different brand with a different product.
 
-STEP 1 — Read the actual image width and height.
-STEP 2 — Classify the layout type using ONLY the allowed list.
-STEP 3 — Map each visual zone with ABSOLUTE PIXEL y_start and y_end values.
-STEP 4 — Classify the hook type using ONLY the controlled vocabulary.
-STEP 5 — Extract visual style (background, lighting, product position).
-STEP 6 — Identify CTA structure (button vs subtext).
+ANALYSIS STEPS:
+STEP 1 — Measure actual image width and height in pixels.
+STEP 2 — Identify layout type, format, and overall composition grid.
+STEP 3 — Map EVERY visual zone with exact pixel coordinates (y_start, y_end, x_position, width_percent).
+STEP 4 — For each text zone: extract font weight, size class, color, alignment, letter-spacing style, case.
+STEP 5 — Extract complete color palette (background, text colors, accent colors, button colors) as HEX.
+STEP 6 — Analyze typography hierarchy (H1/H2/body/CTA font relationship).
+STEP 7 — Identify all psychological hooks, social proof elements, and emotional triggers.
+STEP 8 — Analyze product presentation (position, size, angle, cropping style, cutout/natural).
+STEP 9 — Extract decorative elements (borders, shadows, badges, overlays, icons, lines).
+STEP 10 — Write specific recreation directives for each zone.
 
-Return ONLY this JSON structure:
+Return ONLY this JSON (no markdown, no commentary):
 
 {
-  "concept_name": "string — short descriptive name (3-6 words)",
-  "concept_tags": ["string — 3-6 lowercase_underscore tags"],
+  "concept_name": "short descriptive name (3-6 words, no brand names)",
+  "concept_tags": ["3-8 lowercase_underscore tags describing style/hook/format"],
+
   "image_meta": {
-    "width": number,
-    "height": number,
-    "aspect_ratio": number,
-    "orientation": "vertical|square|horizontal"
+    "width": 1080,
+    "height": 1920,
+    "aspect_ratio": 0.5625,
+    "orientation": "vertical|square|horizontal",
+    "format": "9:16|1:1|4:5|16:9"
   },
+
   "layout": {
     "type": "one of allowed layout types",
-    "format": "auto-detected aspect ratio (e.g. 9:16, 1:1, 4:5, 16:9)",
+    "format": "9:16|1:1|4:5|16:9",
+    "composition_grid": "single_column|two_column|asymmetric|overlay_stack|hero_with_text_band",
+    "visual_weight_distribution": "top_heavy|bottom_heavy|center_focused|evenly_distributed",
+    "whitespace_density": "dense|moderate|airy",
     "zones": [
       {
-        "id": "string (e.g. header, headline, hero_image, cta)",
+        "id": "zone_id (e.g. logo_bar, hero_headline, product_hero, social_proof_strip, cta_button)",
         "y_start": 0,
-        "y_end": 288,
-        "height_percent": 15,
+        "y_end": 144,
+        "x_position": "left|center|right|full_width",
+        "width_percent": 100,
+        "height_percent": 7,
         "content_type": "one of allowed content_type values",
-        "structural_role": "string describing role (e.g. primary_headline, hero_product_area)",
-        "typography_style": "string (e.g. Bold Sans-Serif White)",
-        "description": "describe the PATTERN, not competitor content"
+        "structural_role": "e.g. primary_headline | hero_product_area | trust_signal | action_trigger",
+        "visual_prominence": "primary|secondary|tertiary|background",
+        "typography_details": {
+          "font_weight": "bold|semibold|regular|light",
+          "font_case": "uppercase|titlecase|lowercase|mixed",
+          "font_family_class": "sans-serif|serif|monospace|display|handwritten",
+          "approximate_size_class": "display|h1|h2|h3|body|caption|micro",
+          "color": "#HEXCODE",
+          "alignment": "left|center|right",
+          "letter_spacing": "tight|normal|wide|very_wide",
+          "line_height": "tight|normal|relaxed",
+          "has_shadow": false,
+          "has_outline": false,
+          "background_contrast": "high|medium|low"
+        },
+        "background_in_zone": {
+          "type": "transparent|solid|gradient|image_bleed",
+          "color": "#HEXCODE or null",
+          "opacity": 1.0
+        },
+        "decorative_elements": ["e.g. underline_accent", "badge_border", "icon_left", "star_rating"],
+        "description": "Describe the PATTERN precisely: what type of content, how it is styled, its visual role. NO competitor brand names.",
+        "recreation_directive": "Exact instruction for recreating this zone with a different brand/product. E.g.: 'Place product name in extrabold uppercase white text, centered, 8% from top, full width, with a subtle dark gradient behind for contrast.'"
       }
     ]
   },
+
+  "color_palette": {
+    "primary_background": "#HEXCODE",
+    "secondary_background": "#HEXCODE or null",
+    "headline_color": "#HEXCODE",
+    "body_text_color": "#HEXCODE or null",
+    "cta_button_background": "#HEXCODE or null",
+    "cta_button_text": "#HEXCODE or null",
+    "accent_color": "#HEXCODE or null",
+    "overlay_color": "#HEXCODE or null",
+    "overlay_opacity": 0.0,
+    "all_extracted_colors": ["#HEX1", "#HEX2", "#HEX3"],
+    "color_temperature": "warm|cool|neutral",
+    "contrast_level": "high|medium|low"
+  },
+
+  "typography_system": {
+    "headline_font_class": "sans-serif|serif|display|handwritten",
+    "headline_weight": "black|extrabold|bold|semibold|medium",
+    "body_font_class": "sans-serif|serif",
+    "body_weight": "regular|medium|light",
+    "font_size_ratio": "headline_to_body pixel ratio estimate (e.g. 3:1)",
+    "dominant_text_color": "#HEXCODE",
+    "uses_mixed_weights": true,
+    "uses_mixed_colors": false,
+    "max_font_size_class": "display|h1|h2",
+    "text_stroke_style": "none|thin_outline|thick_outline|drop_shadow"
+  },
+
   "visual_style": {
-    "mood": "energetic|calm|luxury|native_ugc|clean_editorial|bold_graphic",
+    "mood": "one of allowed mood values",
+    "aesthetic_category": "minimalist|maximalist|editorial|ugc_raw|luxury_polished|bold_graphic|lifestyle|technical",
     "background": {
-      "type": "solid_color|image|gradient|textured",
-      "hex": "#HEXCODE or null"
+      "type": "solid_color|image|gradient|textured|blurred_photo",
+      "hex": "#HEXCODE or null",
+      "gradient_direction": "top_bottom|left_right|diagonal|radial or null",
+      "gradient_colors": ["#HEX1", "#HEX2"]
     },
-    "overlay": "dark_dim_layer|white_box_opacity|none",
-    "dominant_background_color": "#HEX or null",
-    "product_position": "center|left|right|bottom|null",
-    "lighting_style": "flat|studio|natural|high_contrast|null",
+    "overlay": "dark_dim_layer|white_box_opacity|color_wash|none",
+    "dominant_background_color": "#HEXCODE or null",
+    "product_position": "center|top_center|bottom_center|left|right|full_bleed|floating|null",
+    "product_size_in_frame": "hero_large|medium|small|thumbnail|null",
+    "product_cutout": true,
+    "product_shadow": false,
+    "lighting_style": "flat|studio_white|studio_dark|natural|high_contrast|rim_light|null",
+    "depth_of_field": "sharp_all|blurred_background|null",
+    "grain_or_texture": false,
+    "rounded_corners_on_image": false,
     "ui_elements_present": false
   },
+
   "content_pattern": {
     "hook_type": "one of allowed hook_type values",
-    "narrative_structure": "problem_solution|feature_highlight|storytelling|before_after|disruptive_product_announcement",
-    "cta_style": "pill_button|text_link_with_arrow|swipe_up_icon|implicit_editorial_style",
-    "requires_product_image": true
+    "hook_strength": "weak|moderate|strong|very_strong",
+    "narrative_structure": "problem_solution|feature_highlight|storytelling|before_after|disruptive_product_announcement|pure_lifestyle|direct_offer",
+    "cta_style": "pill_button|rounded_rectangle_button|text_link_with_arrow|swipe_up_icon|implicit_editorial_style|ghost_button",
+    "cta_urgency": "none|low|medium|high",
+    "requires_product_image": true,
+    "requires_human_model": false,
+    "requires_lifestyle_scene": false,
+    "text_to_image_ratio": "text_dominant|balanced|image_dominant",
+    "information_density": "minimal|moderate|information_rich"
   },
+
+  "social_proof_elements": {
+    "has_star_rating": false,
+    "has_review_count": false,
+    "has_testimonial_text": false,
+    "has_user_photo": false,
+    "has_press_mention": false,
+    "has_certification_badge": false,
+    "has_follower_count": false,
+    "trust_signal_count": 0
+  },
+
   "cta_structure": {
     "has_cta_button": true,
-    "has_cta_subtext": false
+    "cta_button_style": "filled|outlined|ghost|text_only|null",
+    "cta_button_shape": "pill|rounded_rectangle|sharp_rectangle|null",
+    "has_cta_subtext": false,
+    "cta_position_in_frame": "bottom|middle|top|floating|null"
+  },
+
+  "decorative_design_elements": {
+    "has_geometric_shapes": false,
+    "has_gradient_overlays": false,
+    "has_pattern_texture": false,
+    "has_border_frame": false,
+    "has_badge_or_sticker": false,
+    "has_icon_set": false,
+    "has_progress_or_list_indicators": false,
+    "has_price_tag_element": false,
+    "has_discount_callout": false,
+    "element_descriptions": ["describe each decorative element seen"]
+  },
+
+  "emotional_triggers": {
+    "primary_emotion_targeted": "desire|trust|urgency|fear_of_missing_out|curiosity|aspiration|belonging|pride",
+    "secondary_emotion": "string or null",
+    "psychological_techniques": ["e.g. social_proof", "scarcity", "authority", "reciprocity", "identity_alignment"],
+    "target_audience_signal": "describe implied audience from visual cues (e.g. young professionals, luxury seekers, fitness enthusiasts)"
+  },
+
+  "recreation_blueprint": {
+    "complexity_level": "simple|moderate|complex|very_complex",
+    "key_success_factors": ["list the 3-5 most important visual/content elements that make this ad effective"],
+    "critical_zones": ["list zone IDs that are ESSENTIAL to replicate"],
+    "flexible_zones": ["list zone IDs that can be adapted freely"],
+    "color_replacement_strategy": "describe how to adapt the color palette for a different brand",
+    "font_replacement_strategy": "describe font equivalents to use",
+    "product_placement_instructions": "precise instructions for placing the new product image in this layout",
+    "overall_recreation_prompt": "A single comprehensive paragraph instruction for an AI image generator to recreate this exact ad layout and visual style with a different brand's product, without copying the original brand."
   }
 }
 
-STRICT VALIDATION RULES:
-1. If zones overlap → INVALID
-2. If image height is assumed without reading → INVALID
-3. If competitor brand name appears in JSON → INVALID
-4. If full headline text is copied → INVALID
-5. If content_type not in allowed list → INVALID
-6. If hook_type not in controlled vocabulary → INVALID
+STRICT VALIDATION:
+1. No zone overlaps
+2. No assumed image dimensions
+3. No competitor brand/product names
+4. No copied headline text
+5. All controlled vocabulary values must match allowed lists
+6. recreation_blueprint.overall_recreation_prompt MUST be detailed (100+ words)
+7. color_palette.all_extracted_colors must include minimum 3 colors
 
-Return VALID JSON ONLY. No explanations. No markdown.`;
+Return VALID JSON ONLY. No markdown. No explanations. No text before or after JSON.`;
 
 
 // ═══════════════════════════════════════════════════════════
@@ -325,7 +459,7 @@ export class AdConceptsService {
         try {
             const message = await client.messages.create({
                 model: this.model,
-                max_tokens: 4096,
+                max_tokens: 8192,
                 system: CONCEPT_ANALYSIS_SYSTEM_PROMPT,
                 messages: [
                     {
@@ -582,17 +716,64 @@ export class AdConceptsService {
             parsed.concept_name = `${this.capitalizeWords(layoutLabel)} ${this.capitalizeWords(moodLabel)} Ad`.trim();
         }
 
+        // ── Ensure new enriched sections have defaults if missing ──
+        if (!parsed.color_palette || typeof parsed.color_palette !== 'object') {
+            parsed.color_palette = {
+                primary_background: parsed.visual_style?.dominant_background_color || '#000000',
+                all_extracted_colors: [],
+                color_temperature: 'neutral',
+                contrast_level: 'medium',
+            };
+        }
+        if (!parsed.typography_system || typeof parsed.typography_system !== 'object') {
+            parsed.typography_system = {
+                headline_font_class: 'sans-serif',
+                headline_weight: 'bold',
+                body_font_class: 'sans-serif',
+                body_weight: 'regular',
+                uses_mixed_weights: false,
+                uses_mixed_colors: false,
+            };
+        }
+        if (!parsed.social_proof_elements || typeof parsed.social_proof_elements !== 'object') {
+            parsed.social_proof_elements = { trust_signal_count: 0 };
+        }
+        if (!parsed.decorative_design_elements || typeof parsed.decorative_design_elements !== 'object') {
+            parsed.decorative_design_elements = { element_descriptions: [] };
+        }
+        if (!parsed.emotional_triggers || typeof parsed.emotional_triggers !== 'object') {
+            parsed.emotional_triggers = {
+                primary_emotion_targeted: 'desire',
+                psychological_techniques: [],
+            };
+        }
+        if (!parsed.recreation_blueprint || typeof parsed.recreation_blueprint !== 'object') {
+            parsed.recreation_blueprint = {
+                complexity_level: 'moderate',
+                key_success_factors: [],
+                critical_zones: [],
+                flexible_zones: [],
+                overall_recreation_prompt: '',
+            };
+        }
+
         // ── Clean up legacy flat fields ──
         delete parsed.visual_style.background_hex;
         delete parsed.visual_style.font_color_primary;
 
-        // ── Log strict extraction summary ──
-        this.logger.log(`[STRICT EXTRACTION] ✅ Validated: ${parsed.layout.zones.length} zones, layout=${parsed.layout.type}, hook=${parsed.content_pattern.hook_type}`);
+        // ── Log enriched extraction summary ──
+        this.logger.log(`[DEEP EXTRACTION] ✅ Zones: ${parsed.layout.zones.length}, layout: ${parsed.layout.type}, hook: ${parsed.content_pattern.hook_type}, mood: ${parsed.visual_style.mood}`);
         if (parsed.image_meta) {
-            this.logger.log(`[STRICT EXTRACTION] Image: ${parsed.image_meta.width}x${parsed.image_meta.height} (${parsed.image_meta.orientation})`);
+            this.logger.log(`[DEEP EXTRACTION] Image: ${parsed.image_meta.width}x${parsed.image_meta.height} (${parsed.image_meta.orientation})`);
         }
-        if (parsed.cta_structure) {
-            this.logger.log(`[STRICT EXTRACTION] CTA: button=${parsed.cta_structure.has_cta_button}, subtext=${parsed.cta_structure.has_cta_subtext}`);
+        if (parsed.color_palette?.all_extracted_colors?.length) {
+            this.logger.log(`[DEEP EXTRACTION] Colors: ${parsed.color_palette.all_extracted_colors.join(', ')}`);
+        }
+        if (parsed.recreation_blueprint?.complexity_level) {
+            this.logger.log(`[DEEP EXTRACTION] Complexity: ${parsed.recreation_blueprint.complexity_level}`);
+        }
+        if (parsed.emotional_triggers?.primary_emotion_targeted) {
+            this.logger.log(`[DEEP EXTRACTION] Emotion: ${parsed.emotional_triggers.primary_emotion_targeted}`);
         }
 
         return parsed as AdConceptAnalysis;
