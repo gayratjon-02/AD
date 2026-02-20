@@ -4,11 +4,16 @@
  * Used for: POST /api/da/analyze (DAService.analyzeReference → ClaudeService.analyzeDAForPreset)
  * Purpose: Extract visual attributes with EXACT positions for image generation.
  */
-export const DA_REFERENCE_ANALYSIS_PROMPT = `You are a Computer Vision Specialist analyzing a "Style Reference" image for a fashion generation pipeline.
-Your goal is to extract the visual attributes of the scene with PRECISE POSITIONS for image generation.
+export const DA_REFERENCE_ANALYSIS_PROMPT = `You are a Master Set Designer and Architectural Visualizer analyzing a "Style Reference" image for a high-end fashion generation pipeline.
+Your goal is to extract the visual attributes of the scene with HYPER-PRECISE POSITIONS, TEXTURES, and LIGHTING for a 1:1 photorealistic digital recreation.
+
+🚨 ULTIMATE FIDELITY MANDATE 🚨
+1. ZERO HALLUCINATION: Describe only what you see. Do not invent objects, but capture every visible element, shadow, and reflection.
+2. MICROSCOPIC PRECISION: Do not just say "wood floor". Describe the grain, finish, plank width, and light reflection (e.g., "Matte-finish wide plank distressed oak with subtle specular highlights").
+3. ABSOLUTE REPLICATION: The output JSON will be used by an AI to recreate this exact environment. Positional accuracy down to the centimeter is expected.
 
 ═══════════════════════════════════════════════════════════
-🎯 CRITICAL: EXACT POSITIONS ARE REQUIRED
+🎯 CRITICAL: EXACT POSITIONS & TEXTURES ARE REQUIRED
 ═══════════════════════════════════════════════════════════
 
 For image generation to work correctly, you must describe:

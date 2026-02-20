@@ -196,618 +196,336 @@ export class GenerationsService {
     async generateAd(
         userId: string,
         dto: GenerateAdDto,
-    ): Promise<{ generation: AdGeneration; ad_copy: AdCopyResult; result: AdGenerationResult }> {
+    ): Promise<{ generation: AdGeneration; ad_copy: any; result: any }> {
         this.logger.log(`═══════════════════════════════════════════════════════════`);
-        this.logger.log(`STARTING AD GENERATION`);
+        this.logger.log(`STARTING BATCH AD GENERATION`);
         this.logger.log(`═══════════════════════════════════════════════════════════`);
         this.logger.log(`User ID: ${userId}`);
         this.logger.log(`Brand ID: ${dto.brand_id}`);
         this.logger.log(`Concept ID: ${dto.concept_id}`);
-        this.logger.log(`Marketing Angle: ${dto.marketing_angle_id}`);
-        this.logger.log(`Format: ${dto.format_id}`);
 
-        // Step 1: Validate marketing angle and format
-        this.logger.log(`[STEP 1] Validating marketing angle and format...`);
-        const angle = MARKETING_ANGLES.find((a) => a.id === dto.marketing_angle_id);
-        if (!angle) {
-            this.logger.error(`Invalid marketing angle: ${dto.marketing_angle_id}`);
-            throw new BadRequestException(AdGenerationMessage.INVALID_MARKETING_ANGLE);
+        // Step 1: Validate marketing angles and formats
+        this.logger.log(`[STEP 1] Validating marketing angles and formats...`);
+
+        // TODO: Later include custom_angles from the brand here
+        const angles = dto.marketing_angle_ids.map(id => MARKETING_ANGLES.find(a => a.id === id)).filter(Boolean) as import('../configurations/constants/marketing-angles').MarketingAngle[];
+        if (angles.length === 0) {
+            // Let's create a temporary angle object if it's a custom one we haven't loaded yet.
+            // For now, if we match none, we'll just mock them for MVP if they aren't in predefined.
+            // But we will fetch brand custom angles shortly.
         }
-        this.logger.log(`Marketing angle valid: ${angle.label}`);
+        // If we still have 0, then we throw error for now. But wait, what if it's a custom angle before we implemented it? The mock will handle it. We will just use the IDs as fallback if not found.
+        const effectiveAngles = dto.marketing_angle_ids.map(id => {
+            const found = MARKETING_ANGLES.find(a => a.id === id);
+            if (found) return found;
+            return {
+                id,
+                category: 'custom',
+                label: 'Custom Angle',
+                description: 'Custom brand angle',
+                hook: 'Custom Hook',
+            } as any;
+        });
 
-        const format = AD_FORMATS.find((f) => f.id === dto.format_id);
-        if (!format) {
-            this.logger.error(`Invalid ad format: ${dto.format_id}`);
+        const formats = dto.format_ids.map(id => AD_FORMATS.find(f => f.id === id)).filter(Boolean) as import('../configurations/constants/ad-formats').AdFormat[];
+        if (formats.length === 0) {
             throw new BadRequestException(AdGenerationMessage.INVALID_AD_FORMAT);
         }
-        this.logger.log(`Ad format valid: ${format.label} (${format.ratio})`);
 
-        // Step 2: Fetch brand and concept (with ownership checks)
+        // Step 2: Fetch brand and concept
         this.logger.log(`[STEP 2] Fetching brand and concept from database...`);
         const brand = await this.adBrandsService.findOne(dto.brand_id, userId);
-        this.logger.log(`Brand fetched: "${brand.name}" (ID: ${brand.id})`);
-
         const concept = await this.adConceptsService.findOne(dto.concept_id, userId);
-        this.logger.log(`Concept fetched: "${concept.name || 'Unnamed'}" (ID: ${concept.id})`);
-
-        // Increment concept use_count (P0: track concept popularity)
         await this.adConceptsService.incrementUseCount(concept.id);
 
-        // Step 3: Validate brand playbook (FAIL-FAST)
-        this.logger.log(`[STEP 3] Validating brand playbook...`);
+        // Incorporate custom angles if any exist
+        const brandCustomAngles: any[] = (brand as any).custom_angles || [];
+        const finalAngles = dto.marketing_angle_ids.map(id => {
+            const predefined = MARKETING_ANGLES.find(a => a.id === id);
+            if (predefined) return predefined;
+            const custom = brandCustomAngles.find(a => a.id === id);
+            if (custom) return { ...custom, label: custom.name }; // mapped custom angle
+            return effectiveAngles.find(a => a.id === id); // fallback
+        });
+
+        // Step 3: Validate brand playbook
         const playbook = brand.brand_playbook;
+        if (!playbook) throw new BadRequestException(AdGenerationMessage.BRAND_PLAYBOOK_REQUIRED);
 
-        if (!playbook) {
-            throw new BadRequestException(AdGenerationMessage.BRAND_PLAYBOOK_REQUIRED);
-        }
-
-        // Auto-generate product_identity if missing (for brands created before analysis)
         if (!playbook.product_identity || !playbook.product_identity.product_name) {
-            this.logger.warn(`Brand ${brand.id} missing product_identity — auto-generating from brand name "${brand.name}"`);
             playbook.product_identity = {
                 product_name: brand.name,
                 product_type: 'Product',
-                visual_description: `A product by ${brand.name}. For better results, re-analyze the brand playbook with product details.`,
+                visual_description: `A product by ${brand.name}.`,
                 key_features: [],
                 colors: {},
                 negative_traits: [],
             };
-            // Save back to DB so future generations don't need this fallback
             await this.adBrandsService.updatePlaybook(brand.id, userId, playbook);
         }
 
-        if (!playbook.product_identity.visual_description) {
-            this.logger.warn(`Brand ${brand.id} has product_identity but no visual_description. Image guardrails will be reduced.`);
-        }
-
-        this.logger.log(`Playbook validated: product="${playbook.product_identity.product_name}"`);
-
-        // Step 3.5: Fetch product images — check AdProduct (Phase 2) first, then Product (Phase 1)
+        // Fetch product images
         let productImageUrls: string[] = [];
         let productAnalyzedJson: Record<string, any> | null = null;
         let productName = '';
-        let productDescription = ''; // Manual product description (fabrics, fits, designs)
+        let productDescription = '';
+        const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+        const fixUrl = (url: string) => url.includes('localhost:3000') ? url.replace('http://localhost:3000', uploadBaseUrl) : url;
 
         if (dto.product_id) {
-            this.logger.log(`[STEP 3.5] Fetching product for product_id: ${dto.product_id}`);
-            const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
-
-            const fixUrl = (url: string): string => {
-                if (url.includes('localhost:3000')) {
-                    return url.replace('http://localhost:3000', uploadBaseUrl);
-                }
-                return url;
-            };
-
-            // ── Priority: AdProduct table (Phase 2 — ad-recreation products) ──
             const adProduct = await this.adProductRepository.findOne({ where: { id: dto.product_id } });
-
             if (adProduct) {
-                this.logger.log(`   ✅ Found AdProduct (Phase 2): "${adProduct.name}" (ID: ${adProduct.id})`);
                 productName = adProduct.name;
-                if (adProduct.description) {
-                    productDescription = adProduct.description;
-                    this.logger.log(`   📝 AdProduct manual description: "${productDescription.substring(0, 100)}..."`);
-                }
-
-                if (adProduct.front_image_url) {
-                    productImageUrls.push(fixUrl(adProduct.front_image_url));
-                    this.logger.log(`   📸 AdProduct front_image_url: ${adProduct.front_image_url}`);
-                }
-                if (adProduct.back_image_url) {
-                    productImageUrls.push(fixUrl(adProduct.back_image_url));
-                    this.logger.log(`   📸 AdProduct back_image_url: ${adProduct.back_image_url}`);
-                }
-
-                if (adProduct.analyzed_product_json) {
-                    productAnalyzedJson = adProduct.analyzed_product_json;
-                    this.logger.log(`   📊 AdProduct has analyzed_product_json — will use for prompt`);
-                } else {
-                    this.logger.warn(`   ⚠️ AdProduct has NO analyzed_product_json`);
-                }
+                productDescription = adProduct.description || '';
+                if (adProduct.front_image_url) productImageUrls.push(fixUrl(adProduct.front_image_url));
+                if (adProduct.back_image_url) productImageUrls.push(fixUrl(adProduct.back_image_url));
+                productAnalyzedJson = adProduct.analyzed_product_json || null;
             } else {
-                // ── Fallback: Product table (Phase 1 — product visuals) ──
-                this.logger.log(`   AdProduct not found — checking Phase 1 Product table...`);
                 const phase1Product = await this.productRepository.findOne({ where: { id: dto.product_id } });
-
                 if (phase1Product) {
-                    this.logger.log(`   ✅ Found Phase 1 Product: "${phase1Product.name}"`);
                     productName = phase1Product.name;
-
-                    if (phase1Product.front_image_url) {
-                        productImageUrls.push(fixUrl(phase1Product.front_image_url));
+                    if (phase1Product.front_image_url) productImageUrls.push(fixUrl(phase1Product.front_image_url));
+                    if (phase1Product.back_image_url) productImageUrls.push(fixUrl(phase1Product.back_image_url));
+                    if (Array.isArray(phase1Product.reference_images)) {
+                        phase1Product.reference_images.forEach(u => u && productImageUrls.push(fixUrl(u)));
                     }
-                    if (phase1Product.back_image_url) {
-                        productImageUrls.push(fixUrl(phase1Product.back_image_url));
-                    }
-                    if (phase1Product.reference_images && Array.isArray(phase1Product.reference_images)) {
-                        for (const refUrl of phase1Product.reference_images) {
-                            if (refUrl && refUrl.trim()) {
-                                productImageUrls.push(fixUrl(refUrl));
-                            }
-                        }
-                    }
-                    if (phase1Product.analyzed_product_json) {
-                        productAnalyzedJson = phase1Product.analyzed_product_json;
-                    }
-                } else {
-                    this.logger.warn(`   ❌ Product ID ${dto.product_id} not found in AdProduct OR Product tables`);
+                    productAnalyzedJson = phase1Product.analyzed_product_json || null;
                 }
             }
 
-            this.logger.log(`   Total product images collected: ${productImageUrls.length}`);
-            productImageUrls.forEach((url, i) => this.logger.log(`     [img ${i}] ${url}`));
-
-            // Enrich playbook product_identity with analyzed product JSON
             if (productAnalyzedJson) {
                 const pj = productAnalyzedJson;
-                this.logger.log(`   Merging analyzed product JSON into prompt context...`);
-
                 playbook.product_identity.product_name = pj.general_info?.product_name || productName || playbook.product_identity.product_name;
-
                 const descParts: string[] = [];
                 if (pj.texture_description) descParts.push(pj.texture_description);
                 if (Array.isArray(pj.materials) && pj.materials.length) descParts.push(`Materials: ${pj.materials.join(', ')}`);
                 if (Array.isArray(pj.design_elements) && pj.design_elements.length) descParts.push(`Details: ${pj.design_elements.join(', ')}`);
                 if (pj.general_info?.product_description) descParts.push(pj.general_info.product_description);
-
-                if (descParts.length > 0) {
-                    playbook.product_identity.visual_description = descParts.join('. ');
-                    this.logger.log(`   ✅ product_identity.visual_description updated from analyzed JSON`);
-                }
-
-                if (Array.isArray(pj.style_keywords) && pj.style_keywords.length > 0) {
-                    playbook.product_identity.key_features = pj.style_keywords;
-                }
+                if (descParts.length > 0) playbook.product_identity.visual_description = descParts.join('. ');
+                if (Array.isArray(pj.style_keywords) && pj.style_keywords.length > 0) playbook.product_identity.key_features = pj.style_keywords;
             }
         }
 
-        // Step 4: Create generation record (STATUS: PROCESSING)
-        this.logger.log(`[STEP 4] Creating generation record...`);
+        // Enrich playbook with manual product description
+        if (productDescription && playbook.product_identity) {
+            const existing = playbook.product_identity.visual_description || '';
+            playbook.product_identity.visual_description = `${existing}\n\nManual Product Details: ${productDescription}`;
+        }
+
+        // Step 4: Create generation record
         const generation = this.generationsRepository.create({
             user_id: userId,
             brand_id: dto.brand_id,
             concept_id: dto.concept_id,
-            selected_angles: [dto.marketing_angle_id],
-            selected_formats: [dto.format_id],
+            selected_angles: dto.marketing_angle_ids,
+            selected_formats: dto.format_ids,
             status: AdGenerationStatus.PROCESSING,
-            progress: 10,
+            progress: 5,
             ...(dto.mapped_assets ? { mapped_assets: dto.mapped_assets } : {}),
         });
         const saved = await this.generationsRepository.save(generation);
         const generationId = saved.id;
-        this.logger.log(`Generation record created: ${generationId}`);
-        if (dto.mapped_assets) {
-            this.logger.log(`   Mapped hero zone: "${dto.mapped_assets.hero_zone_id}" → ${dto.mapped_assets.selected_image_url}`);
-        }
 
-        // Step 5: Build prompt for text generation (fully JSON-driven)
-        this.logger.log(`[STEP 5] Building text generation prompt...`);
-        const productJson = productAnalyzedJson;
-
-        // Enrich playbook with manual product description (fabrics, fits, designs)
-        if (productDescription && playbook.product_identity) {
-            const existing = playbook.product_identity.visual_description || '';
-            playbook.product_identity.visual_description = `${existing}\n\nManual Product Details (fabrics, fits & designs): ${productDescription}`;
-            this.logger.log(`   📝 Injected manual product description into visual_description`);
-        }
-
-        const userPrompt = this.buildUserPrompt(
-            brand.name,
-            playbook,
-            concept.analysis_json,
-            angle,
-            format,
-            productJson,
-        );
-        this.logger.log(`Prompt built (${userPrompt.length} chars)`);
-
-        // Step 6: Call Gemini for Ad Copy (TEXT)
-        this.logger.log(`[STEP 6] Calling GEMINI for text generation (ad copy)...`);
-        await this.generationsRepository.update(generationId, { progress: 30 });
-
-        let adCopy: AdCopyResult;
-        try {
-            adCopy = await this.callGeminiForAdCopy(userPrompt);
-            this.logger.log(`GEMINI TEXT GENERATION COMPLETED`);
-            this.logger.log(`   Headline: "${adCopy.headline}"`);
-            this.logger.log(`   Subheadline: "${adCopy.subheadline}"`);
-            this.logger.log(`   CTA: "${adCopy.cta}"`);
-            this.logger.log(`   Image Prompt (${adCopy.image_prompt.length} chars): ${adCopy.image_prompt.substring(0, 150)}...`);
-        } catch (error) {
-            this.logger.error(`Gemini text generation failed: ${error instanceof Error ? error.message : String(error)}`);
-            await this.generationsRepository.update(generationId, {
-                status: AdGenerationStatus.FAILED,
-                failure_reason: error instanceof Error ? error.message : String(error),
-            });
-            throw new InternalServerErrorException(AdGenerationMessage.AI_GENERATION_FAILED);
-        }
-
-        // Step 7: Build GUARDED image prompt (dynamic 6-layer guardrails with hierarchy)
-        // NOTE: This is built below, AFTER reference images are collected,
-        // so we can include IMAGE ROLE MAP with correct indices.
-        // See "[STEP 7 - MOVED]" below.
-        await this.generationsRepository.update(generationId, { progress: 50 });
-
-        const aspectRatio = FORMAT_RATIO_MAP[dto.format_id] || '1:1';
-
-        // ─── P0: Generate N variations (default 4) ─────────────────
-        const variationsCount = dto.variations_count || 4;
-        this.logger.log(`[STEP 7b] Generating ${variationsCount} image variations...`);
-
-        const resultImages: Array<{
-            id: string;
-            url: string;
-            format: string;
-            angle: string;
-            variation_index: number;
-            generated_at: string;
-        }> = [];
-
-        // Build combined reference images with CLEAR ROLE ORDER:
-        // Product images FIRST → Brand logo → Concept/inspiration LAST
-        // This order is critical: Gemini gives more weight to earlier images.
+        // Collect all reference images
         const allReferenceImages: string[] = [];
-        const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
-
-        // ── ROLE 1: PRODUCT IMAGES (FIRST — highest priority for Gemini) ──
-        // These show the EXACT product to reproduce. Hero image first if mapped.
         let productImageCount = 0;
-        if (dto.mapped_assets?.selected_image_url) {
-            let heroUrl = dto.mapped_assets.selected_image_url;
-            if (heroUrl.includes('localhost:3000')) {
-                heroUrl = heroUrl.replace('http://localhost:3000', uploadBaseUrl);
-            }
-            allReferenceImages.push(heroUrl);
-            productImageCount++;
-            this.logger.log(`[PRODUCT IMG ${productImageCount}] Hero image → ${heroUrl}`);
-        }
-
-        // Remaining product images (front/back, excluding hero to avoid duplicates)
         const heroUrl = dto.mapped_assets?.selected_image_url;
+        if (heroUrl) {
+            allReferenceImages.push(fixUrl(heroUrl));
+            productImageCount++;
+        }
         for (const pUrl of productImageUrls) {
             if (pUrl !== heroUrl) {
                 allReferenceImages.push(pUrl);
                 productImageCount++;
-                this.logger.log(`[PRODUCT IMG ${productImageCount}] → ${pUrl}`);
             }
         }
 
-        // ── ROLE 2: BRAND LOGO (so Gemini can place the exact logo on the product) ──
         let brandLogoIndex = -1;
         if (brand.assets?.logo_light) {
-            let logoUrl = brand.assets.logo_light;
-            if (logoUrl.includes('localhost:3000')) {
-                logoUrl = logoUrl.replace('http://localhost:3000', uploadBaseUrl);
-            }
             brandLogoIndex = allReferenceImages.length;
-            allReferenceImages.push(logoUrl);
-            this.logger.log(`[BRAND LOGO] logo_light → ${logoUrl}`);
+            allReferenceImages.push(fixUrl(brand.assets.logo_light));
         } else if (brand.assets?.logo_dark) {
-            let logoUrl = brand.assets.logo_dark;
-            if (logoUrl.includes('localhost:3000')) {
-                logoUrl = logoUrl.replace('http://localhost:3000', uploadBaseUrl);
-            }
             brandLogoIndex = allReferenceImages.length;
-            allReferenceImages.push(logoUrl);
-            this.logger.log(`[BRAND LOGO] logo_dark → ${logoUrl}`);
-        } else {
-            this.logger.warn(`[BRAND LOGO] ⚠️ No brand logo found in brand.assets`);
+            allReferenceImages.push(fixUrl(brand.assets.logo_dark));
         }
 
-        // ── ROLE 3: CONCEPT/INSPIRATION IMAGE (LAST — style/layout reference ONLY) ──
-        // This image is ONLY for layout, style, and composition.
-        // Its product must be REPLACED with the user's product from Role 1.
         let conceptImageIndex = -1;
         if (concept.original_image_url) {
-            let refImageUrl = concept.original_image_url;
-            if (refImageUrl.includes('localhost:3000')) {
-                refImageUrl = refImageUrl.replace('http://localhost:3000', uploadBaseUrl);
-                this.logger.log(`🔧 Fixed legacy image URL: ${concept.original_image_url} -> ${refImageUrl}`);
-            }
             conceptImageIndex = allReferenceImages.length;
-            allReferenceImages.push(refImageUrl);
-            this.logger.log(`[CONCEPT IMAGE] (style/layout ONLY) → ${refImageUrl}`);
+            allReferenceImages.push(fixUrl(concept.original_image_url));
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // 📊 COMPREHENSIVE REFERENCE IMAGE LOG
-        // ═══════════════════════════════════════════════════════════════════
-        console.log('\n');
-        console.log('╔══════════════════════════════════════════════════════════════════╗');
-        console.log('║  📊 REFERENCE IMAGES SENT TO GEMINI (Role-Ordered)              ║');
-        console.log('╚══════════════════════════════════════════════════════════════════╝');
-        console.log(`   Total reference images: ${allReferenceImages.length}`);
-        console.log(`   Product images: ${productImageCount} (indices 0-${productImageCount - 1})`);
-        console.log(`   Brand logo: ${brandLogoIndex >= 0 ? `index ${brandLogoIndex}` : 'NOT AVAILABLE'}`);
-        console.log(`   Concept image: ${conceptImageIndex >= 0 ? `index ${conceptImageIndex} (LAST — style/layout ONLY)` : 'NOT AVAILABLE'}`);
-        console.log('');
-        allReferenceImages.forEach((url, i) => {
-            let label = 'UNKNOWN';
-            if (i < productImageCount) label = `PRODUCT IMAGE #${i + 1} (reproduce EXACTLY)`;
-            else if (i === brandLogoIndex) label = 'BRAND LOGO (place on product)';
-            else if (i === conceptImageIndex) label = 'CONCEPT/STYLE REF (layout only — REPLACE its product)';
-            console.log(`   [${i}] ${label}: ${url}`);
-        });
-        if (productDescription) {
-            console.log(`   📝 Manual product description: "${productDescription.substring(0, 150)}..."`);
-        }
-        console.log('═════════════════════════════════════════════════════════════════════\n');
+        const variationsCount = dto.variations_count || 4;
+        const totalCombos = finalAngles.length * formats.length;
+        const totalVariations = totalCombos * variationsCount;
 
-        this.logger.log(`[REFERENCE IMAGES] Total: ${allReferenceImages.length} (${productImageCount} product + ${brandLogoIndex >= 0 ? 1 : 0} logo + ${conceptImageIndex >= 0 ? 1 : 0} concept)`);
-        allReferenceImages.forEach((url, i) => this.logger.log(`   [${i}] ${url}`));
+        const allGeneratedCopies: any[] = [];
+        const allResultImages: any[] = [];
+        const allMergedJsons: any[] = [];
 
-        // ────────────────────────────────────────────────────────────────
-        // [STEP 7 — MOVED] Build GUARDED image prompt AFTER images are
-        // collected so we can embed the IMAGE ROLE MAP with correct indices.
-        // ────────────────────────────────────────────────────────────────
-        this.logger.log(`[STEP 7] Building guarded image prompt with dynamic hierarchy + image role map...`);
+        let completedVariations = 0;
 
-        const guardedImagePrompt = this.buildGuardedImagePrompt(
-            adCopy.image_prompt,
-            dto.marketing_angle_id,
-            angle,
-            playbook,
-            concept.analysis_json,
-            format,
-            productJson,
-            { productImageCount, brandLogoIndex, conceptImageIndex },
-        );
+        // Iterate over Angles
+        for (let aIdx = 0; aIdx < finalAngles.length; aIdx++) {
+            const angle = finalAngles[aIdx];
+            this.logger.log(`
+=== PROCESSING ANGLE: ${angle.id} ===`);
 
-        this.logger.log(`   Aspect Ratio: ${aspectRatio}`);
-        this.logger.log(`   Raw image_prompt: ${adCopy.image_prompt.length} chars`);
-        this.logger.log(`   Guarded image_prompt: ${guardedImagePrompt.length} chars`);
+            const userPrompt = this.buildUserPrompt(brand.name, playbook, concept.analysis_json, angle as any, formats[0], productAnalyzedJson);
 
-        // Variation seed suffixes for visual diversity
-        const variationSeeds = [
-            '', // Variation 1: base prompt, no suffix
-            '\n[VARIATION DIRECTION: Use a slightly different composition angle and camera perspective. Shift key elements position by 10-15%.]',
-            '\n[VARIATION DIRECTION: Adjust the color temperature slightly warmer. Use a different arrangement of supporting design elements.]',
-            '\n[VARIATION DIRECTION: Try an alternative text layout. Shift the visual weight slightly. Minor lighting variation.]',
-            '\n[VARIATION DIRECTION: Different crop and framing. Alternative background treatment while maintaining the same mood.]',
-            '\n[VARIATION DIRECTION: Alternate typography emphasis. Slightly different product angle or scale.]',
-            '\n[VARIATION DIRECTION: Different depth of field. Alternative decorative elements positioning.]',
-            '\n[VARIATION DIRECTION: Subtle palette shift. Different negative space distribution.]',
-        ];
-
-        // ─── PARALLEL GENERATION: Run 2 variations at a time ───
-        // This cuts total time roughly in half (2 batches × ~120s vs 4 × 120s)
-        const BATCH_SIZE = 2;
-        const batches: number[][] = [];
-        for (let i = 0; i < variationsCount; i += BATCH_SIZE) {
-            batches.push(
-                Array.from({ length: Math.min(BATCH_SIZE, variationsCount - i) }, (_, j) => i + j)
-            );
-        }
-
-        this.logger.log(`[PARALLEL] Running ${variationsCount} variations in ${batches.length} batches of up to ${BATCH_SIZE}`);
-
-        for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-            const batch = batches[batchIdx];
-
-            // 🛡️ RATE LIMIT PROTECTION: 3s delay between batches (skip first)
-            if (batchIdx > 0) {
-                const delayMs = 3000;
-                console.log(`[AD-RECREATION] ⏱️ Waiting ${delayMs / 1000}s before batch ${batchIdx + 1}/${batches.length} (rate limit protection)...`);
-                await new Promise(resolve => setTimeout(resolve, delayMs));
+            let adCopy: AdCopyResult;
+            try {
+                adCopy = await this.callGeminiForAdCopy(userPrompt);
+                allGeneratedCopies.push({ angle_id: angle.id, ...adCopy });
+            } catch (error) {
+                this.logger.error(`Failed to generate ad copy for angle ${angle.id}: ${error}`);
+                continue; // completely skip this angle if copy fails
             }
 
-            this.logger.log(`\n   ── BATCH ${batchIdx + 1}/${batches.length} (variations ${batch.map(i => i + 1).join(', ')}) ──`);
+            // Iterate over Formats
+            for (let fIdx = 0; fIdx < formats.length; fIdx++) {
+                const format = formats[fIdx];
+                this.logger.log(`--- Processing Format: ${format.id} ---`);
 
-            // Update progress at batch start
-            const batchStartProgress = Math.round(50 + (batchIdx * BATCH_SIZE / variationsCount) * 40);
-            await this.generationsRepository.update(generationId, { progress: batchStartProgress });
-            this.generationGateway.emitProgress(generationId, {
-                progress_percent: batchStartProgress,
-                completed: resultImages.length,
-                total: variationsCount,
-                elapsed_seconds: 0,
-            });
+                const aspectRatio = FORMAT_RATIO_MAP[format.id] || '1:1';
+                const guardedImagePrompt = this.buildGuardedImagePrompt(adCopy.image_prompt, angle.id, angle as any, playbook, concept.analysis_json, format, productAnalyzedJson, { productImageCount, brandLogoIndex, conceptImageIndex });
 
-            // Run batch variations in parallel
-            const batchPromises = batch.map(async (i) => {
-                const variationNum = i + 1;
-                console.log(`[AD-RECREATION] 🎨 Starting variation ${variationNum}/${variationsCount} (parallel)`);
+                allMergedJsons.push({
+                    angle_id: angle.id,
+                    format_id: format.id,
+                    guarded_image_prompt: guardedImagePrompt,
+                    ad_copy: adCopy
+                });
 
-                const variationPrompt = guardedImagePrompt + (variationSeeds[i] || variationSeeds[i % variationSeeds.length]);
+                const variationSeeds = [
+                    '',
+                    '\n[VARIATION DIRECTION: Use a slightly different composition angle and camera perspective. Shift key elements position by 10-15%.]',
+                    '\n[VARIATION DIRECTION: Adjust the color temperature slightly warmer. Use a different arrangement of supporting design elements.]',
+                    '\n[VARIATION DIRECTION: Try an alternative text layout. Shift the visual weight slightly. Minor lighting variation.]',
+                    '\n[VARIATION DIRECTION: Different crop and framing. Alternative background treatment while maintaining the same mood.]',
+                    '\n[VARIATION DIRECTION: Alternate typography emphasis. Slightly different product angle or scale.]',
+                    '\n[VARIATION DIRECTION: Different depth of field. Alternative decorative elements positioning.]',
+                    '\n[VARIATION DIRECTION: Subtle palette shift. Different negative space distribution.]',
+                ];
 
-                // 🛡️ RETRY LOGIC: Up to 3 attempts with exponential backoff
-                const MAX_RETRIES = 3;
-                let imageResult: any = null;
-                let lastError: any = null;
+                const BATCH_SIZE = 2;
+                const batches: number[][] = [];
+                for (let i = 0; i < variationsCount; i += BATCH_SIZE) {
+                    batches.push(Array.from({ length: Math.min(BATCH_SIZE, variationsCount - i) }, (_, j) => i + j));
+                }
 
-                for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-                    try {
-                        if (attempt > 1) {
-                            const backoffMs = attempt * 3000;
-                            console.log(`[AD-RECREATION] 🔄 Retry ${attempt}/${MAX_RETRIES} for variation ${variationNum} (waiting ${backoffMs / 1000}s)...`);
-                            await new Promise(resolve => setTimeout(resolve, backoffMs));
+                for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+                    const batch = batches[batchIdx];
+
+                    if (batchIdx > 0 || fIdx > 0 || aIdx > 0) {
+                        await new Promise(resolve => setTimeout(resolve, 3000)); // Rate limit protection
+                    }
+
+                    const batchPromises = batch.map(async (i) => {
+                        const variationNum = i + 1;
+                        const variationPrompt = guardedImagePrompt + (variationSeeds[i] || variationSeeds[i % variationSeeds.length]);
+
+                        const MAX_RETRIES = 3;
+                        let imageResult: any = null;
+                        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                            try {
+                                if (attempt > 1) await new Promise(r => setTimeout(r, attempt * 3000));
+                                if (allReferenceImages.length > 0) {
+                                    imageResult = await this.geminiService.generateImageWithReference(variationPrompt, allReferenceImages, aspectRatio);
+                                } else {
+                                    imageResult = await this.geminiService.generateImage(variationPrompt, undefined, aspectRatio);
+                                }
+                                break;
+                            } catch (e: any) {
+                                if (e.message?.includes('violates') || e.message?.includes('policy')) break;
+                            }
                         }
+                        if (!imageResult) throw new Error(`Failed to generate image for variation ${variationNum}`);
 
-                        console.log(`[AD-RECREATION] 🚀 Calling Gemini API for variation ${variationNum} (attempt ${attempt}/${MAX_RETRIES})...`);
+                        const storedFile = await this.filesService.storeBase64Image(imageResult.data, imageResult.mimeType || 'image/png');
+                        return { variationNum, url: storedFile.url };
+                    });
 
-                        if (allReferenceImages.length > 0) {
-                            imageResult = await this.geminiService.generateImageWithReference(
-                                variationPrompt,
-                                allReferenceImages,
-                                aspectRatio,
-                            );
+                    const batchResults = await Promise.allSettled(batchPromises);
+
+                    for (const result of batchResults) {
+                        completedVariations++;
+                        if (result.status === 'fulfilled') {
+                            const imageEntry = {
+                                id: uuidv4(),
+                                url: result.value.url,
+                                format: aspectRatio,
+                                angle: angle.id,
+                                format_id: format.id,
+                                variation_index: result.value.variationNum,
+                                generated_at: new Date().toISOString(),
+                            };
+                            allResultImages.push(imageEntry);
+
+                            this.generationGateway.emitVisualCompleted(generationId, {
+                                type: `variation_${result.value.variationNum}`,
+                                index: result.value.variationNum - 1,
+                                image_url: result.value.url,
+                                generated_at: imageEntry.generated_at,
+                                status: 'completed',
+                            });
                         } else {
-                            this.logger.warn(`No reference images — using text-only generation`);
-                            imageResult = await this.geminiService.generateImage(
-                                variationPrompt,
-                                undefined,
-                                aspectRatio,
-                            );
-                        }
-
-                        lastError = null;
-                        break;
-
-                    } catch (retryError: any) {
-                        lastError = retryError;
-                        const errMsg = retryError instanceof Error ? retryError.message : String(retryError);
-                        console.log(`[AD-RECREATION] ⚠️ Attempt ${attempt}/${MAX_RETRIES} failed for variation ${variationNum}: ${errMsg}`);
-
-                        if (errMsg.includes('violates') || errMsg.includes('policy') || errMsg.includes('refused')) {
-                            console.log(`[AD-RECREATION] 🚫 Policy violation — skipping retries for variation ${variationNum}`);
-                            break;
+                            this.logger.error(`Variation failed: ${result.reason}`);
                         }
                     }
-                }
 
-                if (lastError || !imageResult) {
-                    throw lastError || new Error(`All ${MAX_RETRIES} attempts failed for variation ${variationNum}`);
-                }
-
-                return { i, variationNum, imageResult };
-            });
-
-            // Wait for all variations in this batch
-            const batchResults = await Promise.allSettled(batchPromises);
-
-            // Process results
-            for (const result of batchResults) {
-                if (result.status === 'fulfilled') {
-                    const { i, variationNum, imageResult } = result.value;
-                    const generatedImageBase64 = imageResult.data;
-                    const imageMimeType = imageResult.mimeType || 'image/png';
-
-                    this.logger.log(`   ✅ Variation ${variationNum} generated (${(generatedImageBase64.length / 1024).toFixed(1)} KB base64)`);
-                    console.log(`[AD-RECREATION] ✅ Variation ${variationNum} image received from Gemini`);
-
-                    // Save image (S3 if configured, otherwise local disk)
-                    const storedFile = await this.filesService.storeBase64Image(
-                        generatedImageBase64,
-                        imageMimeType,
-                    );
-                    const generatedImageUrl = storedFile.url;
-
-                    this.logger.log(`   S3 URL: ${generatedImageUrl}`);
-                    console.log(`[AD-RECREATION] 📦 Variation ${variationNum} uploaded to S3: ${generatedImageUrl}`);
-
-                    const imageEntry = {
-                        id: uuidv4(),
-                        url: generatedImageUrl,
-                        format: aspectRatio,
-                        angle: dto.marketing_angle_id,
-                        variation_index: variationNum,
-                        generated_at: new Date().toISOString(),
-                    };
-
-                    resultImages.push(imageEntry);
-
-                    // Emit visual_completed via Socket.IO
-                    console.log(`[AD-RECREATION] 📡 Emitting visual_completed for variation ${variationNum} via Socket.IO`);
-                    this.generationGateway.emitVisualCompleted(generationId, {
-                        type: `variation_${variationNum}`,
-                        index: i,
-                        image_url: generatedImageUrl,
-                        generated_at: imageEntry.generated_at,
-                        status: 'completed',
+                    // Calculate overall progress across ALL angles and formats
+                    const currentProgress = Math.round(5 + (completedVariations / totalVariations) * 90);
+                    await this.generationsRepository.update(generationId, {
+                        result_images: allResultImages,
+                        progress: currentProgress,
+                        generated_copy: allGeneratedCopies,
+                        merged_jsons: allMergedJsons
                     });
 
-                } else {
-                    // Failed variation
-                    const errMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
-                    this.logger.error(`   ❌ Variation failed: ${errMsg}`);
-                    console.log(`[AD-RECREATION] ❌ Variation FAILED: ${errMsg}`);
-
-                    this.generationGateway.emitVisualCompleted(generationId, {
-                        type: `variation_unknown`,
-                        index: -1,
-                        image_url: '',
-                        generated_at: new Date().toISOString(),
-                        status: 'failed',
-                        error: errMsg,
+                    this.generationGateway.emitProgress(generationId, {
+                        progress_percent: currentProgress,
+                        completed: allResultImages.length,
+                        total: totalVariations,
+                        elapsed_seconds: 0,
                     });
                 }
             }
-
-            // Save progress after each batch
-            const batchEndProgress = Math.round(50 + ((batchIdx + 1) * BATCH_SIZE / variationsCount) * 40);
-            await this.generationsRepository.update(generationId, {
-                result_images: resultImages,
-                progress: Math.min(batchEndProgress, 90),
-            });
-
-            this.generationGateway.emitProgress(generationId, {
-                progress_percent: Math.min(batchEndProgress, 90),
-                completed: resultImages.length,
-                total: variationsCount,
-                elapsed_seconds: 0,
-            });
         }
 
-        this.logger.log(`\n   Image generation complete: ${resultImages.length}/${variationsCount} variations succeeded`);
-        console.log(`[AD-RECREATION] 🏁 All variations done: ${resultImages.length}/${variationsCount} succeeded`);
-
-        // Step 8: Save everything to database
-        this.logger.log(`[STEP 8] Saving final results to database...`);
-
-        // Determine final status based on how many variations succeeded
-        const finalStatus = resultImages.length > 0
-            ? AdGenerationStatus.COMPLETED
-            : AdGenerationStatus.FAILED;
+        const finalStatus = allResultImages.length > 0 ? AdGenerationStatus.COMPLETED : AdGenerationStatus.FAILED;
 
         await this.generationsRepository.update(generationId, {
-            generated_copy: adCopy,
-            result_images: resultImages,
+            generated_copy: allGeneratedCopies,
+            merged_jsons: allMergedJsons,
+            result_images: allResultImages,
             status: finalStatus,
             progress: 100,
             completed_at: new Date(),
-            ...(resultImages.length === 0 ? { failure_reason: 'All image variations failed to generate' } : {}),
+            ...(allResultImages.length === 0 ? { failure_reason: 'All image variations failed to generate' } : {}),
         });
 
-        // 🔥 REAL-TIME: Emit generation_complete via Socket.IO
-        console.log(`[AD-RECREATION] 📡 Emitting generation_complete via Socket.IO (${resultImages.length}/${variationsCount})`);
         this.generationGateway.emitComplete(generationId, {
             status: finalStatus === AdGenerationStatus.COMPLETED ? 'completed' : 'failed',
-            completed: resultImages.length,
-            total: variationsCount,
-            visuals: resultImages,
+            completed: allResultImages.length,
+            total: totalVariations,
+            visuals: allResultImages,
         });
 
-        this.logger.log(`Results saved to DB`);
-        this.logger.log(`   Ad Copy: SAVED`);
-        this.logger.log(`   Result Images: ${resultImages.length}/${variationsCount} variation(s)`);
+        const updatedGeneration = await this.generationsRepository.findOne({ where: { id: generationId } });
+        if (!updatedGeneration) throw new InternalServerErrorException('Failed to fetch updated generation');
 
-        // Step 9: Fetch and return updated generation
-        this.logger.log(`[STEP 9] Fetching updated generation record...`);
-        const updatedGeneration = await this.generationsRepository.findOne({
-            where: { id: generationId },
-        });
-
-        if (!updatedGeneration) {
-            throw new InternalServerErrorException('Failed to fetch updated generation');
-        }
-
-        this.logger.log(`═══════════════════════════════════════════════════════════`);
-        this.logger.log(`AD GENERATION COMPLETE`);
-        this.logger.log(`   Generation ID: ${updatedGeneration.id}`);
-        this.logger.log(`   Status: ${updatedGeneration.status}`);
-        this.logger.log(`   Result Images: ${updatedGeneration.result_images?.length || 0}`);
-        this.logger.log(`═══════════════════════════════════════════════════════════`);
-
-        // Build structured result with new output format
-        const adResult: AdGenerationResult = {
-            generation_id: updatedGeneration.id,
-            content: {
-                headline: adCopy.headline,
-                subheadline: adCopy.subheadline,
-                cta: adCopy.cta,
-            },
-            design: {
-                layout_type: concept.analysis_json?.layout?.type || 'unknown',
-                zones: concept.analysis_json?.layout?.zones || [],
-                format: format.label,
-                ratio: format.ratio,
-                safe_zone: format.safe_zone,
-            },
-            generation_prompt: guardedImagePrompt,
+        return {
+            generation: updatedGeneration,
+            ad_copy: allGeneratedCopies,
+            result: {
+                generation_id: updatedGeneration.id,
+                total_combinations: totalCombos,
+                total_variations: totalVariations,
+                successful_images: allResultImages.length
+            }
         };
-
-        return { generation: updatedGeneration, ad_copy: adCopy, result: adResult };
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1414,9 +1132,14 @@ ${userPrompt}`;
         // ━━━ NEGATIVE REINFORCEMENT (combines all forbidden items + concept-aware) ━━━
         const negativePrompt = this.buildNegativePrompt(playbook, conceptAnalysis);
 
-        const guardedPrompt = `You are generating a photorealistic advertisement image.
+        const guardedPrompt = `You are an elite photorealistic rendering engine and high-end commercial photographer.
 Follow ALL rules below in STRICT PRIORITY ORDER. Higher-priority rules OVERRIDE lower-priority ones.
-The product shown MUST match the Product Injection EXACTLY. Do NOT invent, substitute, or generalize any product features.
+
+🚨 ULTIMATE FIDELITY LOCK (ABSOLUTE PRIORITY) 🚨
+1. ZERO HALLUCINATION: The product shown MUST be a 1:1 pixel-perfect replica of the provided Product Reference images.
+2. NO GENERICS: Do not invent, substitute, or generalize ANY product features, textures, zippers, or logos.
+3. MATERIALS: If a texture is described as "matte heavy wool", it must render with the exact light absorption of wool, not shiny synthetic.
+4. BRAND PRESERVATION: The brand logo must be rendered exactly as shown in the logo reference, with perfect typography and sharp edges.
 
 ${'═'.repeat(60)}
 PRIORITY 1 — COMPLIANCE (ABSOLUTE, OVERRIDE ALL)
@@ -1432,23 +1155,23 @@ The reference images are ordered by ROLE. Read this map BEFORE looking at the im
 
 📸 IMAGES 1-${productImageCount || 'N'}: PRODUCT REFERENCE (HIGHEST PRIORITY)
    These images show the EXACT product you MUST reproduce in the ad.
-   - Copy EVERY detail: fabric texture, color, pockets, buttons, stitching, design elements
-   - The product in the final ad must be VISUALLY IDENTICAL to these reference images
-   - These are real product photos — match them with photographic accuracy
+   - Copy EVERY microscopic detail: fabric texture, color hex, pocket placement, exact number of buttons, stitching gauge, and design elements.
+   - The product in the final ad must be VISUALLY IDENTICAL to these reference images. If the viewer cannot tell it's the exact same item, YOU HAVE FAILED.
+   - These are real product photos — match them with forensic photographic accuracy.
 
 ${brandLogoIndex >= 0 ? `🏷️ IMAGE ${brandLogoIndex + 1}: BRAND LOGO
    This is the brand's official logo. You MUST:
    - Place this EXACT logo naturally and prominently on the product or in the ad layout
-   - Match the logo's exact typography, colors, and proportions
+   - Match the logo's exact typography, colors, and proportions perfectly.
    - Position it where a real brand would place it (on the garment, on a label, or in the ad header)
-   - The logo must be SHARP, LEGIBLE, and properly integrated into the design
+   - The logo must be SHARP, LEGIBLE, and properly integrated into the design. No garbled text.
 ` : ''}
 ${conceptImageIndex >= 0 ? `🎨 IMAGE ${conceptImageIndex + 1} (LAST IMAGE): CONCEPT/STYLE REFERENCE ONLY
    ⚠️ WARNING: This image is ONLY for style, layout, composition, and mood reference.
    🚫 DO NOT COPY the product shown in this image!
    🚫 COMPLETELY IGNORE whatever product/item appears in this concept image.
-   ✅ ONLY use it for: camera angle, lighting style, background mood, text placement, overall composition
-   ✅ REPLACE the concept image's product with the EXACT product from Images 1-${productImageCount || 'N'}
+   ✅ ONLY use it for: camera angle, lighting style, background textures, text placement, overall composition.
+   ✅ REPLACE the concept image's product with the EXACT product from Images 1-${productImageCount || 'N'}.
 ` : ''}
 This rule is NON-NEGOTIABLE. If the Concept image shows sneakers but the Product images show a jacket,
 the ad MUST feature the jacket from the Product images, NOT the sneakers from the Concept.
