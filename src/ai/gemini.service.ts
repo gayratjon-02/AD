@@ -31,7 +31,7 @@ export class GeminiService {
 	private client: GoogleGenAI | null = null;
 	private readonly logger = new Logger(GeminiService.name);
 
-	// QATIYAN: Faqat gemini-3-pro-image-preview modelidan foydalanish
+	// QATIYAN: Faqat imagen-4.0-generate-001 modelidan foydalanish
 	private readonly MODEL = GEMINI_MODEL;
 	private readonly ANALYSIS_MODEL = 'gemini-2.5-flash'; // Optimized for multimodal analysis
 
@@ -95,7 +95,7 @@ export class GeminiService {
 	}
 
 	/**
-	 * 🚀 PRODUCTION-READY: Generate images using Gemini 3 Pro Image Preview model
+	 * 🚀 PRODUCTION-READY: Generate images using Gemini Imagen 4.0
 	 * Uses the correct @google/genai SDK format with responseModalities
 	 * @param userApiKey - Optional user-specific API key
 	 */
@@ -314,7 +314,7 @@ High quality studio lighting, sharp details, clean background.`;
 	 */
 	async generateImage(
 		prompt: string,
-		_modelName?: string, // ignored, we always use gemini-3-pro-image-preview
+		_modelName?: string, // ignored, we always use imagen-4.0-generate-001
 		aspectRatio?: string,
 		resolution?: string,
 		userApiKey?: string
