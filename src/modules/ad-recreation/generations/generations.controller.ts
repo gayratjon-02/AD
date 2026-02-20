@@ -154,4 +154,22 @@ export class GenerationsController {
             generations,
         };
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // POST /ad-recreation/:id/cancel - Cancel In-Progress Generation
+    // ═══════════════════════════════════════════════════════════
+
+    @Post(':id/cancel')
+    async cancelGeneration(
+        @Param('id', ParseUUIDPipe) id: string,
+        @CurrentUser() user: User,
+    ): Promise<{ success: boolean; message: string }> {
+        this.logger.warn(`🛑 Cancel request for generation ${id} from user ${user.id}`);
+        this.generationsService.cancelGeneration(id);
+
+        return {
+            success: true,
+            message: 'Generation cancellation requested',
+        };
+    }
 }

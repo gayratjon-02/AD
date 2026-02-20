@@ -190,6 +190,20 @@ export class GenerationsService {
     ) { }
 
     // ═══════════════════════════════════════════════════════════
+    // CANCELLATION SUPPORT
+    // ═══════════════════════════════════════════════════════════
+    private cancelledGenerations = new Set<string>();
+
+    cancelGeneration(generationId: string): void {
+        this.cancelledGenerations.add(generationId);
+        this.logger.warn(`🛑 Generation ${generationId} marked for cancellation`);
+    }
+
+    isCancelled(generationId: string): boolean {
+        return this.cancelledGenerations.has(generationId);
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // GENERATE AD (Complete Pipeline: Text + Image)
     // ═══════════════════════════════════════════════════════════
 
@@ -417,6 +431,31 @@ export class GenerationsService {
 
                 for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
                     const batch = batches[batchIdx];
+
+                    // ── Cancellation Check ──
+                    if (this.isCancelled(generationId)) {
+                        this.logger.warn(`🛑 Generation ${generationId} cancelled by user — stopping pipeline`);
+                        this.cancelledGenerations.delete(generationId);
+                        await this.generationsRepository.update(generationId, {
+                            result_images: allResultImages,
+                            status: AdGenerationStatus.FAILED,
+                            progress: 100,
+                            failure_reason: 'Cancelled by user',
+                            completed_at: new Date(),
+                        });
+                        this.generationGateway.emitComplete(generationId, {
+                            status: 'failed',
+                            completed: allResultImages.length,
+                            total: totalVariations,
+                            visuals: allResultImages,
+                        });
+                        const cancelledGen = await this.generationsRepository.findOne({ where: { id: generationId } });
+                        return {
+                            generation: cancelledGen!,
+                            ad_copy: allGeneratedCopies,
+                            result: { generation_id: generationId, total_combinations: totalCombos, total_variations: totalVariations, successful_images: allResultImages.length },
+                        };
+                    }
 
                     if (batchIdx > 0 || fIdx > 0 || aIdx > 0) {
                         await new Promise(resolve => setTimeout(resolve, 3000)); // Rate limit protection
