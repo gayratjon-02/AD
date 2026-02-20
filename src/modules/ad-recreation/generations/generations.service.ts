@@ -800,43 +800,118 @@ export class GenerationsService {
     // DYNAMIC GUARDRAIL BUILDERS (JSON-driven)
     // ═══════════════════════════════════════════════════════════
 
-    /**
-     * Builds the PRODUCT LOCK guardrail dynamically from the brand playbook.
-     * Ensures the AI image generator produces the correct product identity.
-     */
-    /**
-     * Builds the PRODUCT LOCK guardrail dynamically from the brand playbook.
-     * Ensures the AI image generator produces the correct product identity.
-     */
     private buildProductLock(playbook: BrandPlaybook, productJson?: any): string {
-        // P0: Prefer analyzed product JSON if available
         const pi = playbook.product_identity!;
 
         let productName = pi.product_name;
         let productType = pi.product_type;
         let visualDescription = pi.visual_description;
-        let features = pi.key_features;
+        let features = [...(pi.key_features || [])];
         let colors = pi.colors;
         let materials: string[] = [];
 
+        // V6: Extract enriched data from analyzed product JSON
+        let colorBlock = '';
+        let materialBlock = '';
+        let designFrontBlock = '';
+        let designBackBlock = '';
+        let garmentBlock = '';
+        let marketingBlock = '';
+
         if (productJson) {
+            // General info
             productName = productJson.general_info?.product_name || productName;
-            productType = productJson.general_info?.product_type || productType;
-            // Merge visual descriptions
-            const analyzedDesc = productJson.texture_description || '';
-            const analyzedMaterials = Array.isArray(productJson.materials) ? productJson.materials.join(', ') : '';
-            const analyzedDetails = Array.isArray(productJson.design_elements) ? productJson.design_elements.join(', ') : '';
+            productType = productJson.general_info?.category || productJson.general_info?.product_type || productType;
 
-            if (analyzedDesc || analyzedMaterials) {
-                visualDescription = `Analyzed Details: ${analyzedDesc}. Materials: ${analyzedMaterials}. Design: ${analyzedDetails}. \nBackground Info: ${visualDescription}`;
+            // V6: Visual specs — ultra-precise colors
+            const vs = productJson.visual_specs;
+            if (vs) {
+                const primaryColor = vs.primary_color_name || vs.color_name || '';
+                const primaryHex = vs.primary_hex_code || vs.hex_code || '';
+                colorBlock = `PRIMARY COLOR: ${primaryColor} (${primaryHex}) — This is the EXACT dominant color. Do NOT deviate.`;
+
+                if (vs.secondary_colors?.length) {
+                    colorBlock += '\nSECONDARY COLORS:';
+                    vs.secondary_colors.forEach((c: any) => {
+                        colorBlock += `\n  - ${c.name} (${c.hex}) at: ${c.location}`;
+                    });
+                }
+
+                if (vs.material_composition) {
+                    materialBlock = `MATERIAL COMPOSITION: ${vs.material_composition}`;
+                }
+                if (vs.fabric_texture) {
+                    materialBlock += `\nTEXTURE: ${vs.fabric_texture}`;
+                }
+                if (vs.finish) {
+                    materialBlock += `\nFINISH: ${vs.finish}`;
+                }
+                if (vs.surface_pattern && vs.surface_pattern !== 'Solid') {
+                    materialBlock += `\nSURFACE PATTERN: ${vs.surface_pattern}`;
+                }
             }
 
-            if (Array.isArray(productJson.style_keywords)) {
-                features = [...features, ...productJson.style_keywords];
+            // V6: Design front — logo/branding details
+            const df = productJson.design_front;
+            if (df) {
+                designFrontBlock = `FRONT DESIGN:\n`;
+                if (df.has_logo) {
+                    designFrontBlock += `  LOGO: "${df.logo_text}" — ${df.logo_type || 'standard'} (${df.logo_application || df.logo_type || 'applied'})\n`;
+                    designFrontBlock += `  LOGO COLOR: ${df.logo_color}\n`;
+                    designFrontBlock += `  PLACEMENT: ${df.placement}\n`;
+                    designFrontBlock += `  SIZE: ${df.size || 'standard'}\n`;
+                }
+                designFrontBlock += `  DESCRIPTION: ${df.description}\n`;
+                if (df.micro_details) designFrontBlock += `  MICRO DETAILS: ${df.micro_details}\n`;
             }
-            if (Array.isArray(productJson.materials)) {
-                materials = productJson.materials;
+
+            // V6: Design back
+            const db = productJson.design_back;
+            if (db) {
+                designBackBlock = `BACK DESIGN:\n  ${db.description}\n`;
+                if (db.has_patch) designBackBlock += `  PATCH: ${db.patch_detail} (${db.patch_shape}, ${db.technique})\n`;
+                if (db.yoke_material) designBackBlock += `  YOKE: ${db.yoke_material}\n`;
             }
+
+            // V6: Garment details
+            const gd = productJson.garment_details;
+            if (gd) {
+                garmentBlock = `CONSTRUCTION:\n`;
+                if (gd.neckline) garmentBlock += `  NECKLINE: ${gd.neckline}\n`;
+                if (gd.closure_details) garmentBlock += `  CLOSURE: ${gd.closure_details}\n`;
+                if (gd.buttons) garmentBlock += `  BUTTONS: ${gd.buttons.front_closure_count}x ${gd.buttons.material} ${gd.buttons.color} (${gd.buttons.style})\n`;
+                if (gd.pockets) garmentBlock += `  POCKETS: ${gd.pockets}\n`;
+                if (gd.bottom_termination) garmentBlock += `  HEM: ${gd.bottom_termination}\n`;
+                if (gd.seam_architecture) garmentBlock += `  SEAMS: ${gd.seam_architecture}\n`;
+                if (gd.hardware_finish) garmentBlock += `  HARDWARE: ${gd.hardware_finish}\n`;
+            }
+
+            // V6: Product details (universal)
+            const pd = productJson.product_details;
+            if (pd?.key_features?.length) {
+                features = [...features, ...pd.key_features];
+            }
+
+            // V6: Footwear details
+            const fw = productJson.footwear_details;
+            if (fw) {
+                garmentBlock += `FOOTWEAR SPECIFICS:\n`;
+                if (fw.upper_material) garmentBlock += `  UPPER: ${fw.upper_material}\n`;
+                if (fw.midsole) garmentBlock += `  MIDSOLE: ${fw.midsole}\n`;
+                if (fw.outsole) garmentBlock += `  OUTSOLE: ${fw.outsole}\n`;
+                if (fw.lacing_system) garmentBlock += `  LACING: ${fw.lacing_system}\n`;
+                if (fw.ankle_support) garmentBlock += `  CUT: ${fw.ankle_support}\n`;
+            }
+
+            // V6: Ad marketing data for mood guidance
+            const amd = productJson.ad_marketing_data;
+            if (amd) {
+                marketingBlock = `PRODUCT MOOD: ${amd.mood_and_aesthetic || 'Premium'}\n`;
+                if (amd.price_positioning) marketingBlock += `POSITIONING: ${amd.price_positioning}\n`;
+            }
+
+            // Merge visual description
+            visualDescription = `${productName} — ${vs?.fabric_texture || visualDescription}`;
         }
 
         const featureLines = features
@@ -847,27 +922,32 @@ export class GenerationsService {
             .map(([part, hex]) => `- ${part}: ${hex}`)
             .join('\n');
 
-        const materialLines = materials.length > 0
-            ? `Materials: ${materials.join(', ')}`
-            : '';
-
         const negativeLines = (pi.negative_traits || [])
             .map(t => `- ${t}`)
             .join('\n');
 
-        return `[PRODUCT LOCK — DO NOT MODIFY]
-The product is: ${productName} (${productType}).
-${visualDescription}
+        return `[PRODUCT LOCK — ABSOLUTE FIDELITY MANDATE]
+🚨 The product is: ${productName} (${productType}).
 
-Physical traits that MUST appear exactly:
+${colorBlock || `Colors:\n${colorLines || '(use brand colors)'}`}
+
+${materialBlock || `Material: ${visualDescription}`}
+
+${designFrontBlock}
+${designBackBlock}
+${garmentBlock}
+
+Physical traits that MUST appear EXACTLY as described:
 ${featureLines || '(see visual description above)'}
-${materialLines}
 
-Product colors:
-${colorLines || '(use brand colors)'}
+${marketingBlock}
 
-${negativeLines ? `MUST NOT include:\n${negativeLines}` : ''}
-If the product is shown, it MUST match the above description exactly. Do NOT invent features.`;
+${negativeLines ? `🚫 MUST NOT include:\n${negativeLines}` : ''}
+
+🚨 STRICT RULE: Every detail above MUST be reproduced with FORENSIC ACCURACY.
+Do NOT simplify, generalize, or substitute ANY feature.
+If the product has 6 buttons, draw EXACTLY 6 buttons.
+If the color is #722F37, render EXACTLY that hex — not "red" or "burgundy".`;
     }
 
     /**
@@ -1274,15 +1354,42 @@ NEGATIVE REINFORCEMENT (AVOID LIST)
 ${'═'.repeat(60)}
 ${negativePrompt}
 
-FINAL INSTRUCTION: Generate a single, high-quality advertisement image that is a COMPLETE, FINISHED AD DESIGN.
-- The image MUST contain RENDERED TEXT: brand name, headline, subheadline, bullet points, and CTA button text — all clearly readable
-- Product MUST match the Product Lock AND Product Injection descriptions EXACTLY
-- Obey CRITICAL SCENE DIRECTION restrictions
-- Apply marketing angle's scene directive for narrative and mood
-- Follow layout zones for composition
-- ALL content must be within the SAFE ZONE — nothing important in danger zones
-- Text must be spelled EXACTLY as written — zero garbled characters
-- The final result should look like a professional social media advertisement ready to publish`;
+🚨🚨🚨 FINAL INSTRUCTION — ZERO TOLERANCE FOR DEVIATION 🚨🚨🚨
+
+Generate a single, high-quality advertisement image that is a COMPLETE, FINISHED AD DESIGN.
+
+1. PRODUCT FIDELITY (NON-NEGOTIABLE):
+   - The product MUST be a 1:1 EXACT replica of the Product Reference images
+   - Match EVERY micro-detail: exact color hex, texture grain, button count, zipper style, pocket position
+   - Do NOT simplify, generalize, or substitute ANY product feature
+   - If the product has 6 buttons, draw EXACTLY 6 buttons — not 4 or 5
+   - If the color is #722F37 dark burgundy wool, render THAT exact shade — not "red" or generic burgundy
+
+2. BRAND ON PRODUCT (MANDATORY):
+   - The brand name/logo MUST be rendered DIRECTLY ON the product
+   - Place it at the EXACT position described in the Product Injection (chest, tongue, front panel)
+   - The brand text must be SHARP, LEGIBLE, and spelled EXACTLY correct
+   - Do NOT place the brand logo floating in empty space — it must be ON the product surface
+
+3. ZERO CREATIVE FREEDOM:
+   - You are a COPYING MACHINE, not an artist
+   - Do NOT add features that are not in the product reference
+   - Do NOT change textures, colors, or proportions
+   - Do NOT invent additional design elements
+   - Do NOT "improve" or "enhance" the product — reproduce it EXACTLY as specified
+   - Your ONLY creative freedom is in the background, lighting, and composition
+
+4. TEXT & LAYOUT:
+   - All text (brand name, headline, subheadline, CTA) MUST be clearly READABLE
+   - Text must be spelled EXACTLY as written — zero garbled characters
+   - ALL content must be within the SAFE ZONE — nothing important in danger zones
+
+5. QUALITY:
+   - Professional social media advertisement ready to publish
+   - Photorealistic product rendering with studio-quality lighting
+   - Clean, premium aesthetic matching the brand's positioning
+
+IF YOU DEVIATE FROM THE PRODUCT SPECIFICATION IN ANY WAY, THE OUTPUT IS REJECTED.`;
 
         this.logger.log(`Guarded image prompt built (${guardedPrompt.length} chars)`);
         this.logger.log(`   Hierarchy applied: Compliance → Brand Identity → Product Injection → Angle (${angleId}) → Critical Scene Direction → Layout → Readability → Negative Reinforcement`);
@@ -1489,37 +1596,104 @@ AVOID:
 
     /**
      * Builds a PRODUCT_INJECTION block that contains the EXACT physical
-     * description of the product. This block must be copied VERBATIM
-     * into the Gemini image generation prompt.
+     * description of the product + BRAND IDENTITY instructions.
+     * V6: Uses enriched analyzed product JSON for maximum precision.
      */
     private buildProductInjection(playbook: BrandPlaybook, productJson?: any): string {
         const pi = playbook.product_identity!;
-        let visualDescription = pi.visual_description;
+        const brandName = pi.product_name || 'Brand';
+
+        // Build comprehensive product description from V6 JSON
+        const sections: string[] = [];
 
         if (productJson) {
-            // If specific product analysis exists, use it to augment/replace the generic brand product description
-            const { texture_description, materials, design_elements } = productJson;
+            const gi = productJson.general_info;
+            const vs = productJson.visual_specs;
+            const df = productJson.design_front;
+            const db = productJson.design_back;
+            const gd = productJson.garment_details;
+            const fw = productJson.footwear_details;
+            const pd = productJson.product_details;
+            const pn = productJson.photography_notes;
 
-            const features: string[] = [];
-            if (texture_description) features.push(texture_description);
-            if (materials && materials.length) features.push(`Materials: ${materials.join(', ')}`);
-            if (design_elements && design_elements.length) features.push(`Design Details: ${design_elements.join(', ')}`);
-
-            if (features.length > 0) {
-                visualDescription = features.join('. ');
+            // Product identity
+            if (gi) {
+                sections.push(`PRODUCT: ${gi.product_name} (${gi.category}${gi.subcategory ? ' / ' + gi.subcategory : ''})`);
+                sections.push(`FIT: ${gi.fit_type} | TARGET: ${gi.gender_target} | SEASON: ${gi.season || 'All-season'}`);
             }
+
+            // Color & Material — FORENSIC precision
+            if (vs) {
+                const primary = vs.primary_color_name || vs.color_name;
+                const hex = vs.primary_hex_code || vs.hex_code;
+                sections.push(`COLOR: ${primary} (EXACT HEX: ${hex}) — Render this EXACT shade, NOT a similar color`);
+                sections.push(`TEXTURE: ${vs.fabric_texture}`);
+                if (vs.material_composition) sections.push(`MATERIAL: ${vs.material_composition}`);
+                if (vs.finish) sections.push(`FINISH: ${vs.finish}`);
+                if (vs.secondary_colors?.length) {
+                    sections.push(`ACCENT COLORS: ${vs.secondary_colors.map((c: any) => `${c.name}(${c.hex}) at ${c.location}`).join(', ')}`);
+                }
+            }
+
+            // Front design — logo, branding
+            if (df) {
+                sections.push(`FRONT: ${df.description}`);
+                if (df.has_logo) {
+                    sections.push(`BRAND LOGO ON PRODUCT: "${df.logo_text}" — ${df.logo_type}, ${df.logo_application || 'applied'}, color: ${df.logo_color}, at: ${df.placement}, size: ${df.size || 'standard'}`);
+                }
+            }
+
+            // Back design
+            if (db?.description) {
+                sections.push(`BACK: ${db.description}`);
+            }
+
+            // Garment construction
+            if (gd) {
+                if (gd.neckline && gd.neckline !== 'N/A') sections.push(`NECKLINE: ${gd.neckline}`);
+                if (gd.closure_details) sections.push(`CLOSURE: ${gd.closure_details}`);
+                if (gd.pockets && gd.pockets !== 'Standard pockets') sections.push(`POCKETS: ${gd.pockets}`);
+                if (gd.buttons) sections.push(`BUTTONS: ${gd.buttons.front_closure_count}x ${gd.buttons.color} ${gd.buttons.material} (${gd.buttons.style})`);
+            }
+
+            // Footwear specifics
+            if (fw) {
+                if (fw.upper_material) sections.push(`UPPER: ${fw.upper_material}`);
+                if (fw.midsole) sections.push(`MIDSOLE: ${fw.midsole}`);
+                if (fw.outsole) sections.push(`OUTSOLE: ${fw.outsole}`);
+            }
+
+            // Product details
+            if (pd?.key_features?.length) {
+                sections.push(`KEY FEATURES:\n${pd.key_features.map((f: string) => `  • ${f}`).join('\n')}`);
+            }
+
+            // Photography guidance
+            if (pn) {
+                if (pn.hero_angle) sections.push(`BEST ANGLE: ${pn.hero_angle}`);
+                if (pn.lighting_recommendation) sections.push(`LIGHTING: ${pn.lighting_recommendation}`);
+            }
+        } else {
+            // Fallback to playbook
+            sections.push(`Description: ${pi.visual_description}`);
+            sections.push(`Key Features: ${(pi.key_features || []).join(', ') || 'standard'}`);
         }
 
-        const featuresToUse = productJson?.style_keywords || pi.key_features || [];
-        const featureString = featuresToUse.length > 0
-            ? featuresToUse.join(', ')
-            : 'no specific features listed';
+        return `[PRODUCT_INJECTION — ABSOLUTE VERBATIM LOCK]
+🚨🚨🚨 THE FOLLOWING PRODUCT SPEC IS NON-NEGOTIABLE 🚨🚨🚨
+Every line below describes the EXACT product that MUST appear in the generated image.
+Do NOT paraphrase. Do NOT generalize. Do NOT substitute. Do NOT invent.
+If you deviate from ANY detail below, the output is REJECTED.
 
-        return `[PRODUCT_INJECTION — COPY VERBATIM INTO IMAGE PROMPT]
-🚨 The following product description MUST appear VERBATIM in the image generation prompt.
-Do NOT paraphrase, generalize, or use synonyms. Copy these exact words:
-Description: ${visualDescription}
-Key Features: ${featureString}`;
+${sections.join('\n')}
+
+[BRAND ON PRODUCT — MANDATORY]
+🏷️ The brand "${brandName}" MUST be visibly rendered ON the product itself:
+- If the product has a logo area (chest, tongue, front panel), place the brand name/logo THERE
+- The brand text/logo must be SHARP, LEGIBLE, and correctly spelled
+- Match the EXACT logo style from the brand reference image
+- The brand identity must be INTEGRATED into the product, not floating in the air
+- If the analyzed product shows a specific logo placement, use THAT exact placement`;
     }
 
     // ═══════════════════════════════════════════════════════════
