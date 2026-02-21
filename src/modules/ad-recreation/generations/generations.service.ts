@@ -211,13 +211,17 @@ export class GenerationsService {
         userId: string,
         dto: GenerateAdDto,
     ): Promise<{ generation: AdGeneration; ad_copy: any; result: any }> {
-        // We wrap the actual execution in a self-executing async function so we can return early
-        this._executeGeneration(userId, dto).catch(err => {
+        // First, successfully initialize and save the generation record
+        const initResult = await this._initializeGeneration(userId, dto);
+
+        // Then, wrap the actual execution in a self-executing async function so we can return early
+        // Pass the generationId to avoid a race condition querying it from the DB
+        this._executeGeneration(userId, dto, initResult.generation.id).catch(err => {
             this.logger.error(`Background generation failed: ${err.message}`, err.stack);
         });
 
-        // We still need to return the initial generation record quickly
-        return this._initializeGeneration(userId, dto);
+        // We return the initial generation record quickly
+        return initResult;
     }
 
     private async _initializeGeneration(
@@ -406,6 +410,7 @@ export class GenerationsService {
     private async _executeGeneration(
         userId: string,
         dto: GenerateAdDto,
+        generationId: string
     ): Promise<void> {
         this.logger.log(`[BACKGROUND] Starting heavy generation process for ${dto.brand_id}...`);
 
@@ -443,18 +448,12 @@ export class GenerationsService {
             return effectiveAngles.find(a => a.id === id); // fallback
         });
 
-        // Find the generation we just created
-        const activeGeneration = await this.generationsRepository.findOne({
-            where: { user_id: userId, brand_id: dto.brand_id, concept_id: dto.concept_id },
-            order: { created_at: 'DESC' }
-        });
-
+        // Verify the generation exists immediately
+        const activeGeneration = await this.generationsRepository.findOne({ where: { id: generationId } });
         if (!activeGeneration) {
-            this.logger.error('Could not find active generation for background processing');
+            this.logger.error(`Could not find generation ${generationId} for background processing`);
             return;
         }
-
-        const generationId = activeGeneration.id;
 
         // Reconstruct image URLs
         let productImageUrls: string[] = [];
