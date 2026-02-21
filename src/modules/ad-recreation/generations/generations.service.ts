@@ -18,7 +18,7 @@ import { AdBrandsService } from '../brands/ad-brands.service';
 import { AdConceptsService } from '../ad-concepts/ad-concepts.service';
 import { GeminiService } from '../../../ai/gemini.service';
 import { GenerationGateway } from '../../../generations/generation.gateway';
-import { MARKETING_ANGLES } from '../configurations/constants/marketing-angles';
+import { MARKETING_ANGLES, resolveAnglePlaceholders } from '../configurations/constants/marketing-angles';
 import { AD_FORMATS } from '../configurations/constants/ad-formats';
 import { AdGenerationStatus } from '../../../libs/enums/AdRecreationEnums';
 import { AdGenerationMessage } from '../../../libs/messages';
@@ -118,13 +118,16 @@ RULE 1 — PRODUCT FIDELITY (ZERO HALLUCINATION):
 RULE 2 — MARKETING ANGLE DRIVES THE SCENE (MOST IMPORTANT FOR VISUAL QUALITY):
 - The MARKETING ANGLE section dictates the scene, environment, mood, and visual composition.
 - Do NOT copy the scene from the concept image. The concept image is ONLY for text layout and UI structure.
-- Each Marketing Angle produces a COMPLETELY DIFFERENT visual scene:
-  * "Before & After" = split-screen showing transformation (two distinct halves)
-  * "Lifestyle" = real-world aspirational environment (home, cafe, outdoors)
-  * "Minimalist" = bare, clean studio with vast negative space
-  * "Contrast" = side-by-side visual juxtaposition
-  * "Feature Highlight" = extreme close-up on one product feature
-- If the angle has a VISUAL CUE instruction, follow it EXACTLY — it overrides everything else about the scene.
+- Each Marketing Angle has a MANDATORY VISUAL DIRECTION that produces a UNIQUE visual:
+  * "Back Pain" = show a person with visible back discomfort, dark-to-light transition
+  * "No Time" = busy chaotic home, 15-min timer element, calm person using product in center
+  * "Cost Savings" = bold savings infographic, price comparison visual
+  * "Reviews" = review cards with star ratings around the product
+  * "Family" = joyful parent playing with kids, warm natural light
+  * "Confidence" = confident stride, low camera angle, fashion-editorial lighting
+  * Each angle's VISUAL CUES section describes EXACTLY what the image should look like
+- The VISUAL CUES instruction for each angle is MANDATORY — follow it EXACTLY.
+- If you generate a generic product-on-background image for ANY angle, the output is REJECTED.
 
 RULE 3 — TEXT RENDERING & LAYOUT:
 - The ad MUST contain rendered text: Brand Name, Headline, Subheadline, Bullet Points (✓), CTA button.
@@ -1094,8 +1097,9 @@ If a human model appears in the image:
     }
 
     /**
-     * Builds a scene directive for the given marketing angle,
-     * dynamically interpolating the product name from the playbook.
+     * Builds a scene directive for the given marketing angle.
+     * Resolves {product_name}/{brand_name} placeholders and creates
+     * a FORCEFUL visual direction that Gemini MUST follow.
      */
     private buildSceneDirective(
         angleId: string,
@@ -1106,44 +1110,57 @@ If a human model appears in the image:
         productJson?: any,
     ): string {
         const productName = productJson?.general_info?.product_name || playbook.product_identity?.product_name || 'the product';
+        const brandName = playbook.product_identity?.product_name || 'the brand';
         const brandPrimary = playbook.colors?.primary || '#000000';
 
-        // If we have the full MarketingAngle with narrative data, use it
+        const resolve = (text: string) => resolveAnglePlaceholders(text, productName, brandName);
+
         if (angle?.narrative_arc) {
             const arc = angle.narrative_arc;
-            const ctaOptions = angle.cta_options?.join(' | ') || 'Learn More';
+            const ctaOptions = angle.cta_options?.map(c => resolve(c)).join(' | ') || 'Learn More';
             const compliance = angle.compliance_notes || 'None';
             const persona = angle.target_persona || 'general audience';
 
             return `[NARRATIVE ANGLE — ${angle.label.toUpperCase()}]
+🚨🚨🚨 THIS ANGLE IS THE #1 VISUAL DRIVER — THE IMAGE MUST LOOK DIFFERENT FROM OTHER ANGLES 🚨🚨🚨
+
 CATEGORY: ${angle.category?.toUpperCase() || 'GENERAL'}
 TARGET PERSONA: ${persona}
 FUNNEL STAGE: ${angle.funnel_stage?.join(', ') || 'TOFU'}
 
-HOOK (Opening Line): "${angle.hook}"
+HEADLINE / HOOK: "${resolve(angle.hook)}"
+This hook MUST be the primary text rendered in the ad. Do NOT change it. Do NOT paraphrase it.
 
-NARRATIVE ARC — Use this story structure to guide the ad:
-- PROBLEM: ${arc.problem}
-- DISCOVERY: ${arc.discovery}
-- RESULT: ${arc.result}
-- PAYOFF: ${arc.payoff}
+NARRATIVE ARC — The ad MUST tell THIS specific story:
+1. PROBLEM: ${resolve(arc.problem)}
+2. DISCOVERY: ${resolve(arc.discovery)}
+3. RESULT: ${resolve(arc.result)}
+4. PAYOFF: ${resolve(arc.payoff)}
 
-The ad should follow this narrative flow: start with the PROBLEM the viewer relates to, then show the DISCOVERY of ${productName}, demonstrate the RESULT, and end with the emotional PAYOFF.
+The headline grabs attention with the PROBLEM. The visual shows the DISCOVERY or RESULT. The CTA drives the PAYOFF.
 
-CTA OPTIONS (pick the best fit): ${ctaOptions}
+CTA OPTIONS (use one of these EXACTLY): ${ctaOptions}
 COMPLIANCE: ${compliance}
 
-VISUAL DIRECTION:
-- Show ${productName} as the hero solution within the narrative context
-- The visual mood should match the emotional arc: start with the problem's tension, resolve with the product's warmth
-- Use brand primary color (${brandPrimary}) for emphasis and CTA elements
-${angle.visual_cues ? `\n🚨 CRITICAL VISUAL INSTRUCTION FOR THIS ANGLE:\n${angle.visual_cues}\n` : ''}- The overall feel should speak directly to: ${persona}`;
+${'═'.repeat(60)}
+🚨 MANDATORY VISUAL DIRECTION FOR "${angle.label.toUpperCase()}" ANGLE
+${'═'.repeat(60)}
+${resolve(angle.visual_cues)}
+
+ANGLE DIFFERENTIATION RULES:
+- This ad MUST look VISUALLY DISTINCT from ads generated with other angles
+- The scene, mood, lighting, and composition are dictated by the visual direction above
+- The hook "${resolve(angle.hook)}" MUST appear as rendered text in the image
+- Use brand primary color (${brandPrimary}) for CTA buttons and accent elements
+- The overall feel MUST speak directly to: ${persona}
+- If the visual direction above demands a specific scene type (split-screen, infographic, lifestyle, etc.), that OVERRIDES the concept layout pattern`;
         }
 
-        // Fallback: build from basic angle info
+        // Fallback for custom angles without full data
         return `[NARRATIVE ANGLE — ${angleId.toUpperCase()}]
 Angle: "${angleLabel}" — ${angleDescription}
-Show ${productName} prominently. Use brand colors (primary: ${brandPrimary}). Professional commercial photography.
+Show ${productName} prominently. Use brand colors (primary: ${brandPrimary}).
+The ad must visually communicate: "${angleDescription}"
 CTA should drive action relevant to this angle.`;
     }
 
@@ -1408,14 +1425,18 @@ ${productInjection}
 ${personaLock}
 
 ${'═'.repeat(60)}
-🚨 PRIORITY 3 — MARKETING ANGLE (THIS DICTATES THE SCENE — HIGHEST VISUAL PRIORITY)
+🚨🚨🚨 PRIORITY 3 — MARKETING ANGLE (THIS IS THE #1 VISUAL DRIVER)
 ${'═'.repeat(60)}
+⚠️ THE MARKETING ANGLE BELOW IS THE MOST IMPORTANT SECTION FOR THE IMAGE.
+It dictates the SCENE, MOOD, LIGHTING, and COMPOSITION.
+If you ignore it and generate a generic product photo, the output is REJECTED.
+
 ${sceneDirective}
 
 ${criticalSceneDirection}
 
 ${'═'.repeat(60)}
-PRIORITY 4 — LAYOUT INSPIRATION (USE ONLY IF NOT CONFLICTING WITH MARKETING ANGLE)
+PRIORITY 4 — LAYOUT INSPIRATION (SECONDARY — only if it doesn't conflict with the angle above)
 ${'═'.repeat(60)}
 ${layoutComposition}
 
@@ -1796,6 +1817,8 @@ ${sections.join('\n')}
         productJson?: any,
     ): string {
         const pi = playbook.product_identity!;
+        const productName = productJson?.general_info?.product_name || pi.product_name || brandName;
+        const resolve = (text: string) => resolveAnglePlaceholders(text, productName, brandName);
         const zones = conceptAnalysis?.layout?.zones || [];
         const zonesJson = JSON.stringify(zones, null, 2);
 
@@ -1917,20 +1940,38 @@ ${'═'.repeat(60)}
 ${criticalSceneDirection}
 
 ${'═'.repeat(60)}
-PRIORITY 3 — NARRATIVE ANGLE & SCENE (Overrides Layout Pattern)
+🚨🚨🚨 PRIORITY 3 — NARRATIVE ANGLE & SCENE (THIS MAKES EACH AD UNIQUE)
 ${'═'.repeat(60)}
-- Strategy: ${angle.label} (${angle.category?.toUpperCase() || 'GENERAL'})
-- Hook: "${angle.hook || angle.description}"
-    - Target Persona: ${angle.target_persona || 'general audience'}
-- Narrative Arc:
-  * Problem: ${angle.narrative_arc?.problem || 'N/A'}
-  * Discovery: ${angle.narrative_arc?.discovery || 'N/A'}
-  * Result: ${angle.narrative_arc?.result || 'N/A'}
-  * Payoff: ${angle.narrative_arc?.payoff || 'N/A'}
-- CTA Options: ${angle.cta_options?.join(' | ') || 'Learn More'}
-- Compliance: ${angle.compliance_notes || 'None'}
-- Apply this narrative approach: ${angle.description}
-${angle.visual_cues ? `- 🚨 CRITICAL VISUAL CUE: ${angle.visual_cues}` : ''}
+⚠️ THIS IS THE MOST IMPORTANT SECTION FOR VISUAL DIFFERENTIATION.
+Different angles MUST produce VISUALLY DIFFERENT ads. If you ignore this section,
+the ad will look generic and identical to every other angle — which is a FAILURE.
+
+ANGLE: "${resolve(angle.label)}" (${angle.category?.toUpperCase() || 'GENERAL'})
+HEADLINE TO USE: "${resolve(angle.hook || angle.description)}"
+TARGET PERSONA: ${angle.target_persona || 'general audience'}
+FUNNEL STAGE: ${angle.funnel_stage?.join(', ') || 'TOFU'}
+
+NARRATIVE ARC — The ad MUST tell THIS story:
+  1. PROBLEM: ${resolve(angle.narrative_arc?.problem || 'N/A')}
+  2. DISCOVERY: ${resolve(angle.narrative_arc?.discovery || 'N/A')}
+  3. RESULT: ${resolve(angle.narrative_arc?.result || 'N/A')}
+  4. PAYOFF: ${resolve(angle.narrative_arc?.payoff || 'N/A')}
+
+The headline should convey the PROBLEM. The subheadline should hint at the RESULT.
+The image should SHOW the narrative visually — not just be a generic product photo.
+
+CTA OPTIONS (use one EXACTLY): ${angle.cta_options?.map(c => resolve(c)).join(' | ') || 'Learn More'}
+COMPLIANCE: ${angle.compliance_notes || 'None'}
+
+${'═'.repeat(60)}
+🚨 MANDATORY VISUAL DIRECTION FOR "${angle.label?.toUpperCase()}" ANGLE
+${'═'.repeat(60)}
+${resolve(angle.visual_cues || angle.description)}
+
+YOUR image_prompt MUST describe this SPECIFIC visual scene. Do NOT write a generic product-on-background prompt.
+The scene, lighting, mood, and composition MUST match the visual direction above.
+If this visual direction requires a split-screen, infographic, lifestyle scene, etc. — DO IT.
+The concept layout is secondary — this visual direction comes FIRST.
 ${contentPatternSection}
 
 ${'═'.repeat(60)}
@@ -1968,15 +2009,20 @@ ${textOverlayInstructions}
                             - Your image_prompt MUST mention: "Place all text and key content within the safe zone, avoiding the top ${format.safe_zone.danger_top}px and bottom ${format.safe_zone.danger_bottom}px"
 
                                 === YOUR TASK ===
-                                    Generate ad copy for "${pi.product_name}" using the "${angle.label}" marketing angle.
+                                    Generate ad copy for "${productName}" using the "${angle.label}" marketing angle.
+The headline SHOULD be based on: "${resolve(angle.hook)}"
 This is a COMPLETE advertisement design — the generated image MUST contain ALL text rendered as visible characters.
 
 The ad MUST respect the priority hierarchy above:
 1. FIRST check all Compliance rules
-2. THEN apply Brand Identity(use exact product colors, features)
+2. THEN apply Brand Identity (use exact product colors, features)
 3. THEN obey CRITICAL SCENE DIRECTION
-4. THEN apply the Narrative Angle & Scene (Marketing Angle)
+4. 🚨 THEN apply the Narrative Angle & Visual Direction — THIS MAKES THE AD UNIQUE
 5. THEN match the Layout Pattern's visual structure (ONLY IF it doesn't conflict with the Narrative Angle)
+
+🚨 ANGLE IS KING: The "${angle.label}" angle's visual direction MUST be the dominant visual theme.
+If you just generate a generic product photo with text overlay, the output is REJECTED.
+The image_prompt MUST describe the SPECIFIC scene from the Narrative Angle visual direction.
 
 🚨 CRITICAL — image_prompt rules(MUST FOLLOW EXACTLY):
 1. START with: "A complete, finished [editorial/lifestyle/product-hero] advertisement design for social media."
