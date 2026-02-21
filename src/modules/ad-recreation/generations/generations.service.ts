@@ -1356,7 +1356,7 @@ ${userPrompt}`;
      * DYNAMIC HIERARCHY (Strict Priority):
      * 1. COMPLIANCE (Absolute) — Must/Must NOT rules override ALL other layers
      * 2. BRAND IDENTITY — Product fidelity, colors, materials
-     * 3. ANGLE — Marketing narrative and scene directive
+     * 3. ANGLE — Marketing narrative and scene directive (Overrides layout inspiration!)
      * 4. LAYOUT PATTERN — Visual structure from inspiration concept
      */
     private buildGuardedImagePrompt(
@@ -1686,7 +1686,8 @@ COMPOSITION RULES:
 - Product/model placement MUST respect the zone boundaries above
 - Safe Zones must have simple, low-detail backgrounds for text readability
 - Visual weight should be concentrated in the Image Zones
-- Maintain the ${layoutType} layout pattern from the inspiration`;
+- Maintain the ${layoutType} layout pattern from the inspiration
+- 🚨 FAILSAFE: If the Narrative Angle or Critical Scene Direction demands a fundamentally different layout (e.g. a split-screen for "Before & After" or an "Extreme close-up"), you MUST DISCARD this inspiration layout and obey the Narrative Angle.`;
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -2006,6 +2007,7 @@ ${'═'.repeat(60)}
 - CTA Options: ${angle.cta_options?.join(' | ') || 'Learn More'}
 - Compliance: ${angle.compliance_notes || 'None'}
 - Apply this narrative approach: ${angle.description}
+${angle.visual_cues ? `- 🚨 CRITICAL VISUAL CUE: ${angle.visual_cues}` : ''}
 ${contentPatternSection}
 
 ${'═'.repeat(60)}
