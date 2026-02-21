@@ -93,9 +93,9 @@ The generated image MUST contain RENDERED TEXT as a core design element. This is
    - BULLET POINTS: Clean list with checkmarks (✓) or bullet markers.
    - CTA BUTTON: Text inside a visible button shape (rounded rectangle, pill, etc.) with contrasting colors.
 
-4. CONTRAST & LEGIBILITY:
+4. CONTRAST, LEGIBILITY & UI INTEGRATION:
    - Minimum 4.5:1 contrast ratio between text and background.
-   - If the background must be busy, YOU MUST render a solid or semi-transparent overlay/card BEHIND the text to ensure legibility.
+   - If the background must be busy, YOU MUST render realistic, premium UI elements (like a floating white card with a soft drop shadow, a sleek polaroid frame, or a frosted glass panel) BEHIND the text to ensure legibility and a high-end ad aesthetic. Do not just use flat color blocks.
 
 FAILURE CONDITIONS:
 - If ANY text overlaps the product or a person's face → FAILED
@@ -147,11 +147,17 @@ RULE 5 — VISUAL ANGLE DIFFERENTIATION (CRITICAL):
 - Every marketing angle requires a completely different physical environment and background. For example: "Before/After" should show contrasting backgrounds. "Lifestyle" must show a luxurious or aspirational setting. "Problem/Solution" might show a messy real-world desk vs a clean studio.
 - Make the background setting unmistakably unique to the provided Narrative Angle.
 
-RULE 6 — OUTPUT FORMAT:
+RULE 6 — PHOTOREALISTIC COHESION AND UI INTEGRATION (CRITICAL):
+- The final image must look like a high-end, realistic commercial photograph or a professionally designed digital ad. No "AI-hallucinated" or stitched-together looks.
+- Lighting, shadows, and colors between people, products, and the environment MUST be perfectly cohesive and realistic.
+- For text backgrounds, DO NOT just use flat colors. You MUST explicitly describe professional UI elements (e.g., "a floating white polaroid card with a soft drop shadow", "a sleek frosted glass panel", or "a premium smooth gradient overlay").
+- The UI elements and text must look like they naturally belong in the scene, layered perfectly over the photorealistic background.
+
+RULE 7 — OUTPUT FORMAT:
 - Return ONLY valid JSON. No markdown, no explanation.
 - The image_prompt must be 300-500 words describing the COMPLETE ad design.
 
-RULE 7 — image_prompt STRUCTURE:
+RULE 8 — image_prompt STRUCTURE:
 Your image_prompt MUST follow this exact structure:
   a) AD FORMAT: "A complete, finished [editorial/lifestyle/product-hero] advertisement design, ready for social media."
   b) PRODUCT DESCRIPTION: Copy VERBATIM from the PRODUCT_INJECTION block.
@@ -1403,6 +1409,7 @@ Follow ALL rules below in STRICT PRIORITY ORDER. Higher-priority rules OVERRIDE 
 2. NO GENERICS: Do not invent, substitute, or generalize ANY product features, textures, zippers, or logos.
 3. MATERIALS: If a texture is described as "matte heavy wool", it must render with the exact light absorption of wool, not shiny synthetic.
 4. BRAND PRESERVATION: The brand logo must be rendered exactly as shown in the logo reference, with perfect typography and sharp edges.
+5. PHOTOREALISM & UI COHESION: The scene, lighting, and subjects MUST look like a raw, high-end photograph. UI elements (cards, text, buttons) must be cleanly integrated with realistic soft drop shadows or frosted glass effects, never looking flat, artificial, or randomly stitched together.
 
 ${'═'.repeat(60)}
 PRIORITY 1 — COMPLIANCE (ABSOLUTE, OVERRIDE ALL)
