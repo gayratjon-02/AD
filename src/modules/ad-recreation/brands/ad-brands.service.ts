@@ -85,10 +85,10 @@ Return EXACTLY this JSON object (no extra keys, no markdown, no explanation):
     },
     "current_offer": {
       "discount": "string or null (e.g. '-50%')",
-      "price_original": "string or null (e.g. '179.95')",
-      "price_sale": "string or null (e.g. '89.98')",
+      "price_original": "number-only string or null (e.g. '179.95' — NO currency symbol)",
+      "price_sale": "number-only string or null (e.g. '89.98' — NO currency symbol)",
       "free_gifts": ["string"] or null,
-      "free_gifts_value": "string or null (e.g. '195.75')",
+      "free_gifts_value": "number-only string or null (e.g. '195.75' — NO currency symbol)",
       "delivery": "string or null (e.g. 'FREE Next-Day Delivery')"
     },
     "logo": {
@@ -111,6 +111,7 @@ RULES:
 - tone_of_voice MUST be a single comma-separated string (e.g. "warm, empowering, relatable"), NOT an object.
 - usps MUST be a flat array of strings at root level (e.g. ["Folds flat", "15 min/day"]).
 - current_offer MUST be a structured object with separate fields, NOT a concatenated string.
+- PRICES MUST BE NUMBERS ONLY — strip ALL currency symbols (£, $, €, etc.). The currency is stored separately in the "currency" field. Example: "£179.95" → "179.95", "$89.98" → "89.98".
 - Every non-null value in data MUST have a corresponding entry in evidence_map.
 - DO NOT paraphrase, upgrade, or infer. Extract ONLY what is written.
 - Return ONLY the JSON object.`;
@@ -633,6 +634,7 @@ export class AdBrandsService {
                 ? d.tone_of_voice
                 : (d.tone_of_voice?.style || ''),
             usps: Array.isArray(d.usps) ? d.usps : [],
+            product_ref: d.product_ref || null,
         };
 
         // Target audience (optional)
@@ -652,14 +654,17 @@ export class AdBrandsService {
             };
         }
 
-        // Current offer (structured object)
+        // Current offer (structured object) — strip currency symbols from prices
+        const stripCurrency = (val: string | undefined): string | undefined =>
+            val ? val.replace(/[£$€¥₹]/g, '').trim() : undefined;
+
         if (offer.discount || offer.price_original || offer.price_sale || offer.free_gifts?.length || offer.delivery) {
             playbook.current_offer = {
                 discount: offer.discount || undefined,
-                price_original: offer.price_original || undefined,
-                price_sale: offer.price_sale || undefined,
+                price_original: stripCurrency(offer.price_original),
+                price_sale: stripCurrency(offer.price_sale),
                 free_gifts: Array.isArray(offer.free_gifts) ? offer.free_gifts : undefined,
-                free_gifts_value: offer.free_gifts_value || undefined,
+                free_gifts_value: stripCurrency(offer.free_gifts_value),
                 delivery: offer.delivery || undefined,
             };
         }
@@ -1239,6 +1244,7 @@ ${textContent}`;
                 region: 'Global',
                 rules: [],
             },
+            product_ref: null,
             product_identity: {
                 product_name: brandName,
                 product_type: 'Product',

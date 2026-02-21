@@ -143,6 +143,16 @@ export class AdBrandsController {
             logoDark?.path,
         );
 
+        // Inject logo URLs into playbook from uploaded files
+        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+        if (logoLight || logoDark) {
+            playbook.logo = {
+                ...(playbook.logo || {}),
+                ...(logoLight ? { light_url: `${baseUrl}/uploads/ad-brands/playbooks/${logoLight.filename}` } : {}),
+                ...(logoDark ? { dark_url: `${baseUrl}/uploads/ad-brands/playbooks/${logoDark.filename}` } : {}),
+            };
+        }
+
         return {
             success: true,
             message: 'Brand playbook analyzed successfully. Review and save to create brand.',
