@@ -3,6 +3,7 @@ import {
     Get,
     Post,
     Patch,
+    Delete,
     Body,
     Param,
     Query,
@@ -14,10 +15,9 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { memoryStorage } from 'multer';
 import { AdConceptsService } from './ad-concepts.service';
+import { FilesService } from '../../../files/files.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { User } from '../../../database/entities/Product-Visuals/user.entity';
@@ -33,13 +33,17 @@ import { AdConceptMessage } from '../../../libs/messages';
  * - GET  /concepts/:id       → Get concept by ID
  * - GET  /concepts           → List saved concepts (filterable by tags)
  * - PATCH /concepts/:id      → Edit concept (name, notes, tags, analysis_json)
+ * - DELETE /concepts/:id     → Delete concept
  */
 @Controller('concepts')
 @UseGuards(JwtAuthGuard)
 export class AdConceptsController {
     private readonly logger = new Logger(AdConceptsController.name);
 
-    constructor(private readonly adConceptsService: AdConceptsService) { }
+    constructor(
+        private readonly adConceptsService: AdConceptsService,
+        private readonly filesService: FilesService,
+    ) { }
 
     // ═══════════════════════════════════════════════════════════
     // POST /concepts/analyze - Upload & Analyze with Claude Vision
@@ -48,13 +52,7 @@ export class AdConceptsController {
     @Post('analyze')
     @UseInterceptors(
         FileInterceptor('file', {
-            storage: diskStorage({
-                destination: './uploads/concepts',
-                filename: (_req, file, cb) => {
-                    const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
-                    cb(null, uniqueName);
-                },
-            }),
+            storage: memoryStorage(),
             fileFilter: (_req, file, cb) => {
                 if (file.mimetype.match(/\/(jpg|jpeg|png|webp)$/)) {
                     cb(null, true);
@@ -75,15 +73,16 @@ export class AdConceptsController {
             throw new BadRequestException(AdConceptMessage.IMAGE_FILE_REQUIRED);
         }
 
-        this.logger.log(`Analyzing concept image: ${file.filename}`);
+        this.logger.log(`Analyzing concept image: ${file.originalname}`);
 
-        const baseUrl = process.env.UPLOAD_BASE_URL || 'http://localhost:4001';
-        const imageUrl = `${baseUrl}/uploads/concepts/${file.filename}`;
+        // Upload to S3
+        const stored = await this.filesService.storeImage(file, 'concepts');
 
         const concept = await this.adConceptsService.analyze(
             user.id,
-            imageUrl,
-            file.path,
+            stored.url,
+            file.buffer,
+            file.mimetype,
         );
 
         return {
@@ -156,6 +155,22 @@ export class AdConceptsController {
             success: true,
             message: AdConceptMessage.CONCEPT_UPDATED,
             concept,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // DELETE /concepts/:id - Delete Concept
+    // ═══════════════════════════════════════════════════════════
+
+    @Delete(':id')
+    async removeConcept(
+        @Param('id', ParseUUIDPipe) id: string,
+        @CurrentUser() user: User,
+    ): Promise<{ success: boolean; message: string }> {
+        await this.adConceptsService.remove(id, user.id);
+        return {
+            success: true,
+            message: AdConceptMessage.CONCEPT_DELETED,
         };
     }
 }

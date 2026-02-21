@@ -9,8 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { readFileSync } from 'fs';
-import { extname } from 'path';
+// fs import removed — all file data now comes as Buffer from memoryStorage
 import Anthropic from '@anthropic-ai/sdk';
 import { AdConcept } from '../../../database/entities/Ad-Recreation/ad-concept.entity';
 import { AdConceptAnalysis } from '../../../libs/types/AdRecreation';
@@ -455,11 +454,11 @@ export class AdConceptsService {
      * 4. Parse and validate JSON response
      * 5. Save to ad_concepts table
      */
-    async analyze(userId: string, imageUrl: string, filePath: string): Promise<AdConcept> {
+    async analyze(userId: string, imageUrl: string, fileBuffer: Buffer, mimeType: string): Promise<AdConcept> {
         this.logger.log(`Analyzing concept for user ${userId}: ${imageUrl}`);
 
         // Real Claude Vision analysis
-        const analysisResult = await this.analyzeImageWithClaude(filePath);
+        const analysisResult = await this.analyzeImageWithClaude(fileBuffer, mimeType);
 
         // Auto-populate name and tags from Claude's analysis
         const autoName = analysisResult.concept_name || null;
@@ -548,6 +547,16 @@ export class AdConceptsService {
     // INCREMENT USE COUNT (called when concept is used in generation)
     // ═══════════════════════════════════════════════════════════
 
+    // ═══════════════════════════════════════════════════════════
+    // DELETE CONCEPT (with ownership check)
+    // ═══════════════════════════════════════════════════════════
+
+    async remove(id: string, userId: string): Promise<void> {
+        const concept = await this.findOne(id, userId);
+        await this.adConceptsRepository.remove(concept);
+        this.logger.log(`Deleted Ad Concept: ${id}`);
+    }
+
     async incrementUseCount(id: string): Promise<void> {
         await this.adConceptsRepository
             .createQueryBuilder()
@@ -564,19 +573,18 @@ export class AdConceptsService {
     // REAL CLAUDE VISION PIPELINE
     // ═══════════════════════════════════════════════════════════
 
-    private async analyzeImageWithClaude(filePath: string): Promise<AdConceptAnalysis> {
-        this.logger.log(`Analyzing image with Claude Vision: ${filePath}`);
+    private async analyzeImageWithClaude(fileBuffer: Buffer, mimeType: string): Promise<AdConceptAnalysis> {
+        this.logger.log(`Analyzing image with Claude Vision`);
 
-        // Step 1: Read file and convert to Base64
+        // Step 1: Convert buffer to Base64
         let imageBase64: string;
         let mediaType: ClaudeImageMediaType;
         try {
-            const fileBuffer = readFileSync(filePath);
             imageBase64 = fileBuffer.toString('base64');
-            mediaType = this.detectMediaType(filePath);
+            mediaType = (MEDIA_TYPE_MAP['.' + (mimeType.split('/')[1] || 'jpeg')] || mimeType) as ClaudeImageMediaType;
             this.logger.log(`Image loaded: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB (${mediaType})`);
         } catch (error) {
-            this.logger.error(`Failed to read image file: ${error.message}`);
+            this.logger.error(`Failed to process image buffer: ${error.message}`);
             throw new BadRequestException(AdConceptMessage.AI_IMAGE_UNREADABLE);
         }
 
@@ -946,11 +954,6 @@ export class AdConceptsService {
     // ═══════════════════════════════════════════════════════════
     // HELPERS
     // ═══════════════════════════════════════════════════════════
-
-    private detectMediaType(filePath: string): ClaudeImageMediaType {
-        const ext = extname(filePath).toLowerCase();
-        return MEDIA_TYPE_MAP[ext] || 'image/jpeg';
-    }
 
     private getAnthropicClient(): Anthropic {
         if (this.anthropicClient) return this.anthropicClient;

@@ -17,29 +17,38 @@ export class FilesService {
 		private s3Service: S3Service,
 	) {}
 
-	async storeImage(file: Express.Multer.File) {
+	/**
+	 * Store an uploaded file (from memoryStorage or diskStorage).
+	 * Routes to S3 when enabled, otherwise saves locally.
+	 * @param file - Multer file (buffer-backed from memoryStorage or disk-backed)
+	 * @param prefix - S3 key prefix / local subfolder (e.g. 'ad-brands/logos', 'concepts')
+	 */
+	async storeImage(file: Express.Multer.File, prefix: string = 'uploads') {
 		if (!file) {
 			throw new BadRequestException(FileMessage.FILE_NOT_FOUND);
 		}
 
-		// Use S3 if enabled, otherwise fallback to local
+		// Get buffer: memoryStorage has file.buffer, diskStorage has file.path
+		const buffer = file.buffer || fs.readFileSync(file.path);
+		const ext = path.extname(file.originalname).slice(1) || 'jpg';
+
+		// S3 upload path
 		if (this.s3Service.isEnabled()) {
-			const filePath = this.s3Service.generatePath('uploads', path.extname(file.originalname).slice(1) || 'jpg');
-			const buffer = fs.readFileSync(file.path);
-			const { url, path: s3Path } = await this.s3Service.uploadBuffer(buffer, filePath, file.mimetype);
-			
-			// Clean up local temp file
-			try {
-				fs.unlinkSync(file.path);
-			} catch (error) {
-				this.logger.warn(`Failed to delete temp file: ${file.path}`);
+			const s3Path = this.s3Service.generatePath(prefix, ext);
+			const { url, path: storedPath } = await this.s3Service.uploadBuffer(buffer, s3Path, file.mimetype);
+
+			// Clean up local temp file if diskStorage was used
+			if (file.path) {
+				try { fs.unlinkSync(file.path); } catch {}
 			}
 
+			this.logger.log(`📤 S3: ${storedPath} (${buffer.length} bytes)`);
+
 			return {
-				filename: path.basename(filePath),
+				filename: path.basename(s3Path),
 				mimetype: file.mimetype,
 				size: file.size,
-				path: s3Path,
+				path: storedPath,
 				url,
 			};
 		}
@@ -47,22 +56,41 @@ export class FilesService {
 		// Local storage fallback
 		const uploadConfig = this.configService.get<any>('upload');
 		const localPath = uploadConfig.localPath as string;
-		
-		// 🚀 CRITICAL: Return ABSOLUTE URL for uploaded images
 		const baseUrl = uploadConfig.baseUrl || process.env.UPLOAD_BASE_URL || '';
-		let url: string;
-		
-		if (baseUrl) {
-			url = `${baseUrl}/${localPath}/${file.filename}`;
-		} else {
-			url = `/${localPath}/${file.filename}`;
+
+		// If file is already on disk (diskStorage), use it as-is
+		if (file.path && file.filename) {
+			const url = baseUrl
+				? `${baseUrl}/${localPath}/${file.filename}`
+				: `/${localPath}/${file.filename}`;
+
+			return {
+				filename: file.filename,
+				mimetype: file.mimetype,
+				size: file.size,
+				path: file.path,
+				url,
+			};
 		}
 
+		// memoryStorage: save buffer to local disk under {localPath}/{prefix}/
+		const filename = `${randomUUID()}.${ext}`;
+		const localDir = path.join(process.cwd(), localPath, prefix);
+		fs.mkdirSync(localDir, { recursive: true });
+		const filePath = path.join(localDir, filename);
+		fs.writeFileSync(filePath, buffer);
+
+		const url = baseUrl
+			? `${baseUrl}/${localPath}/${prefix}/${filename}`
+			: `/${localPath}/${prefix}/${filename}`;
+
+		this.logger.log(`📁 Local: ${filePath}`);
+
 		return {
-			filename: file.filename,
+			filename,
 			mimetype: file.mimetype,
 			size: file.size,
-			path: file.path,
+			path: filePath,
 			url,
 		};
 	}

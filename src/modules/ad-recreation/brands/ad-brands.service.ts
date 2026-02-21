@@ -9,7 +9,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { readFileSync } from 'fs';
+// fs import removed — all file data now comes as Buffer from memoryStorage
 import Anthropic from '@anthropic-ai/sdk';
 import { AdBrand } from '../../../database/entities/Ad-Recreation/ad-brand.entity';
 import { CreateAdBrandDto, PlaybookType } from '../../../libs/dto/AdRecreation/brands';
@@ -373,12 +373,12 @@ export class AdBrandsService {
         id: string,
         userId: string,
         type: PlaybookType,
-        filePath?: string,
+        fileBuffer?: Buffer,
         pdfUrl?: string,
     ): Promise<AdBrand> {
         const brand = await this.findOne(id, userId);
 
-        if (!filePath) {
+        if (!fileBuffer) {
             throw new BadRequestException(AdBrandMessage.PLAYBOOK_FILE_REQUIRED);
         }
 
@@ -386,17 +386,17 @@ export class AdBrandsService {
 
         switch (type) {
             case PlaybookType.BRAND: {
-                const brandPlaybook = await this.analyzeBrandPlaybookWithClaude(filePath);
+                const brandPlaybook = await this.analyzeBrandPlaybookWithClaude(fileBuffer);
                 brand.brand_playbook = brandPlaybook;
                 break;
             }
             case PlaybookType.ADS: {
-                const adsPlaybook = await this.analyzeAdsPlaybookWithClaude(filePath);
+                const adsPlaybook = await this.analyzeAdsPlaybookWithClaude(fileBuffer);
                 brand.ads_playbook = adsPlaybook;
                 break;
             }
             case PlaybookType.COPY: {
-                const copyPlaybook = await this.analyzeCopyPlaybookWithClaude(filePath);
+                const copyPlaybook = await this.analyzeCopyPlaybookWithClaude(fileBuffer);
                 brand.copy_playbook = copyPlaybook;
                 break;
             }
@@ -421,29 +421,11 @@ export class AdBrandsService {
      * 3. Parse and validate JSON response
      * 4. Return typed BrandPlaybook
      */
-    private async analyzeBrandPlaybookWithClaude(filePath: string, logoLightPath?: string, logoDarkPath?: string): Promise<BrandPlaybook> {
-        this.logger.log(`Analyzing brand playbook PDF with Claude: ${filePath}`);
+    private async analyzeBrandPlaybookWithClaude(fileBuffer: Buffer): Promise<BrandPlaybook> {
+        this.logger.log(`Analyzing brand playbook PDF with Claude`);
 
-        // Step 1: Read file and convert to Base64
-        let pdfBase64: string;
-        try {
-            const fileBuffer = readFileSync(filePath);
-
-            // Validate PDF header: Must allow %PDF
-            // Checks if first 4 bytes are %PDF
-            const header = fileBuffer.subarray(0, 4).toString('utf8');
-            if (header !== '%PDF') {
-                this.logger.error(`Invalid PDF header: ${header}`);
-                throw new BadRequestException('Invalid PDF file: usage of a real PDF is required');
-            }
-
-            pdfBase64 = fileBuffer.toString('base64');
-            this.logger.log(`PDF loaded: ${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB`);
-        } catch (error) {
-            if (error instanceof BadRequestException) throw error;
-            this.logger.error(`Failed to read PDF file: ${error.message}`);
-            throw new BadRequestException(AdBrandMessage.AI_PDF_UNREADABLE);
-        }
+        // Step 1: Validate PDF and convert to Base64
+        const pdfBase64 = this.bufferToPdfBase64(fileBuffer);
 
         // Step 2: Initialize Anthropic client
         const client = this.getAnthropicClient();
@@ -452,10 +434,7 @@ export class AdBrandsService {
         this.logger.log(`=== CLAUDE PDF ANALYSIS REQUEST ===`);
         this.logger.log(`Model: ${this.model}`);
         this.logger.log(`PDF size: ${(pdfBase64.length * 0.75 / 1024 / 1024).toFixed(2)} MB`);
-        this.logger.log(`System Prompt: ${BRAND_ANALYSIS_SYSTEM_PROMPT.substring(0, 300)}...`);
-        this.logger.log(`User Prompt: ${BRAND_ANALYSIS_USER_PROMPT.substring(0, 300)}...`);
 
-        // Build content array with PDF + optional logo images
         const contentBlocks: any[] = [
             {
                 type: 'document',
@@ -465,20 +444,11 @@ export class AdBrandsService {
                     data: pdfBase64,
                 },
             },
+            {
+                type: 'text',
+                text: BRAND_ANALYSIS_USER_PROMPT,
+            },
         ];
-
-        // Add logo images if provided
-        if (logoLightPath || logoDarkPath) {
-            const logoImages = this.buildLogoImageBlocks(logoLightPath, logoDarkPath);
-            contentBlocks.push(...logoImages);
-        }
-
-        contentBlocks.push({
-            type: 'text',
-            text: (logoLightPath || logoDarkPath)
-                ? BRAND_ANALYSIS_USER_PROMPT + '\n\nIMPORTANT: I have also attached the brand logos (light and/or dark versions). Please analyze these logos carefully and include detailed logo_rules in your response based on the actual logo design, colors, and style you observe.'
-                : BRAND_ANALYSIS_USER_PROMPT,
-        });
 
         let responseText: string;
         try {
@@ -494,7 +464,6 @@ export class AdBrandsService {
                 ],
             });
 
-            // Extract text from response
             const textBlock = message.content.find((block) => block.type === 'text');
             if (!textBlock || textBlock.type !== 'text') {
                 throw new Error('No text response from Claude');
@@ -723,10 +692,10 @@ export class AdBrandsService {
     // REAL CLAUDE AI — Ads Playbook Analysis
     // ═══════════════════════════════════════════════════════════
 
-    private async analyzeAdsPlaybookWithClaude(filePath: string): Promise<AdsPlaybook> {
-        this.logger.log(`Analyzing ads playbook PDF with Claude: ${filePath}`);
+    private async analyzeAdsPlaybookWithClaude(fileBuffer: Buffer): Promise<AdsPlaybook> {
+        this.logger.log(`Analyzing ads playbook PDF with Claude`);
 
-        const pdfBase64 = this.readPdfAsBase64(filePath);
+        const pdfBase64 = this.bufferToPdfBase64(fileBuffer);
         const client = this.getAnthropicClient();
 
         const message = await client.messages.create({
@@ -802,10 +771,10 @@ export class AdBrandsService {
     // REAL CLAUDE AI — Copy Playbook Analysis
     // ═══════════════════════════════════════════════════════════
 
-    private async analyzeCopyPlaybookWithClaude(filePath: string): Promise<CopyPlaybook> {
-        this.logger.log(`Analyzing copy playbook PDF with Claude: ${filePath}`);
+    private async analyzeCopyPlaybookWithClaude(fileBuffer: Buffer): Promise<CopyPlaybook> {
+        this.logger.log(`Analyzing copy playbook PDF with Claude`);
 
-        const pdfBase64 = this.readPdfAsBase64(filePath);
+        const pdfBase64 = this.bufferToPdfBase64(fileBuffer);
         const client = this.getAnthropicClient();
 
         const message = await client.messages.create({
@@ -867,9 +836,8 @@ export class AdBrandsService {
     // SHARED HELPERS — PDF reading + JSON parsing
     // ═══════════════════════════════════════════════════════════
 
-    private readPdfAsBase64(filePath: string): string {
+    private bufferToPdfBase64(fileBuffer: Buffer): string {
         try {
-            const fileBuffer = readFileSync(filePath);
             const header = fileBuffer.subarray(0, 4).toString('utf8');
             if (header !== '%PDF') {
                 throw new BadRequestException('Invalid PDF file: a real PDF is required');
@@ -878,7 +846,7 @@ export class AdBrandsService {
             return fileBuffer.toString('base64');
         } catch (error) {
             if (error instanceof BadRequestException) throw error;
-            this.logger.error(`Failed to read PDF file: ${error.message}`);
+            this.logger.error(`Failed to process PDF buffer: ${error.message}`);
             throw new BadRequestException(AdBrandMessage.AI_PDF_UNREADABLE);
         }
     }
@@ -911,34 +879,30 @@ export class AdBrandsService {
     async analyzeOnly(
         name: string,
         website: string,
-        filePath?: string,
+        fileInput?: { buffer: Buffer; originalname: string },
         textContent?: string,
-        logoLightPath?: string,
-        logoDarkPath?: string,
     ): Promise<any> {
         this.logger.log(`Analyze Only (no brand creation): ${name}`);
         this.logger.log(`=== ANALYZE ONLY INPUT ===`);
         this.logger.log(`Name: ${name}`);
         this.logger.log(`Website: ${website}`);
-        this.logger.log(`FilePath: ${filePath || 'NONE'}`);
+        this.logger.log(`File: ${fileInput?.originalname || 'NONE'}`);
         this.logger.log(`TextContent: ${textContent ? textContent.substring(0, 200) + '...' : 'NONE'}`);
-        this.logger.log(`LogoLight: ${logoLightPath || 'NONE'}`);
-        this.logger.log(`LogoDark: ${logoDarkPath || 'NONE'}`);
 
         let playbook: any;
 
-        if (filePath) {
+        if (fileInput) {
             // Detect file type by extension
-            const ext = filePath.toLowerCase().split('.').pop();
+            const ext = fileInput.originalname.toLowerCase().split('.').pop();
             this.logger.log(`Analyzing file with extension: ${ext}`);
 
             if (ext === 'pdf') {
-                // Analyze PDF file with Claude vision
-                playbook = await this.analyzeBrandPlaybookWithClaude(filePath, logoLightPath, logoDarkPath);
+                // Analyze PDF buffer with Claude vision
+                playbook = await this.analyzeBrandPlaybookWithClaude(fileInput.buffer);
             } else if (ext === 'txt' || ext === 'docx') {
-                // Read text file and analyze with Claude text
-                const fileContent = await this.readTextFile(filePath, ext);
-                playbook = await this.analyzeTextWithClaude(fileContent, name, website, logoLightPath, logoDarkPath);
+                // Extract text from buffer and analyze with Claude
+                const fileContent = this.readTextFromBuffer(fileInput.buffer, ext);
+                playbook = await this.analyzeTextWithClaude(fileContent, name, website);
             } else {
                 // Unsupported file type - generate default
                 this.logger.warn(`Unsupported file type: ${ext}, using default playbook`);
@@ -946,7 +910,7 @@ export class AdBrandsService {
             }
         } else if (textContent) {
             // Analyze manual text content
-            playbook = await this.analyzeTextWithClaude(textContent, name, website, logoLightPath, logoDarkPath);
+            playbook = await this.analyzeTextWithClaude(textContent, name, website);
         } else {
             // Generate default playbook based on name/website
             playbook = this.generateDefaultPlaybook(name, website);
@@ -1006,7 +970,7 @@ export class AdBrandsService {
         userId: string,
         name: string,
         website: string,
-        filePath?: string,
+        fileInput?: { buffer: Buffer; originalname: string },
         textContent?: string,
         industry?: string,
     ): Promise<{ brand: AdBrand; playbook: any }> {
@@ -1024,7 +988,7 @@ export class AdBrandsService {
         this.logger.log(`Created brand: ${savedBrand.id}`);
 
         // Step 2: Analyze playbook (PDF, text file, or manual text)
-        const playbook = await this.analyzeOnly(name, website, filePath, textContent);
+        const playbook = await this.analyzeOnly(name, website, fileInput, textContent);
 
         // Step 3: Save playbook to brand
         savedBrand.brand_playbook = playbook;
@@ -1037,26 +1001,22 @@ export class AdBrandsService {
     // READ TEXT FILE (TXT or DOCX)
     // ═══════════════════════════════════════════════════════════
 
-    private async readTextFile(filePath: string, ext: string): Promise<string> {
+    private readTextFromBuffer(buffer: Buffer, ext: string): string {
         try {
             if (ext === 'txt') {
-                // Read plain text file
-                const content = readFileSync(filePath, 'utf-8');
-                this.logger.log(`Read TXT file: ${content.length} characters`);
+                const content = buffer.toString('utf-8');
+                this.logger.log(`Read TXT buffer: ${content.length} characters`);
                 return content;
             } else if (ext === 'docx') {
-                // For DOCX, read as binary and extract text (basic extraction)
-                // In production, use a library like mammoth.js
-                const buffer = readFileSync(filePath);
-                // Basic text extraction - look for text between XML tags
+                // Basic text extraction from DOCX buffer
                 const text = buffer.toString('utf-8');
                 const cleanText = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-                this.logger.log(`Read DOCX file: ${cleanText.length} characters (basic extraction)`);
+                this.logger.log(`Read DOCX buffer: ${cleanText.length} characters (basic extraction)`);
                 return cleanText;
             }
             return '';
         } catch (error) {
-            this.logger.error(`Failed to read text file: ${error.message}`);
+            this.logger.error(`Failed to read text buffer: ${error.message}`);
             throw new BadRequestException('Failed to read uploaded file');
         }
     }
@@ -1089,15 +1049,10 @@ export class AdBrandsService {
         textContent: string,
         brandName: string,
         website: string,
-        logoLightPath?: string,
-        logoDarkPath?: string,
     ): Promise<any> {
         this.logger.log(`[STRICT TEXT ANALYSIS] Analyzing brand from text input for: ${brandName}`);
 
         const client = this.getAnthropicClient();
-
-        // Use the same strict extraction prompt — NO inference, NO paraphrasing
-        const systemPrompt = STRICT_EXTRACTION_SYSTEM_PROMPT;
 
         const userPrompt = `${STRICT_EXTRACTION_USER_PROMPT}
 
@@ -1111,36 +1066,17 @@ ${textContent}`;
 
         this.logger.log(`=== CLAUDE STRICT TEXT ANALYSIS REQUEST ===`);
         this.logger.log(`Model: ${this.model}`);
-        this.logger.log(`System Prompt: STRICT_EXTRACTION_SYSTEM_PROMPT (zero hallucination mode)`);
         this.logger.log(`Input text length: ${textContent.length} chars`);
-        this.logger.log(`Logo Light: ${logoLightPath || 'NONE'}, Logo Dark: ${logoDarkPath || 'NONE'}`);
-
-        // Build content: text + optional logo images
-        const hasLogos = logoLightPath || logoDarkPath;
-        let messageContent: any;
-
-        if (hasLogos) {
-            const contentBlocks: any[] = [];
-            const logoImages = this.buildLogoImageBlocks(logoLightPath, logoDarkPath);
-            contentBlocks.push(...logoImages);
-            contentBlocks.push({
-                type: 'text',
-                text: userPrompt + '\n\nI have also attached the brand logos (light and/or dark versions). Extract logo_rules ONLY from what you actually observe in the logos. Do NOT invent rules.',
-            });
-            messageContent = contentBlocks;
-        } else {
-            messageContent = userPrompt;
-        }
 
         try {
             const message = await client.messages.create({
                 model: this.model,
                 max_tokens: 4096,
-                system: systemPrompt,
+                system: STRICT_EXTRACTION_SYSTEM_PROMPT,
                 messages: [
                     {
                         role: 'user',
-                        content: messageContent,
+                        content: userPrompt,
                     },
                 ],
             });
@@ -1163,7 +1099,6 @@ ${textContent}`;
             return playbook;
         } catch (error) {
             this.logger.error(`Strict text analysis failed: ${error.message}`);
-            // Return default playbook on error
             return this.generateDefaultPlaybook(brandName, website);
         }
     }
@@ -1172,48 +1107,6 @@ ${textContent}`;
     // GENERATE DEFAULT PLAYBOOK (fallback)
     // Matches the comprehensive schema with all required fields
     // ═══════════════════════════════════════════════════════════
-
-    /**
-     * Build Claude image content blocks from logo file paths.
-     * Reads logo files from disk and converts to base64 for Claude vision.
-     */
-    private buildLogoImageBlocks(logoLightPath?: string, logoDarkPath?: string): any[] {
-        const blocks: any[] = [];
-
-        const addLogoBlock = (path: string, label: string) => {
-            try {
-                const buffer = readFileSync(path);
-                const ext = path.toLowerCase().split('.').pop();
-                let mediaType = 'image/png';
-                if (ext === 'jpg' || ext === 'jpeg') mediaType = 'image/jpeg';
-                else if (ext === 'webp') mediaType = 'image/webp';
-                else if (ext === 'svg') mediaType = 'image/png'; // SVG sent as-is may not work, fallback
-
-                const base64 = buffer.toString('base64');
-                this.logger.log(`Logo ${label} loaded: ${(buffer.length / 1024).toFixed(1)} KB, type: ${mediaType}`);
-
-                blocks.push({
-                    type: 'image',
-                    source: {
-                        type: 'base64',
-                        media_type: mediaType,
-                        data: base64,
-                    },
-                });
-                blocks.push({
-                    type: 'text',
-                    text: `[Above image: Brand ${label}]`,
-                });
-            } catch (err) {
-                this.logger.warn(`Failed to read logo ${label} at ${path}: ${err.message}`);
-            }
-        };
-
-        if (logoLightPath) addLogoBlock(logoLightPath, 'Light Logo (for dark backgrounds)');
-        if (logoDarkPath) addLogoBlock(logoDarkPath, 'Dark Logo (for light backgrounds)');
-
-        return blocks;
-    }
 
     private generateDefaultPlaybook(brandName: string, website: string): BrandPlaybook {
         return {

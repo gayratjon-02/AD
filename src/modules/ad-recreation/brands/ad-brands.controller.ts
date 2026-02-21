@@ -15,11 +15,9 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-import { v4 as uuidv4 } from 'uuid';
+import { memoryStorage } from 'multer';
 import { AdBrandsService } from './ad-brands.service';
+import { FilesService } from '../../../files/files.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { User } from '../../../database/entities/Product-Visuals/user.entity';
@@ -53,7 +51,10 @@ import { AdBrandMessage } from '../../../libs/messages';
 export class AdBrandsController {
     private readonly logger = new Logger(AdBrandsController.name);
 
-    constructor(private readonly adBrandsService: AdBrandsService) { }
+    constructor(
+        private readonly adBrandsService: AdBrandsService,
+        private readonly filesService: FilesService,
+    ) { }
 
     // ═══════════════════════════════════════════════════════════
     // POST /ad-brands - Create Brand
@@ -89,13 +90,7 @@ export class AdBrandsController {
                 { name: 'logo_dark', maxCount: 1 },
             ],
             {
-                storage: diskStorage({
-                    destination: './uploads/ad-brands/playbooks',
-                    filename: (_req, file, cb) => {
-                        const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
-                        cb(null, uniqueName);
-                    },
-                }),
+                storage: memoryStorage(),
                 fileFilter: (_req, file, cb) => {
                     // Accept PDF, DOCX, TXT for playbook; images for logos
                     const docMimes = [
@@ -133,23 +128,32 @@ export class AdBrandsController {
             throw new BadRequestException('Please provide either a file upload or text description of your brand');
         }
 
-        // Only analyze - don't create brand
+        // Upload logos to S3 if provided
+        let logoLightUrl: string | undefined;
+        let logoDarkUrl: string | undefined;
+        if (logoLight) {
+            const stored = await this.filesService.storeImage(logoLight, 'ad-brands/logos');
+            logoLightUrl = stored.url;
+        }
+        if (logoDark) {
+            const stored = await this.filesService.storeImage(logoDark, 'ad-brands/logos');
+            logoDarkUrl = stored.url;
+        }
+
+        // Only analyze - don't create brand (pass buffer for analysis)
         const playbook = await this.adBrandsService.analyzeOnly(
             dto.name,
             dto.website,
-            file?.path,
+            file ? { buffer: file.buffer, originalname: file.originalname } : undefined,
             dto.text_content,
-            logoLight?.path,
-            logoDark?.path,
         );
 
-        // Inject logo URLs into playbook from uploaded files
-        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-        if (logoLight || logoDark) {
+        // Inject logo URLs into playbook
+        if (logoLightUrl || logoDarkUrl) {
             playbook.logo = {
                 ...(playbook.logo || {}),
-                ...(logoLight ? { light_url: `${baseUrl}/uploads/ad-brands/playbooks/${logoLight.filename}` } : {}),
-                ...(logoDark ? { dark_url: `${baseUrl}/uploads/ad-brands/playbooks/${logoDark.filename}` } : {}),
+                ...(logoLightUrl ? { light_url: logoLightUrl } : {}),
+                ...(logoDarkUrl ? { dark_url: logoDarkUrl } : {}),
             };
         }
 
@@ -335,13 +339,7 @@ export class AdBrandsController {
                 { name: 'logo_dark', maxCount: 1 },
             ],
             {
-                storage: diskStorage({
-                    destination: './uploads/ad-brands/assets',
-                    filename: (_req, file, cb) => {
-                        const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
-                        cb(null, uniqueName);
-                    },
-                }),
+                storage: memoryStorage(),
                 fileFilter: (_req, file, cb) => {
                     if (file.mimetype.match(/\/(jpg|jpeg|png|gif|svg\+xml|webp)$/)) {
                         cb(null, true);
@@ -370,11 +368,10 @@ export class AdBrandsController {
             throw new BadRequestException(AdBrandMessage.LOGO_DARK_REQUIRED);
         }
 
-        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-        const logoLightUrl = `${baseUrl}/uploads/ad-brands/assets/${files.logo_light[0].filename}`;
-        const logoDarkUrl = `${baseUrl}/uploads/ad-brands/assets/${files.logo_dark[0].filename}`;
+        const storedLight = await this.filesService.storeImage(files.logo_light[0], 'ad-brands/assets');
+        const storedDark = await this.filesService.storeImage(files.logo_dark[0], 'ad-brands/assets');
 
-        const brand = await this.adBrandsService.uploadAssets(id, user.id, logoLightUrl, logoDarkUrl);
+        const brand = await this.adBrandsService.uploadAssets(id, user.id, storedLight.url, storedDark.url);
 
         return {
             success: true,
@@ -392,22 +389,7 @@ export class AdBrandsController {
     @Post(':id/playbook')
     @UseInterceptors(
         FileInterceptor('file', {
-            storage: diskStorage({
-                destination: (req, _file, cb) => {
-                    const brandId = req.params.id as string;
-                    const uploadPath = join('./uploads/brands', brandId, 'playbooks');
-
-                    if (!existsSync(uploadPath)) {
-                        mkdirSync(uploadPath, { recursive: true });
-                    }
-
-                    cb(null, uploadPath);
-                },
-                filename: (_req, file, cb) => {
-                    const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
-                    cb(null, uniqueName);
-                },
-            }),
+            storage: memoryStorage(),
             fileFilter: (_req, file, cb) => {
                 if (file.mimetype === 'application/pdf') {
                     cb(null, true);
@@ -441,17 +423,15 @@ export class AdBrandsController {
             throw new BadRequestException(AdBrandMessage.PLAYBOOK_FILE_REQUIRED);
         }
 
-        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-        const pdfUrl = file
-            ? `${baseUrl}/uploads/brands/${id}/playbooks/${file.filename}`
-            : undefined;
+        // Store PDF to S3 for archival
+        const stored = await this.filesService.storeImage(file, `brands/${id}/playbooks`);
 
         const brand = await this.adBrandsService.analyzePlaybook(
             id,
             user.id,
             playbookType,
-            file?.path,
-            pdfUrl,
+            file.buffer,
+            stored.url,
         );
 
         // Return the correct playbook data based on type

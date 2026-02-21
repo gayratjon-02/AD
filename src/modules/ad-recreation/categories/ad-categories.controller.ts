@@ -15,10 +15,9 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { memoryStorage } from 'multer';
 import { AdCategoriesService } from './ad-categories.service';
+import { FilesService } from '../../../files/files.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { User } from '../../../database/entities/Product-Visuals/user.entity';
@@ -31,7 +30,10 @@ import { AdCategoryMessage } from '../../../libs/messages';
 export class AdCategoriesController {
     private readonly logger = new Logger(AdCategoriesController.name);
 
-    constructor(private readonly adCategoriesService: AdCategoriesService) {}
+    constructor(
+        private readonly adCategoriesService: AdCategoriesService,
+        private readonly filesService: FilesService,
+    ) {}
 
     // ═══════════════════════════════════════════════════════════
     // POST /categories - Create Category
@@ -134,13 +136,7 @@ export class AdCategoriesController {
     @Post(':id/image')
     @UseInterceptors(
         FileInterceptor('file', {
-            storage: diskStorage({
-                destination: './uploads/ad-categories/images',
-                filename: (_req, file, cb) => {
-                    const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
-                    cb(null, uniqueName);
-                },
-            }),
+            storage: memoryStorage(),
             fileFilter: (_req, file, cb) => {
                 if (file.mimetype.match(/\/(jpg|jpeg|png|gif|svg\+xml|webp)$/)) {
                     cb(null, true);
@@ -162,10 +158,9 @@ export class AdCategoriesController {
             throw new BadRequestException('Image file is required');
         }
 
-        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
-        const imageUrl = `${baseUrl}/uploads/ad-categories/images/${file.filename}`;
+        const stored = await this.filesService.storeImage(file, 'ad-categories/images');
 
-        const category = await this.adCategoriesService.updateImage(id, user.id, imageUrl);
+        const category = await this.adCategoriesService.updateImage(id, user.id, stored.url);
 
         return {
             success: true,

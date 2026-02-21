@@ -4,6 +4,7 @@ import { AdCategoriesService } from './ad-categories.service';
 import { AdCategoriesController } from './ad-categories.controller';
 import { AdCategory } from '../../../database/entities/Ad-Recreation/ad-category.entity';
 import { AdCollection } from '../../../database/entities/Ad-Recreation/ad-collection.entity';
+import { FilesModule } from '../../../files/files.module';
 
 /**
  * Ad Categories Module
@@ -14,6 +15,7 @@ import { AdCollection } from '../../../database/entities/Ad-Recreation/ad-collec
 @Module({
     imports: [
         TypeOrmModule.forFeature([AdCategory, AdCollection]),
+        FilesModule,
     ],
     controllers: [AdCategoriesController],
     providers: [AdCategoriesService],

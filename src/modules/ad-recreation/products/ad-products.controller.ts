@@ -16,9 +16,7 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import { v4 as uuidv4 } from 'uuid';
+import { memoryStorage } from 'multer';
 import { FILE_SIZE_LIMIT } from '../../../libs/config';
 import { AdProductsService } from './ad-products.service';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
@@ -182,13 +180,7 @@ export class AdProductsController {
                 { name: 'back_image', maxCount: 1 },
             ],
             {
-                storage: diskStorage({
-                    destination: './uploads/ad-products/images',
-                    filename: (_req, file, cb) => {
-                        const uniqueName = `${uuidv4()}${extname(file.originalname)}`;
-                        cb(null, uniqueName);
-                    },
-                }),
+                storage: memoryStorage(),
                 fileFilter: (_req, file, cb) => {
                     if (file.mimetype.match(/\/(jpg|jpeg|png|gif|svg\+xml|webp)$/)) {
                         cb(null, true);
@@ -209,12 +201,11 @@ export class AdProductsController {
             throw new BadRequestException('At least one image file is required (front_image or back_image)');
         }
 
-        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
         const frontImageUrl = files?.front_image?.[0]
-            ? `${baseUrl}/uploads/ad-products/images/${files.front_image[0].filename}`
+            ? (await this.filesService.storeImage(files.front_image[0], 'ad-products/images')).url
             : undefined;
         const backImageUrl = files?.back_image?.[0]
-            ? `${baseUrl}/uploads/ad-products/images/${files.back_image[0].filename}`
+            ? (await this.filesService.storeImage(files.back_image[0], 'ad-products/images')).url
             : undefined;
 
         const product = await this.adProductsService.updateImages(id, user.id, frontImageUrl, backImageUrl);

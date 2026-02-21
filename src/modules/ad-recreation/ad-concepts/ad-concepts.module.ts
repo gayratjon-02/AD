@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdConceptsService } from './ad-concepts.service';
 import { AdConceptsController } from './ad-concepts.controller';
 import { AdConcept } from '../../../database/entities/Ad-Recreation/ad-concept.entity';
+import { FilesModule } from '../../../files/files.module';
 
 /**
  * Ad Concepts Module
@@ -15,6 +16,7 @@ import { AdConcept } from '../../../database/entities/Ad-Recreation/ad-concept.e
     imports: [
         ConfigModule,
         TypeOrmModule.forFeature([AdConcept]),
+        FilesModule,
     ],
     controllers: [AdConceptsController],
     providers: [AdConceptsService],
