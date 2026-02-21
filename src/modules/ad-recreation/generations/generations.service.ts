@@ -1103,6 +1103,7 @@ If a human model appears in the image:
 - Anatomy: ALL body proportions must be anatomically correct
 - Correct number of fingers (5 per hand), correct limb proportions, natural joint angles
 - Expression: Natural, confident
+- Clothing Consistency: The model's clothing colors and style MUST remain exactly identical across the entire image (especially in split-screen or before/after formats).
 - NO extra limbs, NO distorted faces, NO unnatural body bending`;
         }
 
@@ -1112,6 +1113,7 @@ If a human model appears in the image:
 - Age appearance: ${ta.age_range || '25-45'} years old
 - Body type: ${ta.body_type || 'Healthy, natural-looking'}
 - Clothing: ${ta.clothing_style || 'Appropriate for the brand context'}
+- Clothing Consistency: The model's clothing colors and style MUST remain exactly identical across the entire image (especially in split-screen or before/after formats).
 - Expression: Confident, calm, focused — NOT overly posed or unnatural
 - Anatomy: ALL body proportions must be anatomically correct. Correct number of fingers (5 per hand), correct limb proportions, natural joint angles
 - NO extra limbs, NO distorted faces, NO unnatural body bending`;
@@ -1236,6 +1238,8 @@ ${productNegatives}
 - Unrealistic body proportions or uncanny valley faces
 - Cluttered, messy compositions with too many visual elements
 - Dark, gloomy, or depressing atmospheres (unless the "problem" side of a comparison)
+- Any white frames, borders, strokes, or outlines around the image edges. The ad must fill the entire canvas edge-to-edge.
+- Inconsistent clothing colors on the same person within a split-screen or before/after format.
 - Any product that does NOT match the exact product described in the Product Lock (use EXACT product description only)
 ${conceptAvoidSection}
 
