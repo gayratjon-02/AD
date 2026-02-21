@@ -91,8 +91,11 @@ The generated image MUST contain RENDERED TEXT as a core design element. This is
    - NEVER repeat a word within any text element. "day day" = FAIL, "save save" = FAIL.
    - NEVER skip or truncate words. "worse every" must NOT become "wory".
    - NEVER merge two words into one garbled word. "getting worse" must NOT become "gettin wors".
+   - NEVER swap small words: "for" must NOT become "it", "to", or "fo". Copy the EXACT word.
+   - NEVER truncate short words: "with" must NOT become "wth", "reclaim" must NOT become "recaim".
    - If your rendered word count differs from the VERIFY line, you MUST re-render.
    - After rendering: compare first word and last word against VERIFY. If they don't match, re-render.
+   - After rendering: scan for ANY 2-3 letter words and verify each one matches the source EXACTLY.
 
 4. TYPOGRAPHY HIERARCHY:
    - BRAND NAME: Large, bold, prominent — top of ad.
@@ -152,6 +155,15 @@ RULE 4 — AD COPY QUALITY:
 - Bullet points MUST use EXACT values from brand data (exact prices, percentages, product names). Do NOT rephrase or approximate.
 - CTA: action-oriented, 2-4 words. Do NOT add trailing punctuation unless the brand tone requires it.
 - Match the brand's tone of voice.
+
+RULE 4B — TEXT SAFETY FOR GEMINI RENDERING (CRITICAL):
+The image model struggles with long sentences and small connector words. Follow these rules to ensure accurate text rendering:
+- Maximum 8 words per text element (headline, subheadline, each bullet).
+- No commas mid-sentence — use periods to separate ideas into short punchy statements.
+- AVOID 3-letter connector words in the MIDDLE of sentences (for, the, and, but, with). Restructure to eliminate them or place them at the start of a line.
+- Replace vague phrases with specific numbers: BAD "enjoy savings for years" → GOOD "Save £1,200+ yearly"
+- Each bullet point: 2-5 words maximum. Shorter = safer rendering.
+- Prefer short declarative statements over flowing prose: BAD "Feel better in just 15 minutes" → GOOD "Results in 15 minutes"
 
 RULE 5 — OUTPUT FORMAT:
 - Return ONLY valid JSON. No markdown, no explanation.
@@ -1472,6 +1484,16 @@ ${layoutComposition}
 ${rawImagePrompt}
 
 ${TEXT_RENDERING_LOCK}
+
+${'═'.repeat(60)}
+BADGE AND NUMBER RULES (ZERO TOLERANCE FOR HALLUCINATED VALUES)
+${'═'.repeat(60)}
+- Only create badges, stickers, or callout graphics that are EXPLICITLY listed in the TEXT CONTENT section above.
+- Do NOT invent additional price tags, percentage badges, or savings callouts beyond what is specified in the text elements.
+- The ONLY numbers allowed in badges are those that appear EXACTLY in the text elements above.
+- Do NOT hallucinate prices, percentages, or monetary values (e.g., no made-up "£739", "75% SAVED", "£899" badges).
+- If the layout calls for decorative badges, use ONLY text that appears verbatim in the TEXT CONTENT section.
+- Any badge or sticker containing a number or price that does NOT appear in the text elements above = AUTOMATIC REJECTION.
 
 ${format?.safe_zone ? `${'═'.repeat(60)}
 PLATFORM SAFE ZONES & NEGATIVE SPACE (CRITICAL)
