@@ -211,6 +211,19 @@ export class GenerationsService {
         userId: string,
         dto: GenerateAdDto,
     ): Promise<{ generation: AdGeneration; ad_copy: any; result: any }> {
+        // We wrap the actual execution in a self-executing async function so we can return early
+        this._executeGeneration(userId, dto).catch(err => {
+            this.logger.error(`Background generation failed: ${err.message}`, err.stack);
+        });
+
+        // We still need to return the initial generation record quickly
+        return this._initializeGeneration(userId, dto);
+    }
+
+    private async _initializeGeneration(
+        userId: string,
+        dto: GenerateAdDto,
+    ): Promise<{ generation: AdGeneration; ad_copy: any; result: any }> {
         this.logger.log(`═══════════════════════════════════════════════════════════`);
         this.logger.log(`STARTING BATCH AD GENERATION`);
         this.logger.log(`═══════════════════════════════════════════════════════════`);
@@ -370,6 +383,134 @@ export class GenerationsService {
             allReferenceImages.push(fixUrl(concept.original_image_url));
         }
 
+        // Store initial empty arrays so progress tracking works
+        await this.generationsRepository.update(generationId, {
+            generated_copy: [],
+            merged_jsons: [],
+            result_images: [],
+        });
+
+        const initializedGeneration = await this.generationsRepository.findOne({ where: { id: generationId } });
+
+        return {
+            generation: initializedGeneration!,
+            ad_copy: [],
+            result: {
+                generation_id: generationId,
+                status: 'processing',
+                message: 'Generation started in background'
+            }
+        };
+    }
+
+    private async _executeGeneration(
+        userId: string,
+        dto: GenerateAdDto,
+    ): Promise<void> {
+        this.logger.log(`[BACKGROUND] Starting heavy generation process for ${dto.brand_id}...`);
+
+        // Need to duplicate some of the fetching logic here since we need the actual objects for the loop
+        // Alternatively, we could pass them from initialized, but refetching is safer for background jobs
+
+        // TODO: Later include custom_angles from the brand here
+        const angles = dto.marketing_angle_ids.map(id => MARKETING_ANGLES.find(a => a.id === id)).filter(Boolean) as import('../configurations/constants/marketing-angles').MarketingAngle[];
+
+        const effectiveAngles = dto.marketing_angle_ids.map(id => {
+            const found = MARKETING_ANGLES.find(a => a.id === id);
+            if (found) return found;
+            return {
+                id,
+                category: 'custom',
+                label: 'Custom Angle',
+                description: 'Custom brand angle',
+                hook: 'Custom Hook',
+            } as any;
+        });
+
+        const formats = dto.format_ids.map(id => AD_FORMATS.find(f => f.id === id)).filter(Boolean) as import('../configurations/constants/ad-formats').AdFormat[];
+
+        const brand = await this.adBrandsService.findOne(dto.brand_id, userId);
+        const concept = await this.adConceptsService.findOne(dto.concept_id, userId);
+        const playbook = brand.brand_playbook;
+
+        // Incorporate custom angles if any exist
+        const brandCustomAngles: any[] = (brand as any).custom_angles || [];
+        const finalAngles = dto.marketing_angle_ids.map(id => {
+            const predefined = MARKETING_ANGLES.find(a => a.id === id);
+            if (predefined) return predefined;
+            const custom = brandCustomAngles.find(a => a.id === id);
+            if (custom) return { ...custom, label: custom.name }; // mapped custom angle
+            return effectiveAngles.find(a => a.id === id); // fallback
+        });
+
+        // Find the generation we just created
+        const activeGeneration = await this.generationsRepository.findOne({
+            where: { user_id: userId, brand_id: dto.brand_id, concept_id: dto.concept_id },
+            order: { created_at: 'DESC' }
+        });
+
+        if (!activeGeneration) {
+            this.logger.error('Could not find active generation for background processing');
+            return;
+        }
+
+        const generationId = activeGeneration.id;
+
+        // Reconstruct image URLs
+        let productImageUrls: string[] = [];
+        let productAnalyzedJson: Record<string, any> | null = null;
+        let productName = '';
+        const uploadBaseUrl = this.configService.get<string>('UPLOAD_BASE_URL') || 'http://localhost:4001';
+        const fixUrl = (url: string) => url.includes('localhost:3000') ? url.replace('http://localhost:3000', uploadBaseUrl) : url;
+
+        if (dto.product_id) {
+            const adProduct = await this.adProductRepository.findOne({ where: { id: dto.product_id } });
+            if (adProduct) {
+                if (adProduct.front_image_url) productImageUrls.push(fixUrl(adProduct.front_image_url));
+                if (adProduct.back_image_url) productImageUrls.push(fixUrl(adProduct.back_image_url));
+                productAnalyzedJson = adProduct.analyzed_product_json || null;
+            } else {
+                const phase1Product = await this.productRepository.findOne({ where: { id: dto.product_id } });
+                if (phase1Product) {
+                    if (phase1Product.front_image_url) productImageUrls.push(fixUrl(phase1Product.front_image_url));
+                    if (phase1Product.back_image_url) productImageUrls.push(fixUrl(phase1Product.back_image_url));
+                    if (Array.isArray(phase1Product.reference_images)) {
+                        phase1Product.reference_images.forEach(u => u && productImageUrls.push(fixUrl(u)));
+                    }
+                    productAnalyzedJson = phase1Product.analyzed_product_json || null;
+                }
+            }
+        }
+
+        const allReferenceImages: string[] = [];
+        let productImageCount = 0;
+        const heroUrl = dto.mapped_assets?.selected_image_url;
+        if (heroUrl) {
+            allReferenceImages.push(fixUrl(heroUrl));
+            productImageCount++;
+        }
+        for (const pUrl of productImageUrls) {
+            if (pUrl !== heroUrl) {
+                allReferenceImages.push(pUrl);
+                productImageCount++;
+            }
+        }
+
+        let brandLogoIndex = -1;
+        if (brand.assets?.logo_light) {
+            brandLogoIndex = allReferenceImages.length;
+            allReferenceImages.push(fixUrl(brand.assets.logo_light));
+        } else if (brand.assets?.logo_dark) {
+            brandLogoIndex = allReferenceImages.length;
+            allReferenceImages.push(fixUrl(brand.assets.logo_dark));
+        }
+
+        let conceptImageIndex = -1;
+        if (concept.original_image_url) {
+            conceptImageIndex = allReferenceImages.length;
+            allReferenceImages.push(fixUrl(concept.original_image_url));
+        }
+
         const variationsCount = dto.variations_count || 4;
         const totalCombos = finalAngles.length * formats.length;
         const totalVariations = totalCombos * variationsCount;
@@ -449,12 +590,7 @@ export class GenerationsService {
                             total: totalVariations,
                             visuals: allResultImages,
                         });
-                        const cancelledGen = await this.generationsRepository.findOne({ where: { id: generationId } });
-                        return {
-                            generation: cancelledGen!,
-                            ad_copy: allGeneratedCopies,
-                            result: { generation_id: generationId, total_combinations: totalCombos, total_variations: totalVariations, successful_images: allResultImages.length },
-                        };
+                        return;
                     }
 
                     if (batchIdx > 0 || fIdx > 0 || aIdx > 0) {
@@ -555,16 +691,7 @@ export class GenerationsService {
         const updatedGeneration = await this.generationsRepository.findOne({ where: { id: generationId } });
         if (!updatedGeneration) throw new InternalServerErrorException('Failed to fetch updated generation');
 
-        return {
-            generation: updatedGeneration,
-            ad_copy: allGeneratedCopies,
-            result: {
-                generation_id: updatedGeneration.id,
-                total_combinations: totalCombos,
-                total_variations: totalVariations,
-                successful_images: allResultImages.length
-            }
-        };
+        return;
     }
 
     // ═══════════════════════════════════════════════════════════
