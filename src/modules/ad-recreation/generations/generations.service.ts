@@ -141,11 +141,17 @@ RULE 4 — AD COPY:
 - The CTA must be action-oriented (2-5 words), include brand name if possible
 - All text must match the brand's tone of voice
 
-RULE 5 — OUTPUT FORMAT:
+RULE 5 — VISUAL ANGLE DIFFERENTIATION (CRITICAL):
+- You MUST design the SCENE/ENVIRONMENT precisely to match the "NARRATIVE ANGLE" provided.
+- Do NOT blindly copy the scene from the concept image. The Concept image is ONLY for layout and style formatting.
+- Every marketing angle requires a completely different physical environment and background. For example: "Before/After" should show contrasting backgrounds. "Lifestyle" must show a luxurious or aspirational setting. "Problem/Solution" might show a messy real-world desk vs a clean studio.
+- Make the background setting unmistakably unique to the provided Narrative Angle.
+
+RULE 6 — OUTPUT FORMAT:
 - Return ONLY valid JSON. No markdown, no explanation.
 - The image_prompt must be 300-500 words describing the COMPLETE ad design.
 
-RULE 6 — image_prompt STRUCTURE:
+RULE 7 — image_prompt STRUCTURE:
 Your image_prompt MUST follow this exact structure:
   a) AD FORMAT: "A complete, finished [editorial/lifestyle/product-hero] advertisement design, ready for social media."
   b) PRODUCT DESCRIPTION: Copy VERBATIM from the PRODUCT_INJECTION block.
@@ -1419,15 +1425,14 @@ ${brandLogoIndex >= 0 ? `🏷️ IMAGE ${brandLogoIndex + 1}: BRAND LOGO
    - Position it where a real brand would place it (on the garment, on a label, or in the ad header)
    - The logo must be SHARP, LEGIBLE, and properly integrated into the design. No garbled text.
 ` : ''}
-${conceptImageIndex >= 0 ? `🎨 IMAGE ${conceptImageIndex + 1} (LAST IMAGE): CONCEPT/STYLE REFERENCE ONLY
-   ⚠️ WARNING: This image is ONLY for style, layout, composition, and mood reference.
+${conceptImageIndex >= 0 ? `🎨 IMAGE ${conceptImageIndex + 1} (LAST IMAGE): CONCEPT/LAYOUT OVERLAY REFERENCE ONLY
+   ⚠️ WARNING: This image is ONLY for text layout, UI structure, and graphic design patterns.
    🚫 DO NOT COPY the product shown in this image!
-   🚫 COMPLETELY IGNORE whatever product/item appears in this concept image.
-   ✅ ONLY use it for: camera angle, lighting style, background textures, text placement, overall composition.
+   🚫 DO NOT COPY the background or setting of this image IF the Narrative Angle (below) demands a specific environment.
+   ✅ ONLY use it for: where to place text, font proportions, and overlay structures.
    ✅ REPLACE the concept image's product with the EXACT product from Images 1-${productImageCount || 'N'}.
 ` : ''}
-This rule is NON-NEGOTIABLE. If the Concept image shows sneakers but the Product images show a jacket,
-the ad MUST feature the jacket from the Product images, NOT the sneakers from the Concept.
+This rule is NON-NEGOTIABLE. The environment, setting, and mood MUST be driven by the Marketing Angle and Creative Direction below, NOT this concept image.
 
 ${'═'.repeat(60)}
 PRIORITY 2 — BRAND IDENTITY (Product Fidelity + Visual Identity)
