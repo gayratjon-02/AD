@@ -86,6 +86,15 @@ The generated image MUST contain RENDERED TEXT as a core design element. This is
    - Text must be sharp, clean, and anti-aliased — NOT blurry, warped, or garbled.
    - Each text element must be spelled EXACTLY as provided — zero typos, zero extra characters.
 
+2.5. ANTI-DUPLICATION LOCK:
+   - NEVER repeat a word or phrase. "day day", "save save", "15% 15%" are all WRONG.
+   - Each text element has a word count — if your rendered version has MORE words than the source, you have duplicated. Remove extras.
+   - Each bullet point is a SEPARATE text element — do NOT merge two bullets into one line.
+
+2.6. CHARACTER-COUNT VERIFICATION:
+   - After rendering each text element, verify the character count matches the source.
+   - If counts do not match, re-render that text element from scratch.
+
 3. TYPOGRAPHY HIERARCHY:
    - BRAND NAME: Large, bold, prominent — typically at the top of the ad. Use clean sans-serif or the brand's font style.
    - HEADLINE: Second-largest text, high visual impact. Can use italic, script, or bold styles depending on the ad mood.
@@ -137,8 +146,11 @@ RULE 3 — TEXT RENDERING & LAYOUT:
 - Use premium UI elements for text backgrounds (floating cards with drop shadows, frosted glass panels) — not flat color blocks.
 
 RULE 4 — AD COPY QUALITY:
-- Headline: punchy, max 8 words. Subheadline: benefit-driven, max 20 words.
-- 2-4 bullet points with ✓ checkmarks. CTA: action-oriented, 2-5 words.
+- Headline: punchy, max 8 words.
+- Subheadline: benefit-driven, max 15 words.
+- EXACTLY 3 bullet points, each max 6 words (shorter text = more accurate rendering by the image model).
+- Bullet points MUST use EXACT values from brand data (exact prices, percentages, product names). Do NOT rephrase or approximate.
+- CTA: action-oriented, 2-4 words. Do NOT add trailing punctuation unless the brand tone requires it.
 - Match the brand's tone of voice.
 
 RULE 5 — OUTPUT FORMAT:
@@ -533,7 +545,7 @@ export class GenerationsService {
                 this.logger.log(`--- Processing Format: ${format.id} ---`);
 
                 const aspectRatio = FORMAT_RATIO_MAP[format.id] || '1:1';
-                const guardedImagePrompt = this.buildGuardedImagePrompt(adCopy.image_prompt, angle.id, angle as any, playbook, concept.analysis_json, format, productAnalyzedJson, { productImageCount, brandLogoIndex, conceptImageIndex });
+                const guardedImagePrompt = this.buildGuardedImagePrompt(adCopy, angle.id, angle as any, playbook, concept.analysis_json, format, productAnalyzedJson, { productImageCount, brandLogoIndex, conceptImageIndex });
 
                 allMergedJsons.push({
                     angle_id: angle.id,
@@ -766,10 +778,6 @@ export class GenerationsService {
 
         const generation = await this.findOne(generationId, userId);
 
-        if (!generation.generated_copy?.image_prompt) {
-            throw new BadRequestException(AdGenerationMessage.RENDER_NO_COPY);
-        }
-
         // Fetch brand, concept, angle, format to rebuild the guarded prompt
         const brand = await this.adBrandsService.findOne(generation.brand_id, userId);
         const concept = await this.adConceptsService.findOne(generation.concept_id, userId);
@@ -784,9 +792,27 @@ export class GenerationsService {
             throw new BadRequestException('Cannot regenerate: missing angle, format, or playbook data');
         }
 
+        // Extract ad copy for the target angle from stored generated_copy array
+        const copies = Array.isArray(generation.generated_copy)
+            ? generation.generated_copy
+            : [generation.generated_copy];
+        const angleCopy = copies.find((c: any) => c?.angle_id === angleId) || copies[0];
+
+        if (!angleCopy?.image_prompt) {
+            throw new BadRequestException(AdGenerationMessage.RENDER_NO_COPY);
+        }
+
+        const adCopyForRegen: AdCopyResult = {
+            headline: angleCopy.headline || '',
+            subheadline: angleCopy.subheadline || '',
+            cta: angleCopy.cta || '',
+            image_prompt: angleCopy.image_prompt,
+            bullet_points: angleCopy.bullet_points,
+        };
+
         // Rebuild guarded image prompt (same pipeline as original generation)
         const guardedImagePrompt = this.buildGuardedImagePrompt(
-            generation.generated_copy.image_prompt,
+            adCopyForRegen,
             angleId,
             angle,
             brand.brand_playbook,
@@ -1331,7 +1357,7 @@ ${userPrompt}`;
      * 4. LAYOUT PATTERN — Visual structure from inspiration concept
      */
     private buildGuardedImagePrompt(
-        rawImagePrompt: string,
+        adCopy: AdCopyResult,
         angleId: string,
         angle: import('../configurations/constants/marketing-angles').MarketingAngle,
         playbook: BrandPlaybook,
@@ -1340,6 +1366,7 @@ ${userPrompt}`;
         productJson?: any,
         imageRoleMap?: { productImageCount: number; brandLogoIndex: number; conceptImageIndex: number },
     ): string {
+        const rawImagePrompt = adCopy.image_prompt;
         const productImageCount = imageRoleMap?.productImageCount || 0;
         const brandLogoIndex = imageRoleMap?.brandLogoIndex ?? -1;
         const conceptImageIndex = imageRoleMap?.conceptImageIndex ?? -1;
@@ -1443,15 +1470,50 @@ ${layoutComposition}
 
 ${TEXT_RENDERING_LOCK}
 
-${'═'.repeat(60)}
+${(() => {
+    const brandDisplayName = playbook.product_identity?.product_name || 'Brand';
+    const bullets = adCopy.bullet_points || [];
+    const bulletSection = bullets.length > 0
+        ? bullets.map((bp, i) => `  ---BULLET ${i + 1} START--- "${bp}" ---BULLET ${i + 1} END---`).join('\n')
+        : '  (No bullet points)';
+    const totalElements = 4 + bullets.length;
+    const headlineWords = adCopy.headline.split(/\s+/).map((w: string, i: number) => `[${i + 1}]${w}`).join(' ');
+
+    return `${'═'.repeat(60)}
 TEXT CONTENT — RENDER THESE EXACT WORDS IN THE IMAGE
 ${'═'.repeat(60)}
-The image MUST contain the following text rendered as VISIBLE, READABLE characters:
-- BRAND NAME: "${playbook.product_identity?.product_name || 'Brand'}" — display prominently at top of the ad
-- All other text elements (headline, subheadline, bullet points, CTA) come from the creative direction below
 
-[CREATIVE DIRECTION FROM AI COPYWRITER]
-${rawImagePrompt}
+🚨 CRITICAL TEXT RENDERING RULES:
+- Every text element below is an EXACT string — render it CHARACTER BY CHARACTER.
+- Do NOT add, remove, modify, or rephrase ANY text.
+- Do NOT add extra spaces, duplicate words, or change spelling.
+- Do NOT repeat any word or phrase — each text element appears EXACTLY ONCE.
+- If you find yourself writing "day day" or "15 15" — STOP and delete the duplicate.
+- Double-check every word against the source text below before finalizing.
+
+TEXT ELEMENT 1 (BRAND NAME): "${brandDisplayName}"
+  Character count: ${brandDisplayName.length}. Do NOT add numbers, symbols, or extra characters.
+  Display prominently at the top of the ad.
+
+TEXT ELEMENT 2 (HEADLINE): "${adCopy.headline}"
+  Word-by-word verification: ${headlineWords}
+  Render in large, bold font. This is exactly ${adCopy.headline.split(/\s+/).length} words.
+
+TEXT ELEMENT 3 (SUBHEADLINE): "${adCopy.subheadline}"
+  Render in medium font below the headline. Exactly ${adCopy.subheadline.split(/\s+/).length} words.
+
+${bullets.length > 0 ? `TEXT ELEMENTS 4–${3 + bullets.length} (BULLET POINTS):
+  Render as a clean list with ✓ checkmark markers. Each bullet is SEPARATE — do NOT merge them.
+${bulletSection}
+` : ''}TEXT ELEMENT ${bullets.length > 0 ? 4 + bullets.length : 4} (CTA BUTTON): "${adCopy.cta}"
+  Render inside a rounded rectangle button with contrasting colors.
+  Do NOT add question marks or exclamation points unless already present above.
+
+TOTAL: ${totalElements} text elements. No additional text anywhere in the image.
+
+[SCENE & COMPOSITION DIRECTION — Do NOT extract text from this section]
+${rawImagePrompt}`;
+})()}
 
 ${format?.safe_zone ? `${'═'.repeat(60)}
 PLATFORM SAFE ZONES & NEGATIVE SPACE (CRITICAL)
@@ -1873,12 +1935,25 @@ rules above to describe a specific, compliant environment.If a certain setting i
             : '';
 
         // ━━━ USP section ━━━
-        const offerStr = playbook.current_offer
-            ? [playbook.current_offer.discount, playbook.current_offer.delivery, playbook.current_offer.free_gifts?.length ? `Free: ${playbook.current_offer.free_gifts.join(', ')}` : ''].filter(Boolean).join(' | ')
+        const offer = playbook.current_offer;
+        const offerStr = offer
+            ? [offer.discount, offer.delivery, offer.free_gifts?.length ? `Free: ${offer.free_gifts.join(', ')}` : ''].filter(Boolean).join(' | ')
             : 'N/A';
+
+        // Exact values for bullet point accuracy — prevents Gemini from approximating
+        const exactValues: string[] = [];
+        if (offer?.discount) exactValues.push(`Discount: "${offer.discount}" (use this EXACT string)`);
+        if (offer?.price_original) exactValues.push(`Original Price: "${offer.price_original}"`);
+        if (offer?.price_sale) exactValues.push(`Sale Price: "${offer.price_sale}"`);
+        if (offer?.free_gifts_value) exactValues.push(`Free Gift Value: "${offer.free_gifts_value}"`);
+        if (offer?.delivery) exactValues.push(`Delivery: "${offer.delivery}"`);
+        if (offer?.free_gifts?.length) exactValues.push(`Free Gifts Count: ${offer.free_gifts.length}`);
+
         const uspSection = playbook.usps?.length
             ? `\n - Key Benefits: ${playbook.usps.join(', ')}
-- Current Offer: ${offerStr} `
+- Current Offer: ${offerStr}
+${exactValues.length > 0 ? `\nEXACT VALUES FOR BULLET POINTS (use these VERBATIM — do NOT rephrase or approximate):
+${exactValues.map(v => `  * ${v}`).join('\n')}` : ''}`
             : '';
 
         // ━━━ PRODUCT INJECTION (verbatim block) ━━━
@@ -1991,14 +2066,14 @@ ${zonesJson}
 🚨 FAILSAFE: If the NARRATIVE ANGLE requires a completely different visual structure (e.g., a "Before & After" split screen), you MUST DISCARD this layout pattern and write an image prompt that explicitly describes the layout required by the Narrative Angle.
 
 ${'═'.repeat(60)}
-TEXT LEGIBILITY — MANDATORY TEXT RENDERING
+TEXT LEGIBILITY — MANDATORY TEXT LAYOUT IN image_prompt
 ${'═'.repeat(60)}
-The image_prompt you write MUST instruct the AI image model to RENDER ALL TEXT as visible characters in the image.
+Your image_prompt MUST describe the TEXT LAYOUT (where text goes and how it looks) but use PLACEHOLDERS instead of actual text.
 For EVERY text zone below, your image_prompt MUST specify:
-- The EXACT text content to render
-    - Font style(bold, italic, script, sans - serif)
-        - Position(top, center, bottom)
-        - Color and background treatment for legibility
+- Position (top, center, bottom) and which placeholder goes there: [BRAND_NAME], [HEADLINE], [SUBHEADLINE], [BULLETS], [CTA]
+- Font style (bold, italic, script, sans-serif)
+- Color and background treatment for legibility (dark overlay, frosted glass, solid card)
+The ACTUAL text content will be injected separately from headline, subheadline, cta, bullet_points fields.
 ${textOverlayInstructions}
 
     === AD FORMAT ===
@@ -2029,31 +2104,30 @@ The ad MUST respect the priority hierarchy above:
 If you just generate a generic product photo with text overlay, the output is REJECTED.
 The image_prompt MUST describe the SPECIFIC scene from the Narrative Angle visual direction.
 
-🚨 CRITICAL — image_prompt rules(MUST FOLLOW EXACTLY):
+🚨 CRITICAL — image_prompt rules (MUST FOLLOW EXACTLY):
 1. START with: "A complete, finished [editorial/lifestyle/product-hero] advertisement design for social media."
 2. PRODUCT: Copy the EXACT product description from the PRODUCT_INJECTION block verbatim
 3. PRODUCT PLACEMENT: Describe exact position in frame and camera angle
 4. SCENE / ENVIRONMENT: Background, setting, lighting, mood
 5. MODEL DIRECTION: If applicable, describe pose / expression / wardrobe
-6. TEXT RENDERING(🚨 MOST IMPORTANT):
-- "Render the brand name '${brandName}' in large bold sans-serif at the top of the ad"
-    - "Render the headline '[your headline text]' in large [italic/bold/script] font in the [position from zones]"
-    - "Render the subheadline '[your subheadline text]' in medium clean font below the headline"
-    - "Render bullet points with ✓ checkmarks: '[point 1]', '[point 2]', '[point 3]'"
-    - "Render the CTA '[your cta text]' inside a [brand-colored] rounded rectangle button at the bottom"
+6. TEXT RENDERING LAYOUT (positions and styling ONLY — NOT actual text content):
+   - Describe WHERE each text zone goes (top, center, bottom) and HOW it should look (font style, size, color)
+   - Use placeholders: [HEADLINE], [SUBHEADLINE], [CTA], [BULLETS], [BRAND_NAME]
+   - Do NOT write the actual headline, subheadline, CTA, or bullet text in image_prompt — those come from the separate JSON fields
+   - Example: "Place [HEADLINE] in large bold italic font on a frosted glass card at upper-third of the image"
 7. DESIGN ELEMENTS: Describe cards, panels, shapes, gradients that frame the text and make it look like a real ad
-8. AVOID: garbled text, misspelled words, random characters, plus scene - specific avoids
+8. AVOID: garbled text, misspelled words, random characters, plus scene-specific avoids
 9. Do NOT use generic terms — use the exact product name from PRODUCT_INJECTION
-10. Optimize composition for ${format.label} format(${format.ratio}, ${format.dimensions})
+10. Optimize composition for ${format.label} format (${format.ratio}, ${format.dimensions})
 
-Return ONLY this JSON object(no markdown, no explanation):
+Return ONLY this JSON object (no markdown, no explanation):
 
 {
-    "headline": "A short, punchy headline (max 8 words)",
-        "subheadline": "A benefit-driven supporting statement (max 20 words)",
-            "cta": "An action-oriented CTA (2-5 words), include brand name if possible",
-                "bullet_points": ["Benefit point 1", "Benefit point 2", "Benefit point 3"],
-                    "image_prompt": "A 300-500 word ultra-detailed prompt that produces a COMPLETE AD IMAGE with ALL text rendered as visible characters. MUST include: brand name rendering, headline rendering, subheadline rendering, bullet point rendering, CTA button rendering, product description from PRODUCT_INJECTION, scene/environment, design elements (cards, panels, buttons), and AVOID list."
+    "headline": "A short, punchy headline (max 8 words, use EXACT brand terms)",
+    "subheadline": "A benefit-driven supporting statement (max 15 words)",
+    "cta": "An action-oriented CTA (2-4 words, no trailing punctuation unless brand requires it)",
+    "bullet_points": ["Max 6 words each", "Use EXACT prices/values from brand", "Exactly 3 bullet points"],
+    "image_prompt": "A 300-500 word prompt for SCENE, COMPOSITION, and VISUAL DESIGN ONLY. Use [HEADLINE], [SUBHEADLINE], [CTA], [BULLETS] as placeholders for text positions. Do NOT write actual ad copy text in this field — focus on: product placement, environment, lighting, model, color palette, UI elements (cards, panels, gradients), and AVOID list."
 } `;
     }
 }
