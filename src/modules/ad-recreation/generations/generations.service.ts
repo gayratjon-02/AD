@@ -114,6 +114,12 @@ The generated image MUST contain RENDERED TEXT as a core design element. This is
    - Random words like "Flens", "Flems", or any word not in the source = AUTOMATIC REJECTION.
    - If you see empty visual space after rendering all text elements, LEAVE IT EMPTY. Do not fill it.
 
+7. ANNOTATION RULE (ZERO TOLERANCE):
+   - Do NOT add dimension labels, measurement annotations, or size callouts (cm, mm, px, inches, ft) UNLESS they appear EXACTLY as a TEXT element in the TEXT CONTENT section below.
+   - Do NOT render "30cm", "50px", "12mm", or ANY measurement text that is not explicitly listed as a TEXT element.
+   - Dimension arrows, ruler graphics, and measurement overlays are FORBIDDEN unless the TEXT CONTENT explicitly includes them.
+   - If the ad copy does not mention a measurement, it must NOT appear in the image.
+
 FAILURE CONDITIONS:
 - Text overlaps product/face → FAILED
 - No text rendered → FAILED
@@ -179,6 +185,20 @@ The image model corrupts long sentences and special characters. Follow these rul
   * Replace "&" with "and" or "+"
   * Replace "£" with nothing or use "GBP"
   * Special characters are ONLY safe in large headline/hero display text (40px+)
+
+RULE 4D — BANNED WORDS LIST (GEMINI CANNOT RENDER THESE):
+The image model consistently corrupts words with 10+ characters. You MUST replace them:
+- "transforming" → "turns" or "changes"
+- "professional" → "pro" or "expert"
+- "effortless" → "easy" or "simple"
+- "outstanding" → "top" or "best"
+- "comfortable" → "comfy" or "soft"
+- "sustainable" → "green" or "eco"
+- "personalized" → "custom" or "yours"
+- "revolutionary" → "bold" or "new"
+- "experiencing" → "feeling" or "living"
+- "unparalleled" → "unmatched" or "top"
+If ANY word in headline, subheadline, bullets, or CTA is 10+ characters, YOU MUST replace it with a shorter synonym (max 8 characters). No exceptions.
 
 RULE 4C — NO REDUNDANT STAT DUPLICATION:
 - If the angle uses a hero stat number (e.g., "94%") as the headline, do NOT repeat that same number in the subheadline.
