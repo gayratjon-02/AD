@@ -1161,7 +1161,7 @@ VISUAL DIRECTION:
 - Show ${productName} as the hero solution within the narrative context
 - The visual mood should match the emotional arc: start with the problem's tension, resolve with the product's warmth
 - Use brand primary color (${brandPrimary}) for emphasis and CTA elements
-- The overall feel should speak directly to: ${persona}`;
+${angle.visual_cues ? `\n🚨 CRITICAL VISUAL INSTRUCTION FOR THIS ANGLE:\n${angle.visual_cues}\n` : ''}- The overall feel should speak directly to: ${persona}`;
         }
 
         // Fallback: build from basic angle info

@@ -43,6 +43,7 @@ export interface MarketingAngle {
     funnel_stage: FunnelStage[];
     cta_options: string[];
     compliance_notes: string;
+    visual_cues?: string;
 }
 
 export const MARKETING_ANGLES: MarketingAngle[] = [
@@ -82,6 +83,7 @@ export const MARKETING_ANGLES: MarketingAngle[] = [
         funnel_stage: ['TOFU', 'MOFU'],
         cta_options: ['See the Difference', 'Transform Now', 'Start Your Journey'],
         compliance_notes: 'Transformations must be realistic. Avoid misleading before/after imagery.',
+        visual_cues: 'MUST show a clear split-screen physical transformation. One side shows the struggle/problem (acting as the "Before"), the other side shows the exact product solving the problem or the successful "After" state. Do not just split the background color; split the actual physical scene and physical state of the subject to show a real transformation.',
     },
     {
         id: 'myth_buster',
@@ -116,6 +118,7 @@ export const MARKETING_ANGLES: MarketingAngle[] = [
         funnel_stage: ['TOFU', 'MOFU'],
         cta_options: ['Make the Switch', 'Choose Better', 'See the Difference'],
         compliance_notes: 'Comparisons must be fair and not disparaging.',
+        visual_cues: 'MUST show a clear visual juxtaposition or side-by-side comparison. The visual composition must be split, showing the struggle/old way vs. the new way with the product.',
     },
 
     // ═══════════════════════════════════════════════════════════
@@ -243,6 +246,7 @@ export const MARKETING_ANGLES: MarketingAngle[] = [
         funnel_stage: ['MOFU'],
         cta_options: ['See the Feature', 'Experience It', 'Learn More'],
         compliance_notes: 'Feature claims must be accurate and demonstrable.',
+        visual_cues: 'MUST show an extreme close-up or highly focused perspective on ONE specific part or feature of the product. The composition should literally "zoom in" or spotlight the key feature being highlighted.',
     },
     {
         id: 'benefit_stacking',
@@ -387,6 +391,7 @@ export const MARKETING_ANGLES: MarketingAngle[] = [
         funnel_stage: ['TOFU', 'MOFU'],
         cta_options: ['Live the Life', 'Elevate Your Style', 'Join the Movement'],
         compliance_notes: 'Lifestyle claims should be aspirational but achievable.',
+        visual_cues: 'MUST show the product being used seamlessly in a rich, aspirational, real-world lifestyle environment (e.g., a trendy cafe, a beautiful home, an active outdoor setting). The setting must feel alive and lived-in, not like a sterile photo studio.',
     },
     {
         id: 'luxury',
@@ -404,6 +409,7 @@ export const MARKETING_ANGLES: MarketingAngle[] = [
         funnel_stage: ['MOFU', 'BOFU'],
         cta_options: ['Experience Luxury', 'Discover Premium', 'Indulge Yourself'],
         compliance_notes: 'Luxury claims must match product quality and pricing.',
+        visual_cues: 'MUST have an ultra-premium, high-end luxury aesthetic. Use dramatic studio lighting, rich dark backgrounds or high-key pure environments, and materials like marble, velvet, or sleek metals in the background.',
     },
     {
         id: 'minimalist',
@@ -421,6 +427,7 @@ export const MARKETING_ANGLES: MarketingAngle[] = [
         funnel_stage: ['TOFU', 'MOFU'],
         cta_options: ['Keep It Simple', 'Pure Design', 'See the Difference'],
         compliance_notes: 'None.',
+        visual_cues: 'MUST use an extreme minimalist aesthetic. Bare, clean studio background with vast negative space. Absolutely zero clutter or distracting props.',
     },
     {
         id: 'urgent',
