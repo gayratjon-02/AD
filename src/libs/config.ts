@@ -1,6 +1,6 @@
-// PRODUCTION: imagen-3.0-generate-001
+// PRODUCTION: gemini-2.5-flash-image (Imagen 3 has been shut down)
 // Reference: https://ai.google.dev/gemini-api/docs/image-generation
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'imagen-3.0-generate-001';
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-image';
 
 // Image generation result type
 export type GeminiImageResult = {

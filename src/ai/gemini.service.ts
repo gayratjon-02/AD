@@ -31,7 +31,7 @@ export class GeminiService {
 	private client: GoogleGenAI | null = null;
 	private readonly logger = new Logger(GeminiService.name);
 
-	// QATIYAN: Faqat imagen-3.0-generate-001 modelidan foydalanish
+	// gemini-2.5-flash-image (Imagen 3 shut down)
 	private readonly MODEL = GEMINI_MODEL;
 	private readonly ANALYSIS_MODEL = 'gemini-2.5-flash'; // Optimized for multimodal analysis
 
@@ -95,7 +95,7 @@ export class GeminiService {
 	}
 
 	/**
-	 * 🚀 PRODUCTION-READY: Generate images using Gemini Imagen 3.0
+	 * 🚀 PRODUCTION-READY: Generate images using Gemini 2.5 Flash Image
 	 * Uses the correct @google/genai SDK format with responseModalities
 	 * @param userApiKey - Optional user-specific API key
 	 */
@@ -314,7 +314,7 @@ High quality studio lighting, sharp details, clean background.`;
 	 */
 	async generateImage(
 		prompt: string,
-		_modelName?: string, // ignored, we always use imagen-3.0-generate-001
+		_modelName?: string, // ignored, we always use gemini-2.5-flash-image
 		aspectRatio?: string,
 		resolution?: string,
 		userApiKey?: string
@@ -793,7 +793,7 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 		try {
 			// Generate content with text + images
 			const response = await client.models.generateContent({
-				model: this.MODEL,
+				model: this.ANALYSIS_MODEL,
 				contents: [
 					{
 						role: 'user',
