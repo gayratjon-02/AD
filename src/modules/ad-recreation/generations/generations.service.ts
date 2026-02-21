@@ -76,40 +76,40 @@ const FORMAT_RATIO_MAP: Record<string, string> = {
 const TEXT_RENDERING_LOCK = `[TEXT RENDERING LOCK — MANDATORY TEXT IN IMAGE]
 The generated image MUST contain RENDERED TEXT as a core design element. This is an advertisement — text is essential.
 
-1. TEXT PLACEMENT AND NEGATIVE SPACE (CRITICAL):
-   - You MUST create clean, uncluttered NEGATIVE SPACE (solid colors, soft gradients, out-of-focus background) in the text zones.
-   - 🚨 NEVER place text over the product, the person's face, or busy background elements.
-   - Text must be placed in empty layout zones so it is 100% legible.
+1. TEXT PLACEMENT:
+   - Create clean NEGATIVE SPACE (solid colors, soft gradients, blurred bg) in text zones.
+   - NEVER place text over the product or a person's face.
 
-2. TEXT RENDERING RULES:
-   - ALL text specified in the TEXT CONTENT section MUST be rendered as readable, pixel-perfect characters directly in the image.
-   - Text must be sharp, clean, and anti-aliased — NOT blurry, warped, or garbled.
-   - Each text element must be spelled EXACTLY as provided — zero typos, zero extra characters.
+2. ATOMIC TEXT RENDERING (CRITICAL — READ CAREFULLY):
+   - Each TEXT element in the TEXT CONTENT section is an INDEPENDENT, ATOMIC unit.
+   - Copy each text element CHARACTER BY CHARACTER from the source.
+   - NEVER combine two TEXT elements into one text area. Each element has its OWN space.
+   - If a TEXT element has > 8 words, you may visually wrap to 2 lines, but ALL words must appear.
+   - BULLET elements MUST be SEPARATE — each bullet gets its OWN line with its OWN ✓ checkmark.
 
-2.5. ANTI-DUPLICATION LOCK:
-   - NEVER repeat a word or phrase. "day day", "save save", "15% 15%" are all WRONG.
-   - Each text element has a word count — if your rendered version has MORE words than the source, you have duplicated. Remove extras.
-   - Each bullet point is a SEPARATE text element — do NOT merge two bullets into one line.
+3. ANTI-CORRUPTION RULES (ZERO TOLERANCE):
+   - NEVER repeat a word within any text element. "day day" = FAIL, "save save" = FAIL.
+   - NEVER skip or truncate words. "worse every" must NOT become "wory".
+   - NEVER merge two words into one garbled word. "getting worse" must NOT become "gettin wors".
+   - If your rendered word count differs from the VERIFY line, you MUST re-render.
+   - After rendering: compare first word and last word against VERIFY. If they don't match, re-render.
 
-2.6. CHARACTER-COUNT VERIFICATION:
-   - After rendering each text element, verify the character count matches the source.
-   - If counts do not match, re-render that text element from scratch.
+4. TYPOGRAPHY HIERARCHY:
+   - BRAND NAME: Large, bold, prominent — top of ad.
+   - HEADLINE: Second-largest, bold impact.
+   - SUBHEADLINE: Medium, readable.
+   - BULLETS: Clean list with ✓ markers — each on its OWN line.
+   - CTA: Text inside a visible button shape.
 
-3. TYPOGRAPHY HIERARCHY:
-   - BRAND NAME: Large, bold, prominent — typically at the top of the ad. Use clean sans-serif or the brand's font style.
-   - HEADLINE: Second-largest text, high visual impact. Can use italic, script, or bold styles depending on the ad mood.
-   - SUBHEADLINE / BODY: Smaller, readable supporting text.
-   - BULLET POINTS: Clean list with checkmarks (✓) or bullet markers.
-   - CTA BUTTON: Text inside a visible button shape (rounded rectangle, pill, etc.) with contrasting colors.
-
-4. CONTRAST, LEGIBILITY & UI INTEGRATION:
-   - Minimum 4.5:1 contrast ratio between text and background.
-   - If the background must be busy, YOU MUST render realistic, premium UI elements (like a floating white card with a soft drop shadow, a sleek polaroid frame, or a frosted glass panel) BEHIND the text to ensure legibility and a high-end ad aesthetic. Do not just use flat color blocks.
+5. CONTRAST & LEGIBILITY:
+   - 4.5:1+ contrast ratio. Use premium UI elements (frosted glass, floating cards with drop shadows) behind text on busy backgrounds.
 
 FAILURE CONDITIONS:
-- If ANY text overlaps the product or a person's face → FAILED
-- If the image contains NO text → FAILED
-- If text is misspelled or garbled → FAILED`;
+- Text overlaps product/face → FAILED
+- No text rendered → FAILED
+- Text misspelled or garbled → FAILED
+- Two bullets merged into one line → FAILED
+- Any word repeated within a text element → FAILED`;
 
 const AD_GENERATION_SYSTEM_PROMPT = `You are a world-class Ad Copywriter and Creative Director specializing in creating COMPLETE advertisement images that include RENDERED TEXT as part of the design.
 
@@ -1468,52 +1468,10 @@ PRIORITY 4 — LAYOUT INSPIRATION (SECONDARY — only if it doesn't conflict wit
 ${'═'.repeat(60)}
 ${layoutComposition}
 
+[SCENE & COMPOSITION DIRECTION — visual layout, NOT text content]
+${rawImagePrompt}
+
 ${TEXT_RENDERING_LOCK}
-
-${(() => {
-    const brandDisplayName = playbook.product_identity?.product_name || 'Brand';
-    const bullets = adCopy.bullet_points || [];
-    const bulletSection = bullets.length > 0
-        ? bullets.map((bp, i) => `  ---BULLET ${i + 1} START--- "${bp}" ---BULLET ${i + 1} END---`).join('\n')
-        : '  (No bullet points)';
-    const totalElements = 4 + bullets.length;
-    const headlineWords = adCopy.headline.split(/\s+/).map((w: string, i: number) => `[${i + 1}]${w}`).join(' ');
-
-    return `${'═'.repeat(60)}
-TEXT CONTENT — RENDER THESE EXACT WORDS IN THE IMAGE
-${'═'.repeat(60)}
-
-🚨 CRITICAL TEXT RENDERING RULES:
-- Every text element below is an EXACT string — render it CHARACTER BY CHARACTER.
-- Do NOT add, remove, modify, or rephrase ANY text.
-- Do NOT add extra spaces, duplicate words, or change spelling.
-- Do NOT repeat any word or phrase — each text element appears EXACTLY ONCE.
-- If you find yourself writing "day day" or "15 15" — STOP and delete the duplicate.
-- Double-check every word against the source text below before finalizing.
-
-TEXT ELEMENT 1 (BRAND NAME): "${brandDisplayName}"
-  Character count: ${brandDisplayName.length}. Do NOT add numbers, symbols, or extra characters.
-  Display prominently at the top of the ad.
-
-TEXT ELEMENT 2 (HEADLINE): "${adCopy.headline}"
-  Word-by-word verification: ${headlineWords}
-  Render in large, bold font. This is exactly ${adCopy.headline.split(/\s+/).length} words.
-
-TEXT ELEMENT 3 (SUBHEADLINE): "${adCopy.subheadline}"
-  Render in medium font below the headline. Exactly ${adCopy.subheadline.split(/\s+/).length} words.
-
-${bullets.length > 0 ? `TEXT ELEMENTS 4–${3 + bullets.length} (BULLET POINTS):
-  Render as a clean list with ✓ checkmark markers. Each bullet is SEPARATE — do NOT merge them.
-${bulletSection}
-` : ''}TEXT ELEMENT ${bullets.length > 0 ? 4 + bullets.length : 4} (CTA BUTTON): "${adCopy.cta}"
-  Render inside a rounded rectangle button with contrasting colors.
-  Do NOT add question marks or exclamation points unless already present above.
-
-TOTAL: ${totalElements} text elements. No additional text anywhere in the image.
-
-[SCENE & COMPOSITION DIRECTION — Do NOT extract text from this section]
-${rawImagePrompt}`;
-})()}
 
 ${format?.safe_zone ? `${'═'.repeat(60)}
 PLATFORM SAFE ZONES & NEGATIVE SPACE (CRITICAL)
@@ -1521,9 +1479,9 @@ ${'═'.repeat(60)}
 Format: ${format.label} (${format.ratio}, ${format.width}×${format.height})
 
 🚨 YOU MUST OBEY THESE LAYOUT RULES OR THE AD IS RUINED:
-1. DO NOT OVERLAP THE SUBJECT: The person, product, or main focus of the image MUST be placed in an area where there is NO TEXT. 
+1. DO NOT OVERLAP THE SUBJECT: The person, product, or main focus of the image MUST be placed in an area where there is NO TEXT.
 2. CREATE SOLID NEGATIVE SPACE: You must design the image so that the background behind the text is simple, solid, or out-of-focus so the text is easily legible.
-3. THE EXTREME EDGES ARE DANGER ZONES: 
+3. THE EXTREME EDGES ARE DANGER ZONES:
    - Top ${format.safe_zone.danger_top}px: No important text elements here.
    - Bottom ${format.safe_zone.danger_bottom}px: No text or CTA here.
    - Side Margins: Keep text ${format.safe_zone.danger_sides}px away from the left/right edges.
@@ -1532,8 +1490,8 @@ Format: ${format.label} (${format.ratio}, ${format.width}×${format.height})
    x: ${format.safe_zone.usable_area.x}px to ${format.safe_zone.usable_area.x + format.safe_zone.usable_area.width}px
    y: ${format.safe_zone.usable_area.y}px to ${format.safe_zone.usable_area.y + format.safe_zone.usable_area.height}px
 
-Place the headline in the clean upper or lower negative space, depending on where the subject is. 
-Place the CTA in the opposite clean space. 
+Place the headline in the clean upper or lower negative space, depending on where the subject is.
+Place the CTA in the opposite clean space.
 Do NOT allow text to touch the person's face or the main product.
 ` : ''}
 ${'═'.repeat(60)}
@@ -1549,34 +1507,101 @@ Generate a single, high-quality advertisement image that is a COMPLETE, FINISHED
    - The product MUST be a 1:1 EXACT replica of the Product Reference images
    - Match EVERY micro-detail: exact color hex, texture grain, button count, zipper style, pocket position
    - Do NOT simplify, generalize, or substitute ANY product feature
-   - If the product has 6 buttons, draw EXACTLY 6 buttons — not 4 or 5
-   - If the color is #722F37 dark burgundy wool, render THAT exact shade — not "red" or generic burgundy
 
 2. BRAND ON PRODUCT (MANDATORY):
    - The brand name/logo MUST be rendered DIRECTLY ON the product
-   - Place it at the EXACT position described in the Product Injection (chest, tongue, front panel)
    - The brand text must be SHARP, LEGIBLE, and spelled EXACTLY correct
-   - Do NOT place the brand logo floating in empty space — it must be ON the product surface
 
-3. ZERO CREATIVE FREEDOM:
-   - You are a COPYING MACHINE, not an artist
-   - Do NOT add features that are not in the product reference
-   - Do NOT change textures, colors, or proportions
-   - Do NOT invent additional design elements
-   - Do NOT "improve" or "enhance" the product — reproduce it EXACTLY as specified
-   - Your ONLY creative freedom is in the background, lighting, and composition
+3. ZERO CREATIVE FREEDOM on product — your ONLY creative freedom is background, lighting, composition.
 
-4. TEXT & LAYOUT:
-   - All text (brand name, headline, subheadline, CTA) MUST be clearly READABLE
-   - Text must be spelled EXACTLY as written — zero garbled characters
-   - ALL content must be within the SAFE ZONE — nothing important in danger zones
+4. QUALITY: Professional social media ad, photorealistic, clean premium aesthetic.
 
-5. QUALITY:
-   - Professional social media advertisement ready to publish
-   - Photorealistic product rendering with studio-quality lighting
-   - Clean, premium aesthetic matching the brand's positioning
+${(() => {
+    const brandDisplayName = playbook.product_identity?.product_name || 'Brand';
+    const bullets = adCopy.bullet_points || [];
 
-IF YOU DEVIATE FROM THE PRODUCT SPECIFICATION IN ANY WAY, THE OUTPUT IS REJECTED.`;
+    // Helpers
+    const wc = (s: string) => s.split(/\s+/).filter(Boolean).length;
+    const fw = (s: string) => s.split(/\s+/)[0] || '';
+    const lw = (s: string) => { const w = s.split(/\s+/); return w[w.length - 1] || ''; };
+
+    // Split subheadline into atomic chunks if > 8 words
+    const subWords = adCopy.subheadline.split(/\s+/).filter(Boolean);
+    const subLines: string[] = [];
+    if (subWords.length > 8) {
+        const mid = Math.ceil(subWords.length / 2);
+        subLines.push(subWords.slice(0, mid).join(' '));
+        subLines.push(subWords.slice(mid).join(' '));
+    } else {
+        subLines.push(adCopy.subheadline);
+    }
+
+    let idx = 1;
+    const elements: string[] = [];
+
+    // Brand name
+    elements.push(`TEXT_${idx} [BRAND_NAME, top of ad, bold sans-serif, ${brandDisplayName.length} chars]
+\u2192 "${brandDisplayName}"
+VERIFY: ${brandDisplayName.length} characters, starts with "${brandDisplayName[0]}", ends with "${brandDisplayName[brandDisplayName.length - 1]}"`);
+    idx++;
+
+    // Headline
+    elements.push(`TEXT_${idx} [HEADLINE, ${wc(adCopy.headline)} words, large bold font]
+\u2192 "${adCopy.headline}"
+VERIFY: ${wc(adCopy.headline)} words, starts with "${fw(adCopy.headline)}", ends with "${lw(adCopy.headline)}"`);
+    idx++;
+
+    // Subheadline (possibly split)
+    for (let si = 0; si < subLines.length; si++) {
+        const line = subLines[si];
+        const label = subLines.length > 1 ? `SUBLINE_${si + 1}` : 'SUBHEADLINE';
+        elements.push(`TEXT_${idx} [${label}, ${wc(line)} words, medium font below headline]
+\u2192 "${line}"
+VERIFY: ${wc(line)} words, starts with "${fw(line)}", ends with "${lw(line)}"`);
+        idx++;
+    }
+
+    // Bullets — each is explicitly separate
+    for (let bi = 0; bi < bullets.length; bi++) {
+        elements.push(`TEXT_${idx} [BULLET_${bi + 1}, ${wc(bullets[bi])} words, with \u2713 checkmark, SEPARATE line]
+\u2192 "${bullets[bi]}"
+VERIFY: starts with "${fw(bullets[bi])}", ends with "${lw(bullets[bi])}"`);
+        idx++;
+    }
+
+    // CTA
+    elements.push(`TEXT_${idx} [CTA_BUTTON, ${wc(adCopy.cta)} words, inside rounded button]
+\u2192 "${adCopy.cta}"
+VERIFY: ${wc(adCopy.cta)} words exactly`);
+
+    const totalElements = idx;
+
+    return `${'═'.repeat(60)}
+${'═'.repeat(60)}
+EXACT TEXT TO RENDER — MANDATORY (READ THIS LAST, RENDER EXACTLY)
+${'═'.repeat(60)}
+${'═'.repeat(60)}
+
+Rules for the text below:
+- Copy each text CHARACTER BY CHARACTER.
+- Each TEXT element is INDEPENDENT — NEVER combine two into one text area.
+- BULLET elements are SEPARATE — each gets its OWN line with its OWN \u2713 checkmark.
+- Do NOT repeat any word. If you see "day day" — STOP, delete the duplicate.
+- After rendering each element, check its VERIFY line. First word and last word MUST match.
+
+${elements.join('\n===SEPARATE ELEMENT===\n')}
+
+========================================
+FINAL CHECK BEFORE GENERATING:
+- Count text elements: exactly ${totalElements}
+- No two TEXT elements share the same text area
+- No words are repeated within any single TEXT element
+- Every TEXT element matches its VERIFY line
+- Every BULLET is on its OWN separate line
+========================================`;
+})()}
+
+IF YOU DEVIATE FROM THE PRODUCT SPECIFICATION OR TEXT CONTENT IN ANY WAY, THE OUTPUT IS REJECTED.`;
 
         this.logger.log(`Guarded image prompt built (${guardedPrompt.length} chars)`);
         this.logger.log(`   Hierarchy applied: Compliance → Brand Identity → Product Injection → Angle (${angleId}) → Critical Scene Direction → Layout → Readability → Negative Reinforcement`);
