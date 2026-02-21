@@ -13,6 +13,7 @@ export enum AdBrandMessage {
     // Success
     BRAND_CREATED = 'Ad Brand created successfully',
     BRAND_UPDATED = 'Ad Brand updated successfully',
+    BRAND_DELETED = 'Ad Brand deleted successfully',
     ASSETS_UPLOADED = 'Brand assets uploaded successfully',
     PLAYBOOK_ANALYZED = 'Brand playbook analyzed successfully',
 

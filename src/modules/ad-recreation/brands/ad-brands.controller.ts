@@ -250,6 +250,25 @@ export class AdBrandsController {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // POST /brands/:id/delete - Delete Brand
+    // ═══════════════════════════════════════════════════════════
+
+    @Post(':id/delete')
+    async deleteBrand(
+        @Param('id', ParseUUIDPipe) id: string,
+        @CurrentUser() user: User,
+    ): Promise<{ success: boolean; message: string }> {
+        this.logger.log(`Deleting Ad Brand ${id}`);
+
+        const result = await this.adBrandsService.remove(id, user.id);
+
+        return {
+            success: true,
+            message: result.message,
+        };
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // POST /brands/:id/angles - Create Custom Angle
     // ═══════════════════════════════════════════════════════════
 

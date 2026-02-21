@@ -284,6 +284,17 @@ export class AdBrandsService {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // DELETE BRAND
+    // ═══════════════════════════════════════════════════════════
+
+    async remove(id: string, userId: string): Promise<{ message: string }> {
+        const brand = await this.findOne(id, userId);
+        await this.adBrandsRepository.remove(brand);
+        this.logger.log(`Deleted Ad Brand: ${id}`);
+        return { message: AdBrandMessage.BRAND_DELETED };
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // UPLOAD BRAND ASSETS (both logos required)
     // ═══════════════════════════════════════════════════════════
 
