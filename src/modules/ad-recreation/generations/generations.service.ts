@@ -637,9 +637,11 @@ export class GenerationsService {
                             };
                             allResultImages.push(imageEntry);
 
+                            const absoluteIndex = (aIdx * formats.length * variationsCount) + (fIdx * variationsCount) + (result.value.variationNum - 1);
+
                             this.generationGateway.emitVisualCompleted(generationId, {
                                 type: `variation_${result.value.variationNum}`,
-                                index: result.value.variationNum - 1,
+                                index: absoluteIndex,
                                 image_url: result.value.url,
                                 generated_at: imageEntry.generated_at,
                                 status: 'completed',
