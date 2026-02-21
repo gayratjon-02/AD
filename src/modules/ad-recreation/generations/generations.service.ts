@@ -1994,7 +1994,7 @@ ${'═'.repeat(60)}
 ${criticalSceneDirection}
 
 ${'═'.repeat(60)}
-PRIORITY 3 — MARKETING ANGLE(Narrative Hook)
+PRIORITY 3 — NARRATIVE ANGLE & SCENE (Overrides Layout Pattern)
 ${'═'.repeat(60)}
 - Strategy: ${angle.label} (${angle.category?.toUpperCase() || 'GENERAL'})
 - Hook: "${angle.hook || angle.description}"
@@ -2011,7 +2011,7 @@ ${angle.visual_cues ? `- 🚨 CRITICAL VISUAL CUE: ${angle.visual_cues}` : ''}
 ${contentPatternSection}
 
 ${'═'.repeat(60)}
-PRIORITY 4 — LAYOUT PATTERN(Visual Structure from Inspiration)
+PRIORITY 4 — LAYOUT PATTERN (Visual Structure from Inspiration)
 ${'═'.repeat(60)}
 - Layout Type: ${conceptAnalysis?.layout?.type || 'N/A'}
 - Visual Mood: ${conceptAnalysis?.visual_style?.mood || 'N/A'}
@@ -2019,6 +2019,7 @@ ${'═'.repeat(60)}
 - Overlay: ${overlayInfo}
 - Zones:
 ${zonesJson}
+🚨 FAILSAFE: If the NARRATIVE ANGLE requires a completely different visual structure (e.g., a "Before & After" split screen), you MUST DISCARD this layout pattern and write an image prompt that explicitly describes the layout required by the Narrative Angle.
 
 ${'═'.repeat(60)}
 TEXT LEGIBILITY — MANDATORY TEXT RENDERING
@@ -2051,8 +2052,8 @@ The ad MUST respect the priority hierarchy above:
 1. FIRST check all Compliance rules
 2. THEN apply Brand Identity(use exact product colors, features)
 3. THEN obey CRITICAL SCENE DIRECTION
-4. THEN apply the Marketing Angle's narrative
-5. THEN match the Layout Pattern's visual structure
+4. THEN apply the Narrative Angle & Scene (Marketing Angle)
+5. THEN match the Layout Pattern's visual structure (ONLY IF it doesn't conflict with the Narrative Angle)
 
 🚨 CRITICAL — image_prompt rules(MUST FOLLOW EXACTLY):
 1. START with: "A complete, finished [editorial/lifestyle/product-hero] advertisement design for social media."
