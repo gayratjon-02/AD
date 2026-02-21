@@ -76,33 +76,31 @@ const FORMAT_RATIO_MAP: Record<string, string> = {
 const TEXT_RENDERING_LOCK = `[TEXT RENDERING LOCK — MANDATORY TEXT IN IMAGE]
 The generated image MUST contain RENDERED TEXT as a core design element. This is an advertisement — text is essential.
 
-1. TEXT RENDERING RULES:
-   - ALL text specified in the TEXT CONTENT section MUST be rendered as readable, pixel-perfect characters directly in the image
-   - Text must be sharp, clean, and anti-aliased — NOT blurry, warped, or garbled
-   - Each text element must be spelled EXACTLY as provided — zero typos, zero extra characters
-   - If a word cannot be rendered clearly, use a simpler synonym but NEVER garble it
+1. TEXT PLACEMENT AND NEGATIVE SPACE (CRITICAL):
+   - You MUST create clean, uncluttered NEGATIVE SPACE (solid colors, soft gradients, out-of-focus background) in the text zones.
+   - 🚨 NEVER place text over the product, the person's face, or busy background elements.
+   - Text must be placed in empty layout zones so it is 100% legible.
 
-2. TYPOGRAPHY HIERARCHY:
-   - BRAND NAME: Large, bold, prominent — typically at the top of the ad. Use clean sans-serif or the brand's font style
-   - HEADLINE: Second-largest text, high visual impact. Can use italic, script, or bold styles depending on the ad mood
-   - SUBHEADLINE / BODY: Smaller, readable supporting text
-   - BULLET POINTS: Clean list with checkmarks (✓) or bullet markers
-   - CTA BUTTON: Text inside a visible button shape (rounded rectangle, pill, etc.) with contrasting colors
+2. TEXT RENDERING RULES:
+   - ALL text specified in the TEXT CONTENT section MUST be rendered as readable, pixel-perfect characters directly in the image.
+   - Text must be sharp, clean, and anti-aliased — NOT blurry, warped, or garbled.
+   - Each text element must be spelled EXACTLY as provided — zero typos, zero extra characters.
 
-3. CONTRAST & LEGIBILITY:
-   - Minimum 4.5:1 contrast ratio between text and background (WCAG AA)
-   - If background is busy, place a semi-transparent overlay, card, or solid panel behind text
-   - Text zones MUST have clean, low-detail backgrounds
+3. TYPOGRAPHY HIERARCHY:
+   - BRAND NAME: Large, bold, prominent — typically at the top of the ad. Use clean sans-serif or the brand's font style.
+   - HEADLINE: Second-largest text, high visual impact. Can use italic, script, or bold styles depending on the ad mood.
+   - SUBHEADLINE / BODY: Smaller, readable supporting text.
+   - BULLET POINTS: Clean list with checkmarks (✓) or bullet markers.
+   - CTA BUTTON: Text inside a visible button shape (rounded rectangle, pill, etc.) with contrasting colors.
 
-4. LAYOUT INTEGRATION:
-   - Text must be integrated into the ad design as a design element, NOT floating randomly
-   - Follow the zone positions from the layout analysis
-   - Leave generous padding around text (at least 8% of frame width)
+4. CONTRAST & LEGIBILITY:
+   - Minimum 4.5:1 contrast ratio between text and background.
+   - If the background must be busy, YOU MUST render a solid or semi-transparent overlay/card BEHIND the text to ensure legibility.
 
 FAILURE CONDITIONS:
+- If ANY text overlaps the product or a person's face → FAILED
 - If the image contains NO text → FAILED
-- If text is misspelled or garbled → FAILED
-- If text is unreadable due to poor contrast → FAILED`;
+- If text is misspelled or garbled → FAILED`;
 
 const AD_GENERATION_SYSTEM_PROMPT = `You are a world-class Ad Copywriter and Creative Director specializing in creating COMPLETE advertisement images that include RENDERED TEXT as part of the design.
 
@@ -123,15 +121,16 @@ RULE 2 — CRITICAL SCENE DIRECTION (MOOD-GATED):
 - If the scene direction says "Do NOT show anyone exercising", your image_prompt MUST NOT describe any exercise activity.
 - You MUST include the full AVOID list in your image_prompt.
 
-RULE 3 — TEXT RENDERING IN IMAGE (MANDATORY):
-🚨 THIS IS THE MOST IMPORTANT RULE FOR IMAGE QUALITY 🚨
-- The generated image MUST contain ALL of the following text elements rendered as VISIBLE, READABLE characters:
+RULE 3 — TEXT RENDERING & SUBJECT AVOIDANCE (MANDATORY):
+🚨 THIS IS THE MOST IMPORTANT RULE FOR IMAGE QUALITY AND LAYOUT 🚨
+- The generated image MUST contain the text elements below, BUT they MUST NEVER overlap the product or the main subject's face/body.
   a) BRAND NAME — prominently displayed, typically at top or bottom
   b) HEADLINE — large, attention-grabbing text in the designated zone
   c) SUBHEADLINE or BODY TEXT — supporting copy, smaller but readable
   d) BULLET POINTS — if the angle includes benefits/features, render them with ✓ markers
   e) CTA — rendered inside a visible button shape (rounded rectangle, pill shape, etc.)
-- Your image_prompt MUST explicitly instruct: "Render the text '[exact text]' in [font style] at [position] with [color] on [background]"
+- Your image_prompt MUST explicitly instruct the image generator to create **SOLID NEGATIVE SPACE** (empty, uncluttered background areas) specifically for this text.
+- Your image_prompt MUST explicitly instruct: "Render the text '[exact text]' in [font style] at [position, e.g., 'in the empty top-left negative space, far away from the person'] with [color] on [background]"
 - Text must be SPELLED EXACTLY as you write it — zero garbled characters
 - Use appropriate typography: bold for headlines, italic for emotional hooks, clean sans-serif for body
 
@@ -448,10 +447,17 @@ export class GenerationsService {
             return effectiveAngles.find(a => a.id === id); // fallback
         });
 
-        // Verify the generation exists immediately
-        const activeGeneration = await this.generationsRepository.findOne({ where: { id: generationId } });
+        // Verify the generation exists (retry up to 3 times to allow DB transaction to commit)
+        let activeGeneration;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            activeGeneration = await this.generationsRepository.findOne({ where: { id: generationId } });
+            if (activeGeneration) break;
+            this.logger.warn(`Generation ${generationId} not found, retrying in 1s (Attempt ${attempt}/3)...`);
+            await new Promise(r => setTimeout(r, 1000));
+        }
+
         if (!activeGeneration) {
-            this.logger.error(`Could not find generation ${generationId} for background processing`);
+            this.logger.error(`Could not find generation ${generationId} for background processing after retries.`);
             return;
         }
 
@@ -1460,22 +1466,25 @@ The image MUST contain the following text rendered as VISIBLE, READABLE characte
 ${rawImagePrompt}
 
 ${format?.safe_zone ? `${'═'.repeat(60)}
-PLATFORM SAFE ZONES — CONTENT PLACEMENT RULES
+PLATFORM SAFE ZONES & NEGATIVE SPACE (CRITICAL)
 ${'═'.repeat(60)}
 Format: ${format.label} (${format.ratio}, ${format.width}×${format.height})
 
-🚨 CRITICAL PLACEMENT RULES:
-- DANGER ZONE TOP (${format.safe_zone.danger_top}px): Do NOT place any important content (headlines, logos, CTAs) in the top ${format.safe_zone.danger_top}px — hidden by status bar / username / audio pill
-- DANGER ZONE BOTTOM (${format.safe_zone.danger_bottom}px): Do NOT place any important content in the bottom ${format.safe_zone.danger_bottom}px — hidden by CTA button / captions / nav bar
-- SIDE MARGINS (${format.safe_zone.danger_sides}px each): Keep ${format.safe_zone.danger_sides}px margin on each side
-- USABLE AREA: All important content (headlines, product, CTA, bullet points, logo) MUST be within:
-  x: ${format.safe_zone.usable_area.x}px to ${format.safe_zone.usable_area.x + format.safe_zone.usable_area.width}px
-  y: ${format.safe_zone.usable_area.y}px to ${format.safe_zone.usable_area.y + format.safe_zone.usable_area.height}px
-  (${format.safe_zone.usable_area.width}×${format.safe_zone.usable_area.height}px usable area)
+🚨 YOU MUST OBEY THESE LAYOUT RULES OR THE AD IS RUINED:
+1. DO NOT OVERLAP THE SUBJECT: The person, product, or main focus of the image MUST be placed in an area where there is NO TEXT. 
+2. CREATE SOLID NEGATIVE SPACE: You must design the image so that the background behind the text is simple, solid, or out-of-focus so the text is easily legible.
+3. THE EXTREME EDGES ARE DANGER ZONES: 
+   - Top ${format.safe_zone.danger_top}px: No important text elements here.
+   - Bottom ${format.safe_zone.danger_bottom}px: No text or CTA here.
+   - Side Margins: Keep text ${format.safe_zone.danger_sides}px away from the left/right edges.
 
-Place headline and brand name BELOW the top danger zone.
-Place CTA button ABOVE the bottom danger zone.
-Center important product imagery within the usable area.
+4. USABLE AREA FOR TEXT:
+   x: ${format.safe_zone.usable_area.x}px to ${format.safe_zone.usable_area.x + format.safe_zone.usable_area.width}px
+   y: ${format.safe_zone.usable_area.y}px to ${format.safe_zone.usable_area.y + format.safe_zone.usable_area.height}px
+
+Place the headline in the clean upper or lower negative space, depending on where the subject is. 
+Place the CTA in the opposite clean space. 
+Do NOT allow text to touch the person's face or the main product.
 ` : ''}
 ${'═'.repeat(60)}
 NEGATIVE REINFORCEMENT (AVOID LIST)
