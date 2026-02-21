@@ -107,72 +107,40 @@ const AD_GENERATION_SYSTEM_PROMPT = `You are a world-class Ad Copywriter and Cre
 Your job: Generate ad copy AND write an ultra-detailed image generation prompt (image_prompt) that produces a FINISHED AD — with text, graphics, product imagery, and design elements ALL rendered in a single image.
 
 ═══════════════════════════════════════════════════════════
-CRITICAL RULES — VIOLATION OF ANY RULE IS A FAILURE
+RULES — VIOLATION OF ANY RULE IS A FAILURE
 ═══════════════════════════════════════════════════════════
 
-RULE 1 — STRICT PRODUCT INJECTION (ZERO HALLUCINATION):
-- You will receive a [PRODUCT_INJECTION — COPY VERBATIM] block containing the EXACT physical description of the product.
-- In your image_prompt, you MUST describe the product using the EXACT words from the PRODUCT_INJECTION block.
-- You MUST include ALL physical traits: name, type, specific parts.
-- FORBIDDEN: Do NOT use generic terms — use the EXACT product name and features.
+RULE 1 — PRODUCT FIDELITY (ZERO HALLUCINATION):
+- You will receive a [PRODUCT_INJECTION] block with the EXACT physical description of the product.
+- In your image_prompt, copy this description VERBATIM. Do NOT use generic terms.
+- Include ALL physical traits: name, type, colors (exact hex), materials, textures, features.
 
-RULE 2 — CRITICAL SCENE DIRECTION (MOOD-GATED):
-- You will receive a [CRITICAL_SCENE_DIRECTION] block that dictates what the scene CAN and CANNOT show.
-- If the scene direction says "Do NOT show anyone exercising", your image_prompt MUST NOT describe any exercise activity.
-- You MUST include the full AVOID list in your image_prompt.
+RULE 2 — MARKETING ANGLE DRIVES THE SCENE (MOST IMPORTANT FOR VISUAL QUALITY):
+- The MARKETING ANGLE section dictates the scene, environment, mood, and visual composition.
+- Do NOT copy the scene from the concept image. The concept image is ONLY for text layout and UI structure.
+- Each Marketing Angle produces a COMPLETELY DIFFERENT visual scene:
+  * "Before & After" = split-screen showing transformation (two distinct halves)
+  * "Lifestyle" = real-world aspirational environment (home, cafe, outdoors)
+  * "Minimalist" = bare, clean studio with vast negative space
+  * "Contrast" = side-by-side visual juxtaposition
+  * "Feature Highlight" = extreme close-up on one product feature
+- If the angle has a VISUAL CUE instruction, follow it EXACTLY — it overrides everything else about the scene.
 
-RULE 3 — TEXT RENDERING & SUBJECT AVOIDANCE (MANDATORY):
-🚨 THIS IS THE MOST IMPORTANT RULE FOR IMAGE QUALITY AND LAYOUT 🚨
-- The generated image MUST contain the text elements below, BUT they MUST NEVER overlap the product or the main subject's face/body.
-  a) BRAND NAME — prominently displayed, typically at top or bottom
-  b) HEADLINE — large, attention-grabbing text in the designated zone
-  c) SUBHEADLINE or BODY TEXT — supporting copy, smaller but readable
-  d) BULLET POINTS — if the angle includes benefits/features, render them with ✓ markers
-  e) CTA — rendered inside a visible button shape (rounded rectangle, pill shape, etc.)
-- Your image_prompt MUST explicitly instruct the image generator to create **SOLID NEGATIVE SPACE** (empty, uncluttered background areas) specifically for this text.
-- Your image_prompt MUST explicitly instruct: "Render the text '[exact text]' in [font style] at [position, e.g., 'in the empty top-left negative space, far away from the person'] with [color] on [background]"
-- Text must be SPELLED EXACTLY as you write it — zero garbled characters
-- Use appropriate typography: bold for headlines, italic for emotional hooks, clean sans-serif for body
+RULE 3 — TEXT RENDERING & LAYOUT:
+- The ad MUST contain rendered text: Brand Name, Headline, Subheadline, Bullet Points (✓), CTA button.
+- Text must NEVER overlap the product or a person's face.
+- Create SOLID NEGATIVE SPACE for text zones (solid colors, soft gradients, or out-of-focus areas).
+- For each text element, specify in image_prompt: exact text, font style, size, color, position, and background treatment.
+- Use premium UI elements for text backgrounds (floating cards with drop shadows, frosted glass panels) — not flat color blocks.
 
-RULE 4 — AD COPY:
-- The headline must be punchy, attention-grabbing (max 8 words)
-- The subheadline must be benefit-driven (max 20 words)
-- Include 2-4 bullet points highlighting key benefits with ✓ checkmarks
-- The CTA must be action-oriented (2-5 words), include brand name if possible
-- All text must match the brand's tone of voice
+RULE 4 — AD COPY QUALITY:
+- Headline: punchy, max 8 words. Subheadline: benefit-driven, max 20 words.
+- 2-4 bullet points with ✓ checkmarks. CTA: action-oriented, 2-5 words.
+- Match the brand's tone of voice.
 
-RULE 5 — VISUAL ANGLE DIFFERENTIATION (CRITICAL):
-- You MUST design the SCENE/ENVIRONMENT precisely to match the "NARRATIVE ANGLE" provided.
-- Do NOT blindly copy the scene from the concept image. The Concept image is ONLY for layout and style formatting.
-- Every marketing angle requires a completely different physical environment and background. For example: "Before/After" should show contrasting backgrounds. "Lifestyle" must show a luxurious or aspirational setting. "Problem/Solution" might show a messy real-world desk vs a clean studio.
-- Make the background setting unmistakably unique to the provided Narrative Angle.
-
-RULE 6 — PHOTOREALISTIC COHESION AND UI INTEGRATION (CRITICAL):
-- The final image must look like a high-end, realistic commercial photograph or a professionally designed digital ad. No "AI-hallucinated" or stitched-together looks.
-- Lighting, shadows, and colors between people, products, and the environment MUST be perfectly cohesive and realistic.
-- For text backgrounds, DO NOT just use flat colors. You MUST explicitly describe professional UI elements (e.g., "a floating white polaroid card with a soft drop shadow", "a sleek frosted glass panel", or "a premium smooth gradient overlay").
-- The UI elements and text must look like they naturally belong in the scene, layered perfectly over the photorealistic background.
-
-RULE 7 — OUTPUT FORMAT:
+RULE 5 — OUTPUT FORMAT:
 - Return ONLY valid JSON. No markdown, no explanation.
-- The image_prompt must be 300-500 words describing the COMPLETE ad design.
-
-RULE 8 — image_prompt STRUCTURE:
-Your image_prompt MUST follow this exact structure:
-  a) AD FORMAT: "A complete, finished [editorial/lifestyle/product-hero] advertisement design, ready for social media."
-  b) PRODUCT DESCRIPTION: Copy VERBATIM from the PRODUCT_INJECTION block.
-  c) PRODUCT PLACEMENT: Exact position in frame and angle.
-  d) SCENE/ENVIRONMENT: Background, setting, lighting, color grading.
-  e) MODEL DIRECTION (if applicable): Pose, expression, wardrobe.
-  f) TEXT RENDERING: For EACH text element, specify:
-     - Exact text content (spelled out character by character)
-     - Font style (bold, italic, script, sans-serif)
-     - Approximate size (large, medium, small)
-     - Color (white, dark, brand color)
-     - Position (top, center, bottom, left-aligned, centered)
-     - Background treatment (overlay panel, gradient, solid card, transparent)
-  g) DESIGN ELEMENTS: Cards, shapes, buttons, dividers, icons that make it look like a real ad
-  h) AVOID LIST: garbled text, misspelled words, random characters, plus scene-specific avoids`;
+- image_prompt must be 300-500 words structured as: AD FORMAT → PRODUCT DESCRIPTION → PRODUCT PLACEMENT → SCENE/ENVIRONMENT → MODEL DIRECTION → TEXT RENDERING → DESIGN ELEMENTS → AVOID LIST.`;
 
 /**
  * Generations Service - Phase 2: Ad Recreation
@@ -1204,23 +1172,8 @@ CTA should drive action relevant to this angle.`;
             .map(r => `- ${r}`)
             .join('\n');
 
-        // ━━━ CONCEPT-AWARE AVOID LIST ━━━
-        const mood = conceptAnalysis?.visual_style?.mood?.toLowerCase() || '';
-        const hookType = conceptAnalysis?.content_pattern?.hook_type?.toLowerCase() || '';
-        const isEditorial = ['editorial', 'magazine', 'clean', 'minimal', 'presentation', 'product_showcase'].some(
-            k => mood.includes(k) || hookType.includes(k),
-        );
-
         const conceptAvoidItems: string[] = [];
-        if (isEditorial) {
-            conceptAvoidItems.push(
-                '- Action shots of the product being used in motion',
-                `- Any product or item that is NOT the exact "${productName}"`,
-                '- Cluttered or distracting scene elements that draw attention away from the product',
-            );
-        }
-
-        // Always block generic product substitution — works for ANY product type
+        // Product substitution protection — applies to ALL angles
         conceptAvoidItems.push(
             `- Any product that is NOT the exact "${productName}" as described in the Product Lock`,
             '- Substituting the product with any similar-looking but different product',
@@ -1228,7 +1181,7 @@ CTA should drive action relevant to this angle.`;
         );
 
         const conceptAvoidSection = conceptAvoidItems.length > 0
-            ? `\n[CONCEPT-SPECIFIC AVOID — PRODUCT MISMATCH PROTECTION]\n${conceptAvoidItems.join('\n')}`
+            ? `\n[PRODUCT MISMATCH PROTECTION]\n${conceptAvoidItems.join('\n')}`
             : '';
 
         return `[NEGATIVE PROMPT — MUST AVOID]
@@ -1455,17 +1408,14 @@ ${productInjection}
 ${personaLock}
 
 ${'═'.repeat(60)}
-PRIORITY 3 — MARKETING ANGLE (Narrative Hook)
+🚨 PRIORITY 3 — MARKETING ANGLE (THIS DICTATES THE SCENE — HIGHEST VISUAL PRIORITY)
 ${'═'.repeat(60)}
 ${sceneDirective}
 
-${'═'.repeat(60)}
-🚨 CRITICAL SCENE DIRECTION (MANDATORY — OVERRIDE CREATIVE DIRECTION)
-${'═'.repeat(60)}
 ${criticalSceneDirection}
 
 ${'═'.repeat(60)}
-PRIORITY 4 — LAYOUT PATTERN (Visual Structure from Inspiration)
+PRIORITY 4 — LAYOUT INSPIRATION (USE ONLY IF NOT CONFLICTING WITH MARKETING ANGLE)
 ${'═'.repeat(60)}
 ${layoutComposition}
 
@@ -1702,45 +1652,18 @@ COMPOSITION RULES:
      * Lifestyle/action concepts → allow product-in-use scenes
      */
     private buildCriticalSceneDirection(conceptAnalysis?: any, playbook?: BrandPlaybook, productJson?: any): string {
-        const mood = conceptAnalysis?.visual_style?.mood?.toLowerCase() || '';
-        const hookType = conceptAnalysis?.content_pattern?.hook_type?.toLowerCase() || '';
-        const layoutType = conceptAnalysis?.layout?.type?.toLowerCase() || '';
         const productName = productJson?.general_info?.product_name || playbook?.product_identity?.product_name || 'the product';
 
-        const editorialKeywords = ['editorial', 'magazine', 'clean', 'minimal', 'minimalist', 'presentation', 'product_showcase', 'elegant', 'sophisticated', 'premium'];
-        const isEditorial = editorialKeywords.some(k => mood.includes(k) || hookType.includes(k) || layoutType.includes(k));
-
-        if (isEditorial) {
-            return `[CRITICAL_SCENE_DIRECTION — EDITORIAL / PRESENTATION MODE]
-🚨 THIS IS A PRODUCT PRESENTATION / EDITORIAL SHOT. NOT AN ACTION SHOT.
-
- MANDATORY RULES:
-- The product (${productName}) must be displayed in a STATIC, COMPOSED, ELEGANT manner
-- Think: high-end product photography, magazine editorial, luxury catalogue
-- Models (if present) should be STANDING, SITTING, or POSING near the product — NOT actively using it
-- The scene must feel CALM, COMPOSED, and EDITORIAL
-- Focus on the product's visual beauty and premium presentation
-
-AVOID (in this editorial context):
-- Dynamic or energetic action scenes
-- Product being actively used or demonstrated
-- Any product that is NOT the exact ${productName}
-- Cluttered or distracting background elements`;
-        }
-
-        // Lifestyle/action mode — allow product use but still enforce product fidelity
-        return `[CRITICAL_SCENE_DIRECTION — LIFESTYLE / ACTION MODE]
-The product (${productName}) may be shown in active use by a model.
-
-RULES:
-- The model may be shown using the product in a natural, lifestyle context
-- The product MUST still match the exact description from the Product Lock — no substitutions
-- The scene should feel aspirational and inviting
+        // V3 Spec: The concept image is ONLY for layout. Scene type is dictated by Marketing Angle.
+        // This section only enforces product accuracy — it does NOT restrict the scene type.
+        return `[PRODUCT SCENE RULES — APPLIES TO ALL SCENES]
+- The product (${productName}) MUST match the exact description from the Product Lock — no substitutions
 - The product must remain clearly visible and identifiable in the scene
+- The Marketing Angle section below dictates the scene type, environment, and mood — obey it fully
+- Do NOT substitute the product with any generic or similar-looking item
 
 AVOID:
 - Any product that is NOT the exact ${productName}
-- Overly aggressive or intense scenes
 - Generic or unrelated products in the frame`;
     }
 
@@ -1989,7 +1912,7 @@ ${'═'.repeat(60)}
 ${productInjection}
 
 ${'═'.repeat(60)}
-🚨 CRITICAL SCENE DIRECTION — READ BEFORE WRITING image_prompt
+PRODUCT ACCURACY — READ BEFORE WRITING image_prompt
 ${'═'.repeat(60)}
 ${criticalSceneDirection}
 
