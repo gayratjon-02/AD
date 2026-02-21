@@ -44,14 +44,9 @@ export class GenerationsController {
         @Body() dto: GenerateAdDto,
     ): Promise<{ success: boolean; message: string; generation: AdGeneration; ad_copy: any; result: any }> {
         this.logger.log(`Generating ad for user ${user.id} (variations: ${dto.variations_count || 4})`);
-        console.log('[AD-RECREATION CONTROLLER] 🚀 Generate request received');
-
         // Await the full generation — Socket.IO events fire during this call
         // for real-time updates if the frontend is connected
         const genResult = await this.generationsService.generateAd(user.id, dto);
-
-        console.log(`[AD-RECREATION CONTROLLER] ✅ Generation completed: ${genResult.generation.id}`);
-        console.log(`[AD-RECREATION CONTROLLER] 📊 Result images: ${genResult.generation.result_images?.length || 0}`);
 
         return {
             success: true,
