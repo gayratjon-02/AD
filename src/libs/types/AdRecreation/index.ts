@@ -7,6 +7,7 @@
 // AdBrand Types
 export {
     BrandPlaybook,
+    normalizeBrandPlaybook,
     AdsPlaybook,
     CopyPlaybook,
     BrandAssets,

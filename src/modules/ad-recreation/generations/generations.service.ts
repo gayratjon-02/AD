@@ -23,7 +23,7 @@ import { AD_FORMATS } from '../configurations/constants/ad-formats';
 import { AdGenerationStatus } from '../../../libs/enums/AdRecreationEnums';
 import { AdGenerationMessage } from '../../../libs/messages';
 import { GenerateAdDto } from './dto/generate-ad.dto';
-import { BrandPlaybook } from '../../../libs/types/AdRecreation';
+import { BrandPlaybook, normalizeBrandPlaybook } from '../../../libs/types/AdRecreation';
 
 // ═══════════════════════════════════════════════════════════
 // AD COPY RESULT TYPE
@@ -261,9 +261,10 @@ export class GenerationsService {
             return effectiveAngles.find(a => a.id === id); // fallback
         });
 
-        // Step 3: Validate brand playbook
-        const playbook = brand.brand_playbook;
+        // Step 3: Validate brand playbook (normalize old format → spec v3)
+        const playbook = normalizeBrandPlaybook(brand.brand_playbook);
         if (!playbook) throw new BadRequestException(AdGenerationMessage.BRAND_PLAYBOOK_REQUIRED);
+        brand.brand_playbook = playbook;
 
         if (!playbook.product_identity || !playbook.product_identity.product_name) {
             playbook.product_identity = {
@@ -1111,7 +1112,7 @@ If a human model appears in the image:
     ): string {
         const productName = productJson?.general_info?.product_name || playbook.product_identity?.product_name || 'the product';
         const brandName = playbook.product_identity?.product_name || 'the brand';
-        const brandPrimary = playbook.colors?.primary || '#000000';
+        const brandPrimary = playbook.brand_colors?.primary || '#000000';
 
         const resolve = (text: string) => resolveAnglePlaceholders(text, productName, brandName);
 
@@ -1872,9 +1873,12 @@ rules above to describe a specific, compliant environment.If a certain setting i
             : '';
 
         // ━━━ USP section ━━━
-        const uspSection = playbook.usp_offers
-            ? `\n - Key Benefits: ${playbook.usp_offers.key_benefits?.join(', ') || 'N/A'}
-- Current Offer: ${playbook.usp_offers.current_offer || 'N/A'} `
+        const offerStr = playbook.current_offer
+            ? [playbook.current_offer.discount, playbook.current_offer.delivery, playbook.current_offer.free_gifts?.length ? `Free: ${playbook.current_offer.free_gifts.join(', ')}` : ''].filter(Boolean).join(' | ')
+            : 'N/A';
+        const uspSection = playbook.usps?.length
+            ? `\n - Key Benefits: ${playbook.usps.join(', ')}
+- Current Offer: ${offerStr} `
             : '';
 
         // ━━━ PRODUCT INJECTION (verbatim block) ━━━
@@ -1912,14 +1916,15 @@ Follow the STRICT PRIORITY HIERARCHY below. Higher-priority sections OVERRIDE lo
 ${'═'.repeat(60)}
 PRIORITY 2 — BRAND IDENTITY(Colors, Tone, Product)
 ${'═'.repeat(60)}
-- Tone Style: ${playbook.tone_of_voice?.style || 'Professional'}
-- Tone Keywords: ${playbook.tone_of_voice?.keywords?.join(', ') || 'N/A'}
-- Words to Avoid: ${playbook.tone_of_voice?.donts?.join(', ') || 'N/A'}
-- Primary Color: ${playbook.colors?.primary || 'N/A'}
-- Secondary Color: ${playbook.colors?.secondary || 'N/A'}
-- Accent Color: ${playbook.colors?.accent || 'N/A'}
-- Heading Font: ${playbook.fonts?.heading || 'N/A'}
-- Body Font: ${playbook.fonts?.body || 'N/A'}
+- Tone of Voice: ${playbook.tone_of_voice || 'Professional'}
+- Primary Color: ${playbook.brand_colors?.primary || 'N/A'}
+- Secondary Color: ${playbook.brand_colors?.secondary || 'N/A'}
+- Accent Color: ${playbook.brand_colors?.accent || 'N/A'}
+- Background Color: ${playbook.brand_colors?.background || 'N/A'}
+- Text Dark: ${playbook.brand_colors?.text_dark || 'N/A'}
+- Text Light: ${playbook.brand_colors?.text_light || 'N/A'}
+- Heading Font: ${playbook.typography?.headline || 'N/A'}
+- Body Font: ${playbook.typography?.body || 'N/A'}
 
 PRODUCT FIDELITY(use exact details — do NOT hallucinate):
 - Product: ${pi.product_name} (${pi.product_type})

@@ -1,52 +1,59 @@
 /**
  * AdBrand Types
- * 
+ *
  * Type definitions for Brand playbooks in Ad Recreation Module.
+ * Matches Spec v3 (Page 10) brand_json schema.
  */
 
 // ═══════════════════════════════════════════════════════════
-// Brand Playbook - Analyzed from PDF upload
+// Brand Playbook - Spec v3 compliant schema
 // ═══════════════════════════════════════════════════════════
 
-/**
- * Brand Playbook - Visual identity + product identity extracted by Claude
- * This is the canonical schema for all brand analysis outputs (PDF + text).
- * The first 4 fields (colors, fonts, tone_of_voice, logo_rules) are required.
- * The remaining fields are optional for backward compatibility with existing DB rows.
- */
 export interface BrandPlaybook {
-    colors: {
+    // Core identity (populated from form fields)
+    brand_name: string;
+    industry: string;
+    website: string;
+    currency: string;
+
+    // Visual identity (extracted by Claude)
+    brand_colors: {
         primary: string;
         secondary: string;
-        accent: string;
-        palette: string[];
+        background: string;
+        accent?: string;
+        text_dark: string;
+        text_light?: string;
     };
-    fonts: {
-        heading: string;
+    typography: {
+        headline: string;
         body: string;
-        usage_rules: string;
     };
-    tone_of_voice: {
-        style: string;
-        keywords: string[];
-        donts: string[];
+    tone_of_voice: string; // Simple string, e.g. "warm, empowering, relatable"
+
+    // Marketing
+    usps: string[]; // Flat array of USPs
+    compliance?: {
+        region: string;
+        rules: string[];
     };
-    logo_rules: {
-        clear_space: string;
-        forbidden_usage: string[];
+    current_offer?: {
+        discount?: string;
+        price_original?: string;
+        price_sale?: string;
+        free_gifts?: string[];
+        free_gifts_value?: string;
+        delivery?: string;
     };
 
-    // Product identity — used to build dynamic PRODUCT_LOCK guardrail
-    product_identity?: {
-        product_name: string;
-        product_type: string;
-        visual_description: string;
-        key_features: string[];
-        colors: Record<string, string>;
-        negative_traits: string[];
+    // Logo (populated from uploaded assets)
+    logo?: {
+        style?: string;
+        light_url?: string;
+        dark_url?: string;
     };
 
-    // Target audience — used to build dynamic PERSONA_LOCK guardrail
+    // Target audience
     target_audience?: {
         gender: string;
         age_range: string;
@@ -55,16 +62,59 @@ export interface BrandPlaybook {
         personas: string[];
     };
 
-    // Compliance constraints — injected into negative prompt
-    compliance?: {
-        region: string;
-        rules: string[];
-    };
+    // Phase 1 product link (nullable)
+    product_ref?: string;
 
-    // USP and offers — provided to AI copywriter for ad copy
-    usp_offers?: {
-        key_benefits: string[];
-        current_offer?: string;
+    // Runtime-enriched by generation service (NOT from Claude extraction)
+    product_identity?: {
+        product_name: string;
+        product_type: string;
+        visual_description: string;
+        key_features: string[];
+        colors: Record<string, string>;
+        negative_traits: string[];
+    };
+}
+
+// ═══════════════════════════════════════════════════════════
+// Backward Compatibility - Normalize old DB rows to new format
+// ═══════════════════════════════════════════════════════════
+
+export function normalizeBrandPlaybook(raw: any): BrandPlaybook {
+    if (!raw) return raw;
+    // Already new format (has brand_colors key)
+    if (raw.brand_colors) return raw as BrandPlaybook;
+
+    // Convert old format → spec v3
+    return {
+        brand_name: raw.brand_name || '',
+        industry: raw.industry || '',
+        website: raw.website || '',
+        currency: raw.currency || '',
+        brand_colors: {
+            primary: raw.colors?.primary || '#000000',
+            secondary: raw.colors?.secondary || '#666666',
+            background: raw.colors?.palette?.[3] || '#FFFFFF',
+            accent: raw.colors?.accent,
+            text_dark: '#1a1a2e',
+            text_light: '#FFFFFF',
+        },
+        typography: {
+            headline: raw.fonts?.heading || '',
+            body: raw.fonts?.body || '',
+        },
+        tone_of_voice: typeof raw.tone_of_voice === 'object'
+            ? (raw.tone_of_voice?.style || '')
+            : (raw.tone_of_voice || ''),
+        usps: raw.usp_offers?.key_benefits || raw.usps || [],
+        compliance: raw.compliance,
+        current_offer: typeof raw.usp_offers?.current_offer === 'string'
+            ? { discount: raw.usp_offers.current_offer }
+            : raw.current_offer,
+        logo: raw.logo,
+        target_audience: raw.target_audience,
+        product_ref: raw.product_ref,
+        product_identity: raw.product_identity,
     };
 }
 

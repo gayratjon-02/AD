@@ -15,6 +15,7 @@ import { AdBrand } from '../../../database/entities/Ad-Recreation/ad-brand.entit
 import { CreateAdBrandDto, PlaybookType } from '../../../libs/dto/AdRecreation/brands';
 import {
     BrandPlaybook,
+    normalizeBrandPlaybook,
     AdsPlaybook,
     CopyPlaybook,
     BrandAssets,
@@ -53,7 +54,7 @@ const STRICT_EXTRACTION_USER_PROMPT = `Extract brand information from the provid
 Return EXACTLY this JSON object (no extra keys, no markdown, no explanation):
 
 {
-  "version": "brand_playbook_extraction_v1",
+  "version": "brand_playbook_extraction_v2",
   "data": {
     "brand_name": "string or null",
     "industry": "string or null",
@@ -76,24 +77,22 @@ Return EXACTLY this JSON object (no extra keys, no markdown, no explanation):
       "headline": "string or null",
       "body": "string or null"
     },
-    "tone_of_voice": "string or null",
-    "tone_keywords": ["string"] or null,
+    "tone_of_voice": "single comma-separated string or null",
     "usps": ["string"] or null,
     "compliance": {
       "region": "string or null",
       "rules": ["string"] or null
     },
     "current_offer": {
-      "discount": "string or null",
-      "price_original": "string or null",
-      "price_sale": "string or null",
+      "discount": "string or null (e.g. '-50%')",
+      "price_original": "string or null (e.g. '179.95')",
+      "price_sale": "string or null (e.g. '89.98')",
       "free_gifts": ["string"] or null,
-      "free_gifts_value": "string or null",
-      "delivery": "string or null"
+      "free_gifts_value": "string or null (e.g. '195.75')",
+      "delivery": "string or null (e.g. 'FREE Next-Day Delivery')"
     },
-    "logo_rules": {
-      "clear_space": "string or null",
-      "forbidden_usage": ["string"] or null
+    "logo": {
+      "style": "string or null (e.g. 'wordmark', 'icon', 'combination')"
     }
   },
   "evidence_map": {
@@ -109,6 +108,9 @@ Return EXACTLY this JSON object (no extra keys, no markdown, no explanation):
 
 RULES:
 - Use null for any field not explicitly found in the input.
+- tone_of_voice MUST be a single comma-separated string (e.g. "warm, empowering, relatable"), NOT an object.
+- usps MUST be a flat array of strings at root level (e.g. ["Folds flat", "15 min/day"]).
+- current_offer MUST be a structured object with separate fields, NOT a concatenated string.
 - Every non-null value in data MUST have a corresponding entry in evidence_map.
 - DO NOT paraphrase, upgrade, or infer. Extract ONLY what is written.
 - Return ONLY the JSON object.`;
@@ -312,6 +314,16 @@ export class AdBrandsService {
         };
 
         brand.assets = updatedAssets;
+
+        // Also update logo URLs in brand_playbook
+        if (brand.brand_playbook) {
+            brand.brand_playbook.logo = {
+                ...(brand.brand_playbook.logo || {}),
+                light_url: logoLightUrl,
+                dark_url: logoDarkUrl,
+            };
+        }
+
         const saved = await this.adBrandsRepository.save(brand);
 
         this.logger.log(`Updated assets for Ad Brand ${id}`);
@@ -500,7 +512,7 @@ export class AdBrandsService {
         // Step 4: Parse JSON and validate
         const playbook = this.parseAndValidatePlaybook(responseText);
 
-        this.logger.log(`Brand playbook extracted: ${playbook.colors.primary} primary, ${playbook.fonts.heading} heading`);
+        this.logger.log(`Brand playbook extracted: ${playbook.brand_colors.primary} primary, ${playbook.typography.headline} headline`);
         return playbook;
     }
 
@@ -516,9 +528,9 @@ export class AdBrandsService {
     private parseAndValidatePlaybook(responseText: string, inputText?: string): BrandPlaybook {
         const parsed = this.parseJsonResponse(responseText);
 
-        // ── Check if this is the new strict extraction format ──
-        if (parsed.version === 'brand_playbook_extraction_v1' && parsed.data) {
-            this.logger.log(`[STRICT EXTRACTION] v1 format detected`);
+        // ── Check if this is the strict extraction format ──
+        if ((parsed.version === 'brand_playbook_extraction_v1' || parsed.version === 'brand_playbook_extraction_v2') && parsed.data) {
+            this.logger.log(`[STRICT EXTRACTION] ${parsed.version} format detected`);
             return this.processStrictExtraction(parsed, inputText);
         }
 
@@ -577,7 +589,7 @@ export class AdBrandsService {
             'brand_name', 'industry', 'website', 'currency',
             'target_audience', 'brand_colors', 'typography',
             'tone_of_voice', 'tone_keywords', 'usps',
-            'compliance', 'current_offer', 'logo_rules',
+            'compliance', 'current_offer', 'logo',
         ];
         const extraKeys = Object.keys(data || {}).filter(k => !allowedDataKeys.includes(k));
         if (extraKeys.length > 0) {
@@ -589,8 +601,7 @@ export class AdBrandsService {
     }
 
     /**
-     * Maps the strict extraction data schema → BrandPlaybook
-     * so the rest of the pipeline (ad generation, image prompts) works unchanged.
+     * Maps the strict extraction data schema → BrandPlaybook (Spec v3 compliant)
      */
     private mapStrictToBrandPlaybook(data: any): BrandPlaybook {
         const d = data || {};
@@ -599,43 +610,29 @@ export class AdBrandsService {
         const ta = d.target_audience || {};
         const compliance = d.compliance || {};
         const offer = d.current_offer || {};
-        const logoRules = d.logo_rules || {};
-
-        // Build palette from available colors (only non-null)
-        const palette = [colors.primary, colors.secondary, colors.accent, colors.background]
-            .filter((c: string | null) => c != null) as string[];
-
-        // Build current_offer string
-        let currentOfferStr: string | undefined;
-        const offerParts: string[] = [];
-        if (offer.discount) offerParts.push(offer.discount);
-        if (offer.price_sale && offer.price_original) offerParts.push(`${offer.price_original} → ${offer.price_sale}`);
-        else if (offer.price_sale) offerParts.push(offer.price_sale);
-        if (offer.delivery) offerParts.push(offer.delivery);
-        if (offer.free_gifts?.length) offerParts.push(`Free: ${offer.free_gifts.join(', ')}`);
-        if (offerParts.length > 0) currentOfferStr = offerParts.join(' | ');
+        const logo = d.logo || {};
 
         const playbook: BrandPlaybook = {
-            colors: {
+            brand_name: d.brand_name || '',
+            industry: d.industry || '',
+            website: d.website || '',
+            currency: d.currency || '',
+            brand_colors: {
                 primary: colors.primary || '#000000',
                 secondary: colors.secondary || '#666666',
-                accent: colors.accent || '#ff6b6b',
-                palette: palette.length > 0 ? palette : ['#000000', '#666666'],
+                background: colors.background || '#FFFFFF',
+                accent: colors.accent,
+                text_dark: colors.text_dark || '#1a1a2e',
+                text_light: colors.text_light || '#FFFFFF',
             },
-            fonts: {
-                heading: typography.headline || '',
+            typography: {
+                headline: typography.headline || '',
                 body: typography.body || '',
-                usage_rules: '',
             },
-            tone_of_voice: {
-                style: (typeof d.tone_of_voice === 'string') ? d.tone_of_voice : '',
-                keywords: Array.isArray(d.tone_keywords) ? d.tone_keywords : [],
-                donts: [], // Not in strict schema — never hallucinated
-            },
-            logo_rules: {
-                clear_space: logoRules.clear_space || '',
-                forbidden_usage: Array.isArray(logoRules.forbidden_usage) ? logoRules.forbidden_usage : [],
-            },
+            tone_of_voice: (typeof d.tone_of_voice === 'string')
+                ? d.tone_of_voice
+                : (d.tone_of_voice?.style || ''),
+            usps: Array.isArray(d.usps) ? d.usps : [],
         };
 
         // Target audience (optional)
@@ -655,60 +652,48 @@ export class AdBrandsService {
             };
         }
 
-        // USP offers (optional)
-        if (d.usps?.length || currentOfferStr) {
-            playbook.usp_offers = {
-                key_benefits: Array.isArray(d.usps) ? d.usps : [],
-                current_offer: currentOfferStr,
+        // Current offer (structured object)
+        if (offer.discount || offer.price_original || offer.price_sale || offer.free_gifts?.length || offer.delivery) {
+            playbook.current_offer = {
+                discount: offer.discount || undefined,
+                price_original: offer.price_original || undefined,
+                price_sale: offer.price_sale || undefined,
+                free_gifts: Array.isArray(offer.free_gifts) ? offer.free_gifts : undefined,
+                free_gifts_value: offer.free_gifts_value || undefined,
+                delivery: offer.delivery || undefined,
             };
         }
 
-        this.logger.log(`[MAPPER] Strict → BrandPlaybook mapped successfully`);
-        this.logger.log(`   Colors: ${playbook.colors.primary} / ${playbook.colors.secondary}`);
-        this.logger.log(`   Fonts: ${playbook.fonts.heading || 'N/A'} / ${playbook.fonts.body || 'N/A'}`);
+        // Logo style (optional)
+        if (logo.style) {
+            playbook.logo = { style: logo.style };
+        }
+
+        this.logger.log(`[MAPPER] Strict → BrandPlaybook (Spec v3) mapped successfully`);
+        this.logger.log(`   Colors: ${playbook.brand_colors.primary} / ${playbook.brand_colors.secondary}`);
+        this.logger.log(`   Typography: ${playbook.typography.headline || 'N/A'} / ${playbook.typography.body || 'N/A'}`);
         if (playbook.target_audience) this.logger.log(`   Audience: ${playbook.target_audience.gender}, ${playbook.target_audience.age_range}`);
 
         return playbook;
     }
 
     /**
-     * Legacy playbook parser — for backward compatibility with old-format responses.
+     * Legacy playbook parser — converts old Claude response format to spec v3.
+     * Uses normalizeBrandPlaybook() for old→new format conversion.
      */
     private legacyParsePlaybook(parsed: any): BrandPlaybook {
-        // Validate required top-level keys
-        const requiredKeys = ['colors', 'fonts', 'tone_of_voice', 'logo_rules'];
-        for (const key of requiredKeys) {
-            if (!parsed[key]) {
-                this.logger.error(`Missing required key in playbook: ${key}`);
-                throw new InternalServerErrorException(AdBrandMessage.AI_INVALID_JSON);
-            }
+        // If already in new format, pass through
+        if (parsed.brand_colors) {
+            return parsed as BrandPlaybook;
         }
 
-        if (!parsed.colors.primary || !parsed.colors.secondary) {
-            this.logger.error('Missing primary/secondary colors in playbook');
+        // Old format — validate minimally then normalize
+        if (!parsed.colors?.primary) {
+            this.logger.error('Missing primary color in legacy playbook');
             throw new InternalServerErrorException(AdBrandMessage.AI_INVALID_JSON);
         }
 
-        if (!Array.isArray(parsed.colors.palette)) {
-            parsed.colors.palette = [parsed.colors.primary, parsed.colors.secondary];
-        }
-        if (!Array.isArray(parsed.tone_of_voice.keywords)) parsed.tone_of_voice.keywords = [];
-        if (!Array.isArray(parsed.tone_of_voice.donts)) parsed.tone_of_voice.donts = [];
-        if (!Array.isArray(parsed.logo_rules.forbidden_usage)) parsed.logo_rules.forbidden_usage = [];
-
-        if (parsed.product_identity) {
-            parsed.product_identity.product_name = parsed.product_identity.product_name || '';
-            parsed.product_identity.product_type = parsed.product_identity.product_type || '';
-            parsed.product_identity.visual_description = parsed.product_identity.visual_description || '';
-            if (!Array.isArray(parsed.product_identity.key_features)) parsed.product_identity.key_features = [];
-            if (!parsed.product_identity.colors || typeof parsed.product_identity.colors !== 'object') parsed.product_identity.colors = {};
-            if (!Array.isArray(parsed.product_identity.negative_traits)) parsed.product_identity.negative_traits = [];
-        }
-        if (parsed.target_audience && !Array.isArray(parsed.target_audience.personas)) parsed.target_audience.personas = [];
-        if (parsed.compliance && !Array.isArray(parsed.compliance.rules)) parsed.compliance.rules = [];
-        if (parsed.usp_offers && !Array.isArray(parsed.usp_offers.key_benefits)) parsed.usp_offers.key_benefits = [];
-
-        return parsed as BrandPlaybook;
+        return normalizeBrandPlaybook(parsed);
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -962,6 +947,10 @@ export class AdBrandsService {
             playbook = this.generateDefaultPlaybook(name, website);
         }
 
+        // Ensure core identity fields are populated from form data
+        playbook.brand_name = playbook.brand_name || name;
+        playbook.website = playbook.website || website;
+
         this.logger.log(`Analysis complete for ${name}`);
         return playbook;
     }
@@ -980,6 +969,12 @@ export class AdBrandsService {
         playbook: any,
     ): Promise<AdBrand> {
         this.logger.log(`Create brand with playbook: ${name} for user ${userId}`);
+
+        // Ensure core identity fields are populated
+        playbook.brand_name = playbook.brand_name || name;
+        playbook.industry = playbook.industry || industry;
+        playbook.website = playbook.website || website;
+        playbook.currency = playbook.currency || currency;
 
         // Create brand with the user-edited playbook
         const brand = this.adBrandsRepository.create({
@@ -1217,34 +1212,24 @@ ${textContent}`;
 
     private generateDefaultPlaybook(brandName: string, website: string): BrandPlaybook {
         return {
-            colors: {
+            brand_name: brandName,
+            industry: 'General',
+            website: website,
+            currency: 'GBP',
+            brand_colors: {
                 primary: '#7c4dff',
                 secondary: '#9575cd',
+                background: '#FFFFFF',
                 accent: '#ff6b6b',
-                palette: ['#7c4dff', '#9575cd', '#ff6b6b'],
+                text_dark: '#1a1a2e',
+                text_light: '#FFFFFF',
             },
-            fonts: {
-                heading: 'Inter',
+            typography: {
+                headline: 'Inter',
                 body: 'Inter',
-                usage_rules: '',
             },
-            tone_of_voice: {
-                style: 'Professional',
-                keywords: [],
-                donts: [],
-            },
-            logo_rules: {
-                clear_space: '',
-                forbidden_usage: [],
-            },
-            product_identity: {
-                product_name: brandName,
-                product_type: 'Product',
-                visual_description: `A product by ${brandName}. Update this field with a detailed visual description for accurate image generation.`,
-                key_features: [],
-                colors: {},
-                negative_traits: [],
-            },
+            tone_of_voice: 'Professional',
+            usps: [],
             target_audience: {
                 gender: 'All',
                 age_range: '25-54',
@@ -1254,8 +1239,13 @@ ${textContent}`;
                 region: 'Global',
                 rules: [],
             },
-            usp_offers: {
-                key_benefits: [],
+            product_identity: {
+                product_name: brandName,
+                product_type: 'Product',
+                visual_description: `A product by ${brandName}. Update this field with a detailed visual description for accurate image generation.`,
+                key_features: [],
+                colors: {},
+                negative_traits: [],
             },
         };
     }
