@@ -107,12 +107,21 @@ The generated image MUST contain RENDERED TEXT as a core design element. This is
 5. CONTRAST & LEGIBILITY:
    - 4.5:1+ contrast ratio. Use premium UI elements (frosted glass, floating cards with drop shadows) behind text on busy backgrounds.
 
+6. HALLUCINATION PREVENTION (ZERO TOLERANCE):
+   - Every single word you render MUST come from the TEXT CONTENT section below. No exceptions.
+   - If a word is NOT in the text list, DO NOT write it. Leave space empty instead.
+   - Do NOT invent extra bullet points. The number of bullets is EXACTLY as specified. Not one more.
+   - Random words like "Flens", "Flems", or any word not in the source = AUTOMATIC REJECTION.
+   - If you see empty visual space after rendering all text elements, LEAVE IT EMPTY. Do not fill it.
+
 FAILURE CONDITIONS:
 - Text overlaps product/face → FAILED
 - No text rendered → FAILED
 - Text misspelled or garbled → FAILED
 - Two bullets merged into one line → FAILED
-- Any word repeated within a text element → FAILED`;
+- Any word repeated within a text element → FAILED
+- Any word rendered that is NOT in the TEXT CONTENT section → FAILED
+- More bullets than specified in TEXT CONTENT → FAILED`;
 
 const AD_GENERATION_SYSTEM_PROMPT = `You are a world-class Ad Copywriter and Creative Director specializing in creating COMPLETE advertisement images that include RENDERED TEXT as part of the design.
 
@@ -149,21 +158,33 @@ RULE 3 — TEXT RENDERING & LAYOUT:
 - Use premium UI elements for text backgrounds (floating cards with drop shadows, frosted glass panels) — not flat color blocks.
 
 RULE 4 — AD COPY QUALITY:
-- Headline: punchy, max 8 words.
-- Subheadline: benefit-driven, max 15 words.
-- EXACTLY 3 bullet points, each max 6 words (shorter text = more accurate rendering by the image model).
+- Headline: punchy, max 5 words.
+- Subheadline: benefit-driven, MAXIMUM 5 WORDS. Use periods for punch: "Real results. Real change." NOT long flowing sentences.
+- EXACTLY 3 bullet points, each 2-5 words only (shorter = safer rendering).
 - Bullet points MUST use EXACT values from brand data (exact prices, percentages, product names). Do NOT rephrase or approximate.
 - CTA: action-oriented, 2-4 words. Do NOT add trailing punctuation unless the brand tone requires it.
+- CTA SPECIAL CHARACTER BAN: NEVER use %, £, €, or & symbols in CTA button text. These symbols corrupt during image generation. Use words instead ("percent", "pounds", "and") or avoid them entirely with a different CTA phrase. Example: "Join the 94%" is FORBIDDEN → use "Feel the Difference" instead.
 - Match the brand's tone of voice.
 
 RULE 4B — TEXT SAFETY FOR GEMINI RENDERING (CRITICAL):
-The image model struggles with long sentences and small connector words. Follow these rules to ensure accurate text rendering:
-- Maximum 8 words per text element (headline, subheadline, each bullet).
-- No commas mid-sentence — use periods to separate ideas into short punchy statements.
-- AVOID 3-letter connector words in the MIDDLE of sentences (for, the, and, but, with). Restructure to eliminate them or place them at the start of a line.
-- Replace vague phrases with specific numbers: BAD "enjoy savings for years" → GOOD "Save £1,200+ yearly"
-- Each bullet point: 2-5 words maximum. Shorter = safer rendering.
-- Prefer short declarative statements over flowing prose: BAD "Feel better in just 15 minutes" → GOOD "Results in 15 minutes"
+The image model corrupts long sentences and special characters. Follow these rules EXACTLY:
+- MAXIMUM 5 WORDS per text element (headline, subheadline, each bullet). This has ZERO exceptions.
+- If the original copy is longer than 5 words, YOU MUST rewrite it shorter.
+- No commas mid-sentence — use periods to create short punchy statements.
+- AVOID 3-letter connector words in the MIDDLE of sentences (for, the, and, but, with). Restructure to eliminate them.
+- Each bullet point: 2-5 words maximum.
+- SPECIAL CHARACTER RULES FOR SMALL TEXT (bullets, CTA, subheadline):
+  * FORBIDDEN in small text: %, £, €, &
+  * Replace "%" with "percent" or remove it entirely
+  * Replace "&" with "and" or "+"
+  * Replace "£" with nothing or use "GBP"
+  * Special characters are ONLY safe in large headline/hero display text (40px+)
+
+RULE 4C — NO REDUNDANT STAT DUPLICATION:
+- If the angle uses a hero stat number (e.g., "94%") as the headline, do NOT repeat that same number in the subheadline.
+- The headline carries the stat. The subheadline provides DIFFERENT supporting context.
+- BAD: Headline "94% Stronger" + Subheadline "94% of users felt stronger" (redundant)
+- GOOD: Headline "94% Stronger" + Subheadline "Real results. Real change." (complementary)
 
 RULE 5 — OUTPUT FORMAT:
 - Return ONLY valid JSON. No markdown, no explanation.
@@ -1540,22 +1561,38 @@ Generate a single, high-quality advertisement image that is a COMPLETE, FINISHED
 
 ${(() => {
     const brandDisplayName = playbook.product_identity?.product_name || 'Brand';
-    const bullets = adCopy.bullet_points || [];
+    const rawBullets = adCopy.bullet_points || [];
 
     // Helpers
     const wc = (s: string) => s.split(/\s+/).filter(Boolean).length;
     const fw = (s: string) => s.split(/\s+/)[0] || '';
     const lw = (s: string) => { const w = s.split(/\s+/); return w[w.length - 1] || ''; };
 
-    // Split subheadline into atomic chunks if > 8 words
-    const subWords = adCopy.subheadline.split(/\s+/).filter(Boolean);
+    // Sanitize small text: remove special characters that Gemini corrupts in small font sizes
+    const sanitizeSmallText = (text: string): string => {
+        return text
+            .replace(/%/g, ' percent')
+            .replace(/&/g, 'and')
+            .replace(/£/g, '')
+            .replace(/-(\d)/g, '$1')
+            .replace(/\s+/g, ' ')
+            .trim();
+    };
+
+    // Apply sanitization to small text elements (CTA, subheadline, bullets)
+    const safeCta = sanitizeSmallText(adCopy.cta);
+    const safeSubheadline = sanitizeSmallText(adCopy.subheadline);
+    const bullets = rawBullets.map(b => sanitizeSmallText(b));
+
+    // Split subheadline into atomic chunks if > 5 words (tightened from 8)
+    const subWords = safeSubheadline.split(/\s+/).filter(Boolean);
     const subLines: string[] = [];
-    if (subWords.length > 8) {
+    if (subWords.length > 5) {
         const mid = Math.ceil(subWords.length / 2);
         subLines.push(subWords.slice(0, mid).join(' '));
         subLines.push(subWords.slice(mid).join(' '));
     } else {
-        subLines.push(adCopy.subheadline);
+        subLines.push(safeSubheadline);
     }
 
     let idx = 1;
@@ -1591,10 +1628,10 @@ VERIFY: starts with "${fw(bullets[bi])}", ends with "${lw(bullets[bi])}"`);
         idx++;
     }
 
-    // CTA
-    elements.push(`TEXT_${idx} [CTA_BUTTON, ${wc(adCopy.cta)} words, inside rounded button]
-\u2192 "${adCopy.cta}"
-VERIFY: ${wc(adCopy.cta)} words exactly`);
+    // CTA (sanitized — no special chars in button text)
+    elements.push(`TEXT_${idx} [CTA_BUTTON, ${wc(safeCta)} words, inside rounded button]
+\u2192 "${safeCta}"
+VERIFY: ${wc(safeCta)} words exactly`);
 
     const totalElements = idx;
 
@@ -1608,7 +1645,9 @@ Rules for the text below:
 - Copy each text CHARACTER BY CHARACTER.
 - Each TEXT element is INDEPENDENT — NEVER combine two into one text area.
 - BULLET elements are SEPARATE — each gets its OWN line with its OWN \u2713 checkmark.
+- There are EXACTLY ${bullets.length} bullet points. Not ${bullets.length - 1}, not ${bullets.length + 1}. EXACTLY ${bullets.length}. If you see empty space, LEAVE IT EMPTY.
 - Do NOT repeat any word. If you see "day day" — STOP, delete the duplicate.
+- Do NOT invent ANY word that is not listed below. Every rendered word must come from this list. "Flens" or any made-up word = REJECTED.
 - After rendering each element, check its VERIFY line. First word and last word MUST match.
 
 ${elements.join('\n===SEPARATE ELEMENT===\n')}
@@ -1616,10 +1655,12 @@ ${elements.join('\n===SEPARATE ELEMENT===\n')}
 ========================================
 FINAL CHECK BEFORE GENERATING:
 - Count text elements: exactly ${totalElements}
+- Count bullet points: exactly ${bullets.length} (no more, no less)
 - No two TEXT elements share the same text area
 - No words are repeated within any single TEXT element
 - Every TEXT element matches its VERIFY line
 - Every BULLET is on its OWN separate line
+- ZERO invented words — every word comes from the list above
 ========================================`;
 })()}
 
