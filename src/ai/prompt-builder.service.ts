@@ -277,12 +277,19 @@ export class PromptBuilderService {
         const rightItems = da.ground?.right_items || [];
         const leftProps = leftItems.length > 0
             ? leftItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ')
-            : 'minimal decor';
+            : '';
         const rightProps = rightItems.length > 0
             ? rightItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ')
-            : 'minimal decor';
-        const scene = `EXACT DA SCENE: ${da.background.type} wall/background (${da.background.hex}), ${da.floor.type} floor (${da.floor.hex}). Props: ${leftProps} on the left, ${rightProps} on the right. Lighting: ${da.lighting.type}, ${da.lighting.temperature}. Mood: ${da.mood}. CRITICAL: Match the DA reference image EXACTLY — same background, same floor, same lighting direction, same props placement, same atmosphere`;
-        const propsText = `${leftProps}, ${rightProps}`;
+            : '';
+
+        // Build props instruction: only mention props if DA actually has them
+        const hasAnyProps = leftProps || rightProps;
+        const propsInstruction = hasAnyProps
+            ? `Props: ${leftProps || 'nothing'} on the left, ${rightProps || 'nothing'} on the right.`
+            : 'NO PROPS — clean empty space on both sides. Do NOT add any objects, decorations, or elements to the scene.';
+
+        const scene = `EXACT DA SCENE: ${da.background.type} wall/background (${da.background.hex}), ${da.floor.type} floor (${da.floor.hex}). ${propsInstruction} Lighting: ${da.lighting.type}, ${da.lighting.temperature}. Mood: ${da.mood}. CRITICAL: Match the DA reference image EXACTLY — same background, same floor, same lighting direction, same props placement, same atmosphere`;
+        const propsText = hasAnyProps ? `${leftProps}, ${rightProps}`.replace(/^, |, $/g, '') : 'none';
 
         // ═══════════════════════════════════════════════════════════
         // 4. BUILD COMMON OBJECTS FOR MergedPromptObject
@@ -964,7 +971,7 @@ export class PromptBuilderService {
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality)
         // ═══════════════════════════════════════════════════════════
-        const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. ${qualitySuffix}`;
+        const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. Do NOT add any objects, furniture, or decorations that are not in the DA reference image. ${qualitySuffix}`;
 
         // 🚀 SUBJECT FIRST - This is the key fix!
         return `${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart}`;
