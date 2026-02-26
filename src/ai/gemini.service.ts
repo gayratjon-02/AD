@@ -401,7 +401,8 @@ High quality studio lighting, sharp details, clean background.`;
 		referenceImages: string[],
 		aspectRatio?: string,
 		resolution?: string,
-		userApiKey?: string
+		userApiKey?: string,
+		options?: { daReferenceUrl?: string }
 	): Promise<GeminiImageResult> {
 		const client = this.getClient(userApiKey);
 		const startTime = Date.now();
@@ -409,7 +410,8 @@ High quality studio lighting, sharp details, clean background.`;
 		// Filter valid images
 		const validImages = (referenceImages || []).filter(img => img && img.trim() !== '');
 
-		this.logger.log(`🚀 generateImages: model=${this.MODEL}, ratio=${aspectRatio || '4:5'}, refs=${validImages.length}, prompt=${prompt.length} chars`);
+		const hasDAReference = !!options?.daReferenceUrl;
+		this.logger.log(`🚀 generateImages: model=${this.MODEL}, ratio=${aspectRatio || '4:5'}, refs=${validImages.length}, hasDA=${hasDAReference}, prompt=${prompt.length} chars`);
 
 		// If no valid reference images, fall back to regular generation
 		if (validImages.length === 0) {
@@ -431,53 +433,10 @@ High quality studio lighting, sharp details, clean background.`;
 		const ratioText = this.mapAspectRatioToGemini(aspectRatio ?? '4:5');
 		const resolutionText = this.mapResolutionToGemini(resolution);
 
-		// Enhanced prompt with reference instruction - ROLE-AWARE IMAGE HANDLING
-		// The incoming `prompt` contains an IMAGE ROLE MAP telling Gemini how to use each image.
-		// This wrapper adds product fidelity instructions that complement (not conflict with) the role map.
-		const referencePrompt = `🎯 CRITICAL: The reference images serve DIFFERENT ROLES. Read the IMAGE ROLE MAP in the prompt below to understand each image's purpose.
-
-📸 FOR PRODUCT REFERENCE IMAGES (first images — see IMAGE ROLE MAP):
-These show the EXACT product you MUST reproduce. Match ALL details precisely:
-
-🎨 POCKET PATCHES & DESIGN ELEMENTS (HIGHEST PRIORITY):
-- EXACT pocket patch pattern, embossing, and monogram from PRODUCT reference images
-- EXACT pocket patch material appearance (leather, fabric), color, and texture
-- EXACT pocket patch shape, size, and position on the garment
-- Embossed/debossed patterns must match PRECISELY - same motif, same density, same depth
-- Every distinctive design element (patches, panels, overlays) must be reproduced IDENTICALLY
-
-🏷️ BRAND LOGO (see IMAGE ROLE MAP for which image is the logo):
-- Reproduce this EXACT logo in the ad — match typography, colors, proportions
-- Place the logo NATURALLY on the product or prominently in the ad layout
-- Position it where a real brand would: on the garment, on a patch, or in the ad header
-- Logo must be SHARP, LEGIBLE, and properly integrated
-
-👕 GARMENT DETAILS FROM PRODUCT IMAGES:
-- EXACT pocket count and positions (count every pocket!)
-- EXACT button count and placement
-- EXACT color (sample HEX from product reference)
-- EXACT fabric texture and material appearance
-- EXACT collar/cuff/seam details
-- EXACT zipper/hardware placement
-
-🎨 FOR CONCEPT/STYLE IMAGE (LAST image — see IMAGE ROLE MAP):
-⚠️ This image is ONLY for style, layout, composition, and mood reference.
-🚫 DO NOT COPY the product shown in this concept image!
-✅ REPLACE whatever product is in the concept image with the EXACT product from the PRODUCT reference images.
-✅ Use it ONLY for: camera angle, lighting style, background mood, text placement, composition.
-
-Generate a NEW professional advertisement that:
-1. Shows the EXACT product from the PRODUCT reference images
-2. Has the brand logo placed naturally and prominently
-3. Uses the style, layout, and composition from the CONCEPT image
-4. REPLACES the concept image's product with the user's actual product
-
-🚫 DO NOT INCLUDE: collar labels, neck tags, size labels, care labels, washing instruction tags, or any inner garment tags. Only show the OUTER garment design elements visible in the product reference images.
-
-PHOTOGRAPHY & AD REQUIREMENTS:
-${this.sanitizePromptForImageGeneration(prompt)}
-
-HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sharp details. Crisp detail rendering on all patches, embossing, and logo.`;
+		// Build prompt based on whether DA reference image is included
+		const referencePrompt = hasDAReference
+			? this.buildDASceneReferencePrompt(prompt)
+			: this.buildAdConceptReferencePrompt(prompt);
 
 		this.logger.log(`📤 Sending to Gemini: ratio=${ratioText}, size=${resolutionText}, prompt=${referencePrompt.length} chars`);
 
@@ -593,7 +552,99 @@ HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sh
 	}
 
 	/**
-	 * 🚀 CRITICAL: Sanitize prompt to avoid PII policy violations
+	 * Build prompt for DA scene reference mode (Product Visuals).
+	 * The LAST image in referenceImages is the DA scene reference.
+	 * Gemini must replicate the EXACT scene (background, lighting, props, composition).
+	 */
+	private buildDASceneReferencePrompt(prompt: string): string {
+		return `🎯 CRITICAL: The reference images serve DIFFERENT ROLES.
+
+📸 PRODUCT REFERENCE IMAGES (first images):
+These show the EXACT product/garment you MUST reproduce in the generated image.
+Match ALL product details precisely:
+- EXACT fabric color, texture, and material
+- EXACT pocket count, positions, patches, and design elements
+- EXACT button count, zipper placement, and hardware
+- EXACT collar, cuff, and seam details
+- Every distinctive design element must be reproduced IDENTICALLY
+
+🏠 DA SCENE REFERENCE IMAGE (LAST image — this is the MOST IMPORTANT reference):
+This image defines the EXACT environment/scene where the product must be photographed.
+You MUST replicate this scene with MAXIMUM FIDELITY:
+
+MANDATORY SCENE ELEMENTS TO MATCH EXACTLY:
+- EXACT background: same wall/surface material, color, and texture
+- EXACT floor: same material, color, and finish
+- EXACT lighting: same direction, intensity, temperature, and shadow angles
+- EXACT props: same objects in the same positions (left/right side)
+- EXACT camera angle and framing perspective
+- EXACT atmosphere and mood (warm/cool, soft/dramatic)
+- EXACT color grading and overall tone
+
+⚠️ The generated image must look like it was shot in THE SAME ROOM, at THE SAME TIME, with THE SAME CAMERA SETUP as the DA scene reference.
+The ONLY difference should be the product/outfit being worn — everything else (background, floor, lighting, props, mood) must be IDENTICAL.
+
+🚫 DO NOT INCLUDE: collar labels, neck tags, size labels, care labels, or any inner garment tags.
+
+SHOT REQUIREMENTS:
+${this.sanitizePromptForImageGeneration(prompt)}
+
+HIGH QUALITY OUTPUT: Professional editorial fashion photography, matching the exact lighting and atmosphere of the DA scene reference. 8K quality, sharp details.`;
+	}
+
+	/**
+	 * Build prompt for Ad Recreation concept reference mode.
+	 * The LAST image is a competitor ad concept for style/layout reference.
+	 */
+	private buildAdConceptReferencePrompt(prompt: string): string {
+		return `🎯 CRITICAL: The reference images serve DIFFERENT ROLES. Read the IMAGE ROLE MAP in the prompt below to understand each image's purpose.
+
+📸 FOR PRODUCT REFERENCE IMAGES (first images — see IMAGE ROLE MAP):
+These show the EXACT product you MUST reproduce. Match ALL details precisely:
+
+🎨 POCKET PATCHES & DESIGN ELEMENTS (HIGHEST PRIORITY):
+- EXACT pocket patch pattern, embossing, and monogram from PRODUCT reference images
+- EXACT pocket patch material appearance (leather, fabric), color, and texture
+- EXACT pocket patch shape, size, and position on the garment
+- Embossed/debossed patterns must match PRECISELY - same motif, same density, same depth
+- Every distinctive design element (patches, panels, overlays) must be reproduced IDENTICALLY
+
+🏷️ BRAND LOGO (see IMAGE ROLE MAP for which image is the logo):
+- Reproduce this EXACT logo in the ad — match typography, colors, proportions
+- Place the logo NATURALLY on the product or prominently in the ad layout
+- Position it where a real brand would: on the garment, on a patch, or in the ad header
+- Logo must be SHARP, LEGIBLE, and properly integrated
+
+👕 GARMENT DETAILS FROM PRODUCT IMAGES:
+- EXACT pocket count and positions (count every pocket!)
+- EXACT button count and placement
+- EXACT color (sample HEX from product reference)
+- EXACT fabric texture and material appearance
+- EXACT collar/cuff/seam details
+- EXACT zipper/hardware placement
+
+🎨 FOR CONCEPT/STYLE IMAGE (LAST image — see IMAGE ROLE MAP):
+⚠️ This image is ONLY for style, layout, composition, and mood reference.
+🚫 DO NOT COPY the product shown in this concept image!
+✅ REPLACE whatever product is in the concept image with the EXACT product from the PRODUCT reference images.
+✅ Use it ONLY for: camera angle, lighting style, background mood, text placement, composition.
+
+Generate a NEW professional advertisement that:
+1. Shows the EXACT product from the PRODUCT reference images
+2. Has the brand logo placed naturally and prominently
+3. Uses the style, layout, and composition from the CONCEPT image
+4. REPLACES the concept image's product with the user's actual product
+
+🚫 DO NOT INCLUDE: collar labels, neck tags, size labels, care labels, washing instruction tags, or any inner garment tags. Only show the OUTER garment design elements visible in the product reference images.
+
+PHOTOGRAPHY & AD REQUIREMENTS:
+${this.sanitizePromptForImageGeneration(prompt)}
+
+HIGH QUALITY OUTPUT: Professional advertisement photography, studio lighting, sharp details. Crisp detail rendering on all patches, embossing, and logo.`;
+	}
+
+	/**
+	 * Sanitize prompt to avoid PII policy violations
 	 * This is essential for generating product images with models
 	 */
 	private sanitizePromptForImageGeneration(prompt: string): string {

@@ -88,9 +88,10 @@ export class VertexImagenService {
 		referenceImages: string[],
 		aspectRatio?: string,
 		resolution?: string,
-		userApiKey?: string
+		userApiKey?: string,
+		options?: { daReferenceUrl?: string }
 	): Promise<VertexImagenResult> {
-		this.logger.log(`🖼️ [Gemini API] Generating image WITH ${referenceImages?.length || 0} reference images`);
+		this.logger.log(`🖼️ [Gemini API] Generating image WITH ${referenceImages?.length || 0} reference images (DA: ${!!options?.daReferenceUrl})`);
 		this.logger.log(`📐 aspect=${aspectRatio ?? 'default'} resolution=${resolution ?? 'default'}`);
 
 		try {
@@ -99,7 +100,8 @@ export class VertexImagenService {
 				referenceImages,
 				aspectRatio,
 				resolution,
-				userApiKey
+				userApiKey,
+				options
 			);
 
 			this.logger.log('✅ [Gemini API] Image with reference generated successfully');

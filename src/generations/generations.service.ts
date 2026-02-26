@@ -290,15 +290,30 @@ export class GenerationsService {
 						referenceImages.push(...generation.product.reference_images);
 					}
 
+					// Include DA reference image for scene consistency
+					// DA image is added LAST so Gemini treats it as the scene/environment reference
+					if (generation.da_preset?.image_url) {
+						referenceImages.push(generation.da_preset.image_url);
+						this.logger.log(`🎨 DA reference image included: ${generation.da_preset.image_url}`);
+					} else if (generation.collection?.da_reference_image_url) {
+						referenceImages.push(generation.collection.da_reference_image_url);
+						this.logger.log(`🎨 Collection DA reference image included: ${generation.collection.da_reference_image_url}`);
+					}
+
 					this.logger.log(`🖼️ Reference images for ${promptType}: ${referenceImages.length} images`);
 
-					// 🆕 Use reference-based generation if images available
+					// Determine DA reference URL for scene consistency
+					const daReferenceUrl = generation.da_preset?.image_url || generation.collection?.da_reference_image_url || undefined;
+
+					// Use reference-based generation if images available
 					const result = referenceImages.length > 0
 						? await this.vertexImagenService.generateImageWithReference(
 							prompt,
 							referenceImages,
 							generation.aspect_ratio,
 							generation.resolution,
+							undefined,
+							daReferenceUrl ? { daReferenceUrl } : undefined,
 						)
 						: await this.vertexImagenService.generateImage(
 							prompt,
@@ -709,7 +724,7 @@ export class GenerationsService {
 				this.emitVisualProcessing(generationId, userId, visualIndex, shotType);
 
 				try {
-					// 🆕 Collect product reference images (front + back)
+					// Collect product reference images (front + back)
 					const referenceImages: string[] = [];
 					if (generation.product.front_image_url) {
 						referenceImages.push(generation.product.front_image_url);
@@ -722,15 +737,29 @@ export class GenerationsService {
 						referenceImages.push(...generation.product.reference_images);
 					}
 
+					// Include DA reference image for scene consistency (LAST position)
+					if (generation.da_preset?.image_url) {
+						referenceImages.push(generation.da_preset.image_url);
+						this.logger.log(`🎨 DA reference image included: ${generation.da_preset.image_url}`);
+					} else if (generation.collection?.da_reference_image_url) {
+						referenceImages.push(generation.collection.da_reference_image_url);
+						this.logger.log(`🎨 Collection DA reference image included: ${generation.collection.da_reference_image_url}`);
+					}
+
 					this.logger.log(`🖼️ Reference images for ${shotType}: ${referenceImages.length} images`);
 
-					// 🆕 Use reference-based generation if images available
+					// Determine DA reference URL for scene consistency
+					const daRefUrl = generation.da_preset?.image_url || generation.collection?.da_reference_image_url || undefined;
+
+					// Use reference-based generation if images available
 					const result = referenceImages.length > 0
 						? await this.vertexImagenService.generateImageWithReference(
 							prompt,
 							referenceImages,
 							generation.aspect_ratio,
 							generation.resolution,
+							undefined,
+							daRefUrl ? { daReferenceUrl: daRefUrl } : undefined,
 						)
 						: await this.vertexImagenService.generateImage(
 							prompt,
