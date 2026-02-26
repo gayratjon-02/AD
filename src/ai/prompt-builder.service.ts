@@ -281,7 +281,7 @@ export class PromptBuilderService {
         const rightProps = rightItems.length > 0
             ? rightItems.map((item: any) => typeof item === 'string' ? item : item.name).join(', ')
             : 'minimal decor';
-        const scene = `${da.background.type}, ${da.floor.type}. Props: ${leftProps} on the left, ${rightProps} on the right`;
+        const scene = `EXACT DA SCENE: ${da.background.type} wall/background (${da.background.hex}), ${da.floor.type} floor (${da.floor.hex}). Props: ${leftProps} on the left, ${rightProps} on the right. Lighting: ${da.lighting.type}, ${da.lighting.temperature}. Mood: ${da.mood}. CRITICAL: Match the DA reference image EXACTLY — same background, same floor, same lighting direction, same props placement, same atmosphere`;
         const propsText = `${leftProps}, ${rightProps}`;
 
         // ═══════════════════════════════════════════════════════════
@@ -957,14 +957,14 @@ export class PromptBuilderService {
         const apparelPart = `Both ${baseAttire}. Fabric: ${product.visual_specs.fabric_texture}. ${productIdentity}. ${zipperText}. Fully clothed, shirts on, no bare chest.`;
 
         // ═══════════════════════════════════════════════════════════
-        // 🎯 PRIORITY 3: ENVIRONMENT (Where)
+        // 🎯 PRIORITY 3: ENVIRONMENT (Where) — MUST match DA reference image exactly
         // ═══════════════════════════════════════════════════════════
         const environmentPart = `${styling}. ${scene}.`;
 
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality)
         // ═══════════════════════════════════════════════════════════
-        const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. ${qualitySuffix}`;
+        const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. ${qualitySuffix}`;
 
         // 🚀 SUBJECT FIRST - This is the key fix!
         return `${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart}`;
@@ -1014,7 +1014,7 @@ export class PromptBuilderService {
             `Fabric: ${product.visual_specs.fabric_texture}. ${productIdentity}. ${logoTextFront}. ${zipperText}. Fully clothed, never shirtless.`;
 
         // ═══════════════════════════════════════════════════════════
-        // 🎯 PRIORITY 3: ENVIRONMENT (Where)
+        // 🎯 PRIORITY 3: ENVIRONMENT (Where) — MUST match DA reference image exactly
         // ═══════════════════════════════════════════════════════════
         const environmentPart = `${styling}. ${scene}. Standing naturally.`;
 
@@ -1022,8 +1022,8 @@ export class PromptBuilderService {
         // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality)
         // ═══════════════════════════════════════════════════════════
         const technicalPart = modelType === 'kid'
-            ? `Kids fashion photography. Medium shot. Soft lighting, natural child pose. ${qualitySuffix}`
-            : `Editorial fashion photography. Medium shot. Real human skin texture, natural pose. ${qualitySuffix}`;
+            ? `Kids fashion photography. Medium shot. Soft lighting, natural child pose. The environment MUST be identical to the DA scene reference image provided. ${qualitySuffix}`
+            : `Editorial fashion photography. Medium shot. Real human skin texture, natural pose. The environment MUST be identical to the DA scene reference image provided. ${qualitySuffix}`;
 
         // 🚀 SUBJECT FIRST - This is the key fix!
         return `${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart}`;
@@ -1081,8 +1081,8 @@ export class PromptBuilderService {
             ? `Professional product photography. ${sizeDescription}. Pants FOLDED neatly over elegant wooden hanger bar. Hanger hanging from small metal wall hook. Front view, centered composition. Waistband at top, legs folded and draped elegantly.`
             : `Professional product photography. ${sizeDescription}. Garment displayed on elegant wooden hanger. Hanger hanging from small metal wall hook. Front view, centered composition. Full garment visible from collar to hem.`;
 
-        // 🎯 Priority 3: DA ENVIRONMENT - Use collection's artistic direction background
-        const environmentPart = `${daBackground} backdrop. Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}.`;
+        // 🎯 Priority 3: DA ENVIRONMENT - MUST match DA reference image scene
+        const environmentPart = `${daBackground} backdrop (${da.background?.hex || '#FFFFFF'}). ${da.floor?.type || 'Clean surface'} floor (${da.floor?.hex || '#F5F5F5'}). Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. CRITICAL: Background and lighting must match the DA scene reference image exactly.`;
 
         // Priority 4: Helpers
         const helpers = `NO PEOPLE, NO HANDS, NO MANNEQUIN. Clean wall-mounted hanger display, pristine condition. ${qualitySuffix}`;
@@ -1148,8 +1148,8 @@ export class PromptBuilderService {
             ? `Professional product photography. ${sizeDescription}. Pants FOLDED neatly over elegant wooden hanger bar, showing BACK. Hanger hanging from small metal wall hook. Back pockets and waistband clearly visible. Legs folded and draped elegantly.`
             : `Professional product photography. ${sizeDescription}. Garment displayed on elegant wooden hanger, turned to show BACK. Hanger hanging from small metal wall hook. Centered composition. Rear details clearly visible from shoulders to hem.`;
 
-        // 🎯 Priority 3: DA ENVIRONMENT - Use collection's artistic direction background
-        const environmentPart = `${daBackground} backdrop. Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}.`;
+        // 🎯 Priority 3: DA ENVIRONMENT - MUST match DA reference image scene
+        const environmentPart = `${daBackground} backdrop (${da.background?.hex || '#FFFFFF'}). ${da.floor?.type || 'Clean surface'} floor (${da.floor?.hex || '#F5F5F5'}). Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. CRITICAL: Background and lighting must match the DA scene reference image exactly.`;
 
         // Priority 4: Helpers
         const helpers = `NO PEOPLE, NO HANDS, NO MANNEQUIN. Clean wall-mounted hanger display. ${qualitySuffix}`;
@@ -1225,8 +1225,8 @@ export class PromptBuilderService {
         const productIdentity = this.buildProductIdentityBlock(product, true, false);
         const productData = `FRONT GARMENT DETAILS IN FOCUS: ${frontDescription}. ${geometryPhrase}${exactPocketSpec}${pocketDetails}${microDetails}${productIdentity}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp focus on pocket patches, embossing patterns, buttons, and embroidery while worn on model. CRITICAL: Pocket patch must EXACTLY match reference images with correct material, shape, and embossed pattern. The pocket must look IDENTICAL to all other generated shots.`;
 
-        // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred background
-        const environmentPart = `${da.background.type} backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}. Shallow depth of field keeping garment details sharp.`;
+        // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred DA background
+        const environmentPart = `${da.background.type} (${da.background.hex}) backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}, ${da.lighting?.temperature || 'warm tones'}. Shallow depth of field keeping garment details sharp. Background color and lighting must match DA scene reference image.`;
 
         // Priority 4: Technical - NO BARE SKIN, NO INNER LABELS/TAGS
         const helpers = `Editorial fashion photography. Close-up portrait framing. Professional child model FULLY DRESSED. Complete outfit - NO bare back, NO bare shoulders, NO exposed skin anywhere. IMPORTANT: Do NOT show any collar labels, neck tags, size labels, care labels, or brand tags. Only the outer garment design should be visible - NO inner clothing tags or labels visible. ${qualitySuffix}`;
@@ -1299,8 +1299,8 @@ export class PromptBuilderService {
         const productIdentity = this.buildProductIdentityBlock(product, false, true);
         const productData = `BACK GARMENT DETAILS IN FOCUS: ${yokeDescription}${geometryPhrase}${exactPatchSpec}${patchDetail} prominently visible and sharp. CRITICAL: Patch must be ${patchColor.toUpperCase() || 'exact color from reference'}, ${patchShape.toUpperCase()} shaped, centered on leather yoke. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}.${techniqueText} ${productIdentity}. Shoulder seams, collar back, and stitching details visible while worn on model.`;
 
-        // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred background
-        const environmentPart = `${da.background.type} backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}. Shallow depth of field keeping back details sharp.`;
+        // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred DA background
+        const environmentPart = `${da.background.type} (${da.background.hex}) backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}, ${da.lighting?.temperature || 'warm tones'}. Shallow depth of field keeping back details sharp. Background color and lighting must match DA scene reference image.`;
 
         // Priority 4: Technical - CRITICAL: NO BARE SKIN
         const helpers = `Editorial fashion photography. Close-up back view. Professional child model from behind. COMPLETE OUTFIT - NO bare back, NO bare shoulders, NO exposed skin. Model wearing full clothing underneath. ${qualitySuffix}`;
