@@ -653,10 +653,10 @@ export class GenerationsService {
 	): Promise<Generation> {
 		this.logger.log(`🚀 Generating visuals for generation: ${generationId}`);
 
-		// 1. Fetch Generation
+		// 1. Fetch Generation (include collection for DA reference image fallback)
 		const generation = await this.generationsRepository.findOne({
 			where: { id: generationId },
-			relations: ['product', 'da_preset'],
+			relations: ['product', 'da_preset', 'collection'],
 		});
 
 		if (!generation) {
@@ -2174,14 +2174,22 @@ export class GenerationsService {
 	 * Retry generating a single visual
 	 */
 	async retryVisual(generationId: string, userId: string, visualIndex: number, model?: string): Promise<Generation> {
-		const generation = await this.findOne(generationId, userId);
+		// Load generation WITH relations so we have product + DA reference images
+		const generation = await this.generationsRepository.findOne({
+			where: { id: generationId, user_id: userId },
+			relations: ['product', 'da_preset', 'collection'],
+		});
+
+		if (!generation) {
+			throw new NotFoundException(NotFoundMessage.GENERATION_NOT_FOUND);
+		}
 
 		if (!generation.visuals || !generation.visuals[visualIndex]) {
 			throw new BadRequestException(`Visual at index ${visualIndex} not found`);
 		}
 
 		const visual = generation.visuals[visualIndex];
-		const prompt = visual.prompt || this.extractPrompts([visual])[0];
+		const prompt = visual.gemini_prompt || visual.prompt || this.extractPrompts([visual])[0];
 
 		if (!prompt) {
 			throw new BadRequestException(`No prompt found for visual at index ${visualIndex}`);
@@ -2193,13 +2201,48 @@ export class GenerationsService {
 		this.emitVisualProcessing(generationId, userId, visualIndex, visual.type || `visual_${visualIndex}`);
 
 		try {
-			// Generate image with generation aspect_ratio and resolution
-			const result = await this.vertexImagenService.generateImage(
-				prompt,
-				model,
-				generation.aspect_ratio,
-				generation.resolution,
-			);
+			// Collect product reference images (same logic as generateVisuals)
+			const referenceImages: string[] = [];
+			if (generation.product?.front_image_url) {
+				referenceImages.push(generation.product.front_image_url);
+			}
+			if (generation.product?.back_image_url) {
+				referenceImages.push(generation.product.back_image_url);
+			}
+			if (generation.product?.reference_images?.length) {
+				referenceImages.push(...generation.product.reference_images);
+			}
+
+			// Include DA reference image LAST for scene consistency
+			if (generation.da_preset?.image_url) {
+				referenceImages.push(generation.da_preset.image_url);
+				this.logger.log(`🎨 Retry: DA preset reference image included: ${generation.da_preset.image_url}`);
+			} else if (generation.collection?.da_reference_image_url) {
+				referenceImages.push(generation.collection.da_reference_image_url);
+				this.logger.log(`🎨 Retry: Collection DA reference image included: ${generation.collection.da_reference_image_url}`);
+			}
+
+			// Determine DA reference URL
+			const daReferenceUrl = generation.da_preset?.image_url || generation.collection?.da_reference_image_url || undefined;
+
+			this.logger.log(`🖼️ Retry: ${referenceImages.length} reference images for ${visual.type}`);
+
+			// Use reference-based generation if images available (same as generateVisuals)
+			const result = referenceImages.length > 0
+				? await this.vertexImagenService.generateImageWithReference(
+					prompt,
+					referenceImages,
+					generation.aspect_ratio,
+					generation.resolution,
+					undefined,
+					daReferenceUrl ? { daReferenceUrl } : undefined,
+				)
+				: await this.vertexImagenService.generateImage(
+					prompt,
+					model,
+					generation.aspect_ratio,
+					generation.resolution,
+				);
 
 			// Save to storage
 			let imageUrl: string | null = null;

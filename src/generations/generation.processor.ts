@@ -93,9 +93,10 @@ export class GenerationProcessor {
 		}
 
 		try {
-			// Update status to processing
+			// Load generation WITH relations for product + DA reference images
 			const generation = await this.generationsRepository.findOne({
 				where: { id: generationId },
+				relations: ['product', 'da_preset', 'collection'],
 			});
 
 			if (!generation) {
@@ -108,6 +109,32 @@ export class GenerationProcessor {
 			}
 			generation.status = GenerationStatus.PROCESSING;
 			await this.generationsRepository.save(generation);
+
+			// Collect product + DA reference images ONCE for all shots
+			const referenceImages: string[] = [];
+			if (generation.product?.front_image_url) {
+				referenceImages.push(generation.product.front_image_url);
+			}
+			if (generation.product?.back_image_url) {
+				referenceImages.push(generation.product.back_image_url);
+			}
+			if (generation.product?.reference_images?.length) {
+				referenceImages.push(...generation.product.reference_images);
+			}
+
+			// Include DA reference image LAST for scene consistency
+			if (generation.da_preset?.image_url) {
+				referenceImages.push(generation.da_preset.image_url);
+				this.logger.log(`🎨 [PROCESSOR] DA preset reference image included: ${generation.da_preset.image_url}`);
+			} else if (generation.collection?.da_reference_image_url) {
+				referenceImages.push(generation.collection.da_reference_image_url);
+				this.logger.log(`🎨 [PROCESSOR] Collection DA reference image included: ${generation.collection.da_reference_image_url}`);
+			} else {
+				this.logger.warn(`⚠️ [PROCESSOR] No DA reference image found — generation will use text-only prompts`);
+			}
+
+			const daReferenceUrl = generation.da_preset?.image_url || generation.collection?.da_reference_image_url || undefined;
+			this.logger.log(`🖼️ [PROCESSOR] Reference images: ${referenceImages.length} total, hasDA=${!!daReferenceUrl}`);
 
 			// Initialize visuals array with structure
 			// Use provided visualTypes if available, otherwise fall back to index-based
@@ -172,12 +199,22 @@ export class GenerationProcessor {
 				}
 
 				try {
-					const result = await this.vertexImagenService.generateImage(
-						enhancedPrompt,
-						imagenModel,
-						generation.aspect_ratio,
-						generation.resolution
-					);
+					// Use reference-based generation with DA image for scene consistency
+					const result = referenceImages.length > 0
+						? await this.vertexImagenService.generateImageWithReference(
+							enhancedPrompt,
+							referenceImages,
+							generation.aspect_ratio,
+							generation.resolution,
+							undefined,
+							daReferenceUrl ? { daReferenceUrl } : undefined,
+						)
+						: await this.vertexImagenService.generateImage(
+							enhancedPrompt,
+							imagenModel,
+							generation.aspect_ratio,
+							generation.resolution,
+						);
 
 					// Save image
 					let imageUrl: string | null = null;
