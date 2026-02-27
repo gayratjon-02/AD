@@ -1272,6 +1272,16 @@ export class GenerationsService {
 		return generation;
 	}
 
+	/**
+	 * Delete a generation by ID (ownership check)
+	 */
+	async remove(id: string, userId: string): Promise<{ message: string }> {
+		const generation = await this.findOne(id, userId);
+		await this.generationsRepository.remove(generation);
+		this.logger.log(`🗑️ Generation deleted: ${id}`);
+		return { message: 'Generation deleted successfully' };
+	}
+
 	async previewPrompts(id: string, userId: string): Promise<{ prompts: string[] }> {
 		const generation = await this.findOne(id, userId);
 		const prompts = this.extractPrompts(generation.visuals || []);

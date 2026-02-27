@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Query, Res, StreamableFile, UseGuards } from '@nestjs/common';
 import { Response } from 'express';
 import { GenerationsService } from './generations.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -224,6 +224,31 @@ export class GenerationsController {
 			prompts: generation.merged_prompts,
 			images: generation.generated_images || {},
 		};
+	}
+
+	/**
+	 * DELETE /api/generations/:id
+	 * Delete a generation (ownership check applied)
+	 */
+	@Delete(':id')
+	async deleteGeneration(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+	): Promise<{ success: boolean; message: string }> {
+		await this.generationsService.remove(id, user.id);
+		return { success: true, message: 'Generation deleted successfully' };
+	}
+
+	/**
+	 * POST /api/generations/deleteGeneration/:id
+	 * Legacy delete endpoint
+	 */
+	@Post('deleteGeneration/:id')
+	async deleteGenerationLegacy(
+		@Param('id') id: string,
+		@CurrentUser() user: User,
+	): Promise<{ message: string }> {
+		return this.generationsService.remove(id, user.id);
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════════
