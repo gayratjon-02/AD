@@ -1,6 +1,6 @@
 // PRODUCTION: gemini-2.5-flash-image (Imagen 3 has been shut down)
 // Reference: https://ai.google.dev/gemini-api/docs/image-generation
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-image';
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-flash-image-preview';
 
 // Image generation result type
 export type GeminiImageResult = {
