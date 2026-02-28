@@ -67,4 +67,21 @@ export class BrandsService {
 
 		return { message: 'Brand deleted successfully' };
 	}
+
+	async updateModelReference(
+		id: string,
+		userId: string,
+		type: 'adult' | 'kid',
+		imageUrl: string,
+	): Promise<Brand> {
+		const brand = await this.findOne(id, userId);
+
+		if (type === 'adult') {
+			brand.model_adult_url = imageUrl;
+		} else {
+			brand.model_kid_url = imageUrl;
+		}
+
+		return this.brandsRepository.save(brand);
+	}
 }
