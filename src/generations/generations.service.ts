@@ -290,20 +290,28 @@ export class GenerationsService {
 						referenceImages.push(...generation.product.reference_images);
 					}
 
-					// Include DA reference image for scene consistency
-					// DA image is added LAST so Gemini treats it as the scene/environment reference
-					if (generation.da_preset?.image_url) {
-						referenceImages.push(generation.da_preset.image_url);
-						this.logger.log(`🎨 DA reference image included: ${generation.da_preset.image_url}`);
-					} else if (generation.collection?.da_reference_image_url) {
-						referenceImages.push(generation.collection.da_reference_image_url);
-						this.logger.log(`🎨 Collection DA reference image included: ${generation.collection.da_reference_image_url}`);
+					// 🎯 PRODUCT-ONLY shots: flatlay and closeup_front are product-only (no DA scene, no models)
+					const isProductOnly = ['flatlay_front', 'flatlay_back', 'closeup_front'].includes(promptType);
+
+					// Include DA reference image ONLY for model shots
+					if (!isProductOnly) {
+						if (generation.da_preset?.image_url) {
+							referenceImages.push(generation.da_preset.image_url);
+							this.logger.log(`🎨 DA reference image included: ${generation.da_preset.image_url}`);
+						} else if (generation.collection?.da_reference_image_url) {
+							referenceImages.push(generation.collection.da_reference_image_url);
+							this.logger.log(`🎨 Collection DA reference image included: ${generation.collection.da_reference_image_url}`);
+						}
+					} else {
+						this.logger.log(`🎯 Product-only shot (${promptType}): Skipping DA reference image`);
 					}
 
 					this.logger.log(`🖼️ Reference images for ${promptType}: ${referenceImages.length} images`);
 
-					// Determine DA reference URL for scene consistency
-					const daReferenceUrl = generation.da_preset?.image_url || generation.collection?.da_reference_image_url || undefined;
+					// Determine DA reference URL for scene consistency (only for model shots)
+					const daReferenceUrl = isProductOnly
+						? undefined
+						: (generation.da_preset?.image_url || generation.collection?.da_reference_image_url || undefined);
 
 					// Use reference-based generation if images available
 					const result = referenceImages.length > 0
@@ -313,7 +321,7 @@ export class GenerationsService {
 							generation.aspect_ratio,
 							generation.resolution,
 							undefined,
-							daReferenceUrl ? { daReferenceUrl } : undefined,
+							{ ...(daReferenceUrl && { daReferenceUrl }), shotType: promptType },
 						)
 						: await this.vertexImagenService.generateImage(
 							prompt,
@@ -737,19 +745,30 @@ export class GenerationsService {
 						referenceImages.push(...generation.product.reference_images);
 					}
 
-					// Include DA reference image for scene consistency (LAST position)
-					if (generation.da_preset?.image_url) {
-						referenceImages.push(generation.da_preset.image_url);
-						this.logger.log(`🎨 DA reference image included: ${generation.da_preset.image_url}`);
-					} else if (generation.collection?.da_reference_image_url) {
-						referenceImages.push(generation.collection.da_reference_image_url);
-						this.logger.log(`🎨 Collection DA reference image included: ${generation.collection.da_reference_image_url}`);
+					// 🎯 PRODUCT-ONLY shots: flatlay and closeup_front are product-only (no DA scene, no models)
+					const isProductOnlyShot = ['flatlay_front', 'flatlay_back', 'closeup_front'].includes(shotType);
+
+					// Include DA reference image ONLY for model shots (duo, solo, closeup_back)
+					// For product-only shots, DA reference shows a scene with models —
+					// Gemini copies the models into the output. Background info is already in the text prompt.
+					if (!isProductOnlyShot) {
+						if (generation.da_preset?.image_url) {
+							referenceImages.push(generation.da_preset.image_url);
+							this.logger.log(`🎨 DA reference image included: ${generation.da_preset.image_url}`);
+						} else if (generation.collection?.da_reference_image_url) {
+							referenceImages.push(generation.collection.da_reference_image_url);
+							this.logger.log(`🎨 Collection DA reference image included: ${generation.collection.da_reference_image_url}`);
+						}
+					} else {
+						this.logger.log(`🎯 Product-only shot (${shotType}): Skipping DA reference image to prevent model generation`);
 					}
 
 					this.logger.log(`🖼️ Reference images for ${shotType}: ${referenceImages.length} images`);
 
-					// Determine DA reference URL for scene consistency
-					const daRefUrl = generation.da_preset?.image_url || generation.collection?.da_reference_image_url || undefined;
+					// Determine DA reference URL for scene consistency (only for model shots)
+					const daRefUrl = isProductOnlyShot
+						? undefined
+						: (generation.da_preset?.image_url || generation.collection?.da_reference_image_url || undefined);
 
 					// Use reference-based generation if images available
 					const result = referenceImages.length > 0
@@ -759,7 +778,7 @@ export class GenerationsService {
 							generation.aspect_ratio,
 							generation.resolution,
 							undefined,
-							daRefUrl ? { daReferenceUrl: daRefUrl } : undefined,
+							{ ...(daRefUrl && { daReferenceUrl: daRefUrl }), shotType },
 						)
 						: await this.vertexImagenService.generateImage(
 							prompt,

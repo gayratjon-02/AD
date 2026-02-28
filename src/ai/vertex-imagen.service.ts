@@ -89,9 +89,9 @@ export class VertexImagenService {
 		aspectRatio?: string,
 		resolution?: string,
 		userApiKey?: string,
-		options?: { daReferenceUrl?: string }
+		options?: { daReferenceUrl?: string; shotType?: string }
 	): Promise<VertexImagenResult> {
-		this.logger.log(`🖼️ [Gemini API] Generating image WITH ${referenceImages?.length || 0} reference images (DA: ${!!options?.daReferenceUrl})`);
+		this.logger.log(`🖼️ [Gemini API] Generating image WITH ${referenceImages?.length || 0} reference images (DA: ${!!options?.daReferenceUrl}, shot: ${options?.shotType || 'unknown'})`);
 		this.logger.log(`📐 aspect=${aspectRatio ?? 'default'} resolution=${resolution ?? 'default'}`);
 
 		try {

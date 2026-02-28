@@ -117,11 +117,10 @@ export class GeminiService {
 
 		const sanitizedPrompt = this.sanitizePromptForImageGeneration(prompt);
 
-		// Enhanced prompt: STRICT—render exactly as specified; models MUST be fully clothed
+		// Enhanced prompt: STRICT—render exactly as specified
 		const enhancedPrompt = `Render EXACTLY as specified. Do NOT add, remove, or change any element. 100% match to the product specification. No creative additions.
-CRITICAL: Any human models must be FULLY CLOTHED. NEVER shirtless, bare-chested, or topless.
 
-Professional e-commerce product photography: ${sanitizedPrompt}.
+Professional product photography: ${sanitizedPrompt}.
 High quality studio lighting, sharp details, clean background.`;
 
 		this.logger.log(`🎨 ========== GEMINI IMAGE GENERATION START ==========`);
@@ -402,7 +401,7 @@ High quality studio lighting, sharp details, clean background.`;
 		aspectRatio?: string,
 		resolution?: string,
 		userApiKey?: string,
-		options?: { daReferenceUrl?: string }
+		options?: { daReferenceUrl?: string; shotType?: string }
 	): Promise<GeminiImageResult> {
 		const client = this.getClient(userApiKey);
 		const startTime = Date.now();
@@ -411,7 +410,9 @@ High quality studio lighting, sharp details, clean background.`;
 		const validImages = (referenceImages || []).filter(img => img && img.trim() !== '');
 
 		const hasDAReference = !!options?.daReferenceUrl;
-		this.logger.log(`🚀 generateImages: model=${this.MODEL}, ratio=${aspectRatio || '4:5'}, refs=${validImages.length}, hasDA=${hasDAReference}, prompt=${prompt.length} chars`);
+		const shotType = options?.shotType || '';
+		const isProductOnlyShot = ['flatlay_front', 'flatlay_back', 'closeup_front'].includes(shotType);
+		this.logger.log(`🚀 generateImages: model=${this.MODEL}, ratio=${aspectRatio || '4:5'}, refs=${validImages.length}, hasDA=${hasDAReference}, shot=${shotType}, productOnly=${isProductOnlyShot}, prompt=${prompt.length} chars`);
 
 		// If no valid reference images, fall back to regular generation
 		if (validImages.length === 0) {
@@ -433,10 +434,17 @@ High quality studio lighting, sharp details, clean background.`;
 		const ratioText = this.mapAspectRatioToGemini(aspectRatio ?? '4:5');
 		const resolutionText = this.mapResolutionToGemini(resolution);
 
-		// Build prompt based on whether DA reference image is included
-		const referencePrompt = hasDAReference
-			? this.buildDASceneReferencePrompt(prompt)
-			: this.buildAdConceptReferencePrompt(prompt);
+		// 🎯 CRITICAL: Choose prompt wrapper based on shot type
+		// Product-only shots (flatlay, closeup_front) must NOT mention models/wearing
+		let referencePrompt: string;
+		if (isProductOnlyShot) {
+			referencePrompt = this.buildProductOnlyReferencePrompt(prompt);
+			this.logger.log(`🎯 Using PRODUCT-ONLY prompt wrapper for ${shotType}`);
+		} else if (hasDAReference) {
+			referencePrompt = this.buildDASceneReferencePrompt(prompt);
+		} else {
+			referencePrompt = this.buildAdConceptReferencePrompt(prompt);
+		}
 
 		this.logger.log(`📤 Sending to Gemini: ratio=${ratioText}, size=${resolutionText}, prompt=${referencePrompt.length} chars`);
 
@@ -590,6 +598,30 @@ SHOT REQUIREMENTS:
 ${this.sanitizePromptForImageGeneration(prompt)}
 
 HIGH QUALITY OUTPUT: Professional editorial fashion photography, matching the exact lighting and atmosphere of the DA scene reference. 8K quality, sharp details.`;
+	}
+
+	/**
+	 * Build prompt for PRODUCT-ONLY shots (flatlay, closeup_front).
+	 *
+	 * 🎯 CRITICAL: This wrapper NEVER mentions models, wearing, fashion photography.
+	 * Only references product images for exact garment reproduction.
+	 * Uses ONLY positive language — describes what IS in the image.
+	 */
+	private buildProductOnlyReferencePrompt(prompt: string): string {
+		return `🎯 PRODUCT-ONLY PHOTOGRAPH — Still life, no humans.
+
+📸 PRODUCT REFERENCE IMAGES:
+These show the EXACT garment you must reproduce. Match ALL details precisely:
+- EXACT fabric color, texture, and material
+- EXACT pocket count, positions, patches, and design elements
+- EXACT button count, zipper placement, and hardware
+- EXACT collar, cuff, and seam details
+- Every distinctive design element must be reproduced IDENTICALLY
+
+SHOT REQUIREMENTS:
+${prompt}
+
+HIGH QUALITY OUTPUT: Professional still life product photography. Studio lighting, sharp details, clean composition. 8K quality.`;
 	}
 
 	/**
