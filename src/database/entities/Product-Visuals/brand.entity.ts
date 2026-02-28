@@ -32,6 +32,13 @@ export class Brand {
   @Column({ type: 'varchar', length: 500, nullable: true })
   logo_url: string;
 
+  // ─── Model Reference Images (Model Consistency) ──────────
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  model_adult_url: string;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  model_kid_url: string;
+
   @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   created_at: Date;
 

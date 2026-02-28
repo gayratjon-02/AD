@@ -69,6 +69,13 @@ export class AdBrand {
     @Column({ type: 'jsonb', nullable: true })
     custom_angles: any[];
 
+    // ─── Model Reference Images (Model Consistency) ──────────
+    @Column({ type: 'varchar', length: 500, nullable: true })
+    model_adult_url: string;
+
+    @Column({ type: 'varchar', length: 500, nullable: true })
+    model_kid_url: string;
+
     // ─── Optional Extra PDF ──────────────────────────────────
     @Column({ type: 'varchar', length: 500, nullable: true })
     style_guide_url: string;
