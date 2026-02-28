@@ -288,7 +288,7 @@ export class PromptBuilderService {
             ? `Props: ${leftProps || 'nothing'} on the left, ${rightProps || 'nothing'} on the right.`
             : 'NO PROPS — clean empty space on both sides. Do NOT add any objects, decorations, or elements to the scene.';
 
-        const scene = `EXACT DA SCENE: ${da.background.type} wall/background (${da.background.hex}) with ${da.floor.type} floor (${da.floor.hex}). STUDIO CYCLORAMA: The wall curves smoothly into the floor with a seamless infinity curve — there is absolutely NO visible line, fold, crease, or sharp angle where the wall meets the floor. The transition is a gentle continuous curve like a professional photography studio cyclorama. ${propsInstruction} Lighting: ${da.lighting.type}, ${da.lighting.temperature}. Mood: ${da.mood}. CRITICAL: Match the DA reference image EXACTLY — same background, same floor, same seamless wall-to-floor curve, same lighting direction, same props placement, same atmosphere`;
+        const scene = `SCENE FROM DA REFERENCE: ${da.background.type} wall (${da.background.hex}), ${da.floor.type} floor (${da.floor.hex}). Studio cyclorama — wall curves smoothly into floor, no visible line or fold at junction. ${propsInstruction} Lighting: ${da.lighting.type}, ${da.lighting.temperature}. Mood: ${da.mood}. COPY this exact room from the DA reference photo.`;
         const propsText = hasAnyProps ? `${leftProps}, ${rightProps}`.replace(/^, |, $/g, '') : 'none';
 
         // ═══════════════════════════════════════════════════════════
@@ -330,7 +330,7 @@ export class PromptBuilderService {
         // 6.1 DUO (Father + Son) — Client requirement: matching outfits on father and son
         // Gemini API allows father/son terminology (no need for Vertex RAI workaround)
         const duoStyling = styling; // Use original styling, no workaround needed for Gemini
-        const duoPrompt = this.buildDuoPrompt(product, da, baseAttire, duoStyling, scene, zipperText, qualitySuffix);
+        const duoPrompt = this.buildDuoPrompt(product, da, baseAttire, duoStyling, scene, zipperText, qualitySuffix, isProductBottom);
         const duoFinalPrompt = duoPrompt + resolutionSuffix;
         const duo: MergedPromptObject = {
             visual_id: `visual_1_duo_family`,
@@ -378,7 +378,7 @@ export class PromptBuilderService {
         this.logger.log(`🎯 Shot Settings: SOLO=${soloSubject}, FlatLayFront=${flatLayFrontSize}, FlatLayBack=${flatLayBackSize}`);
 
         // 6.2 SOLO (uses soloSubject - can be different from flat lay)
-        const soloPrompt = this.buildSoloPrompt(product, da, soloSubject, baseAttire, stylingSolo, scene, zipperText, logoTextFront, qualitySuffix);
+        const soloPrompt = this.buildSoloPrompt(product, da, soloSubject, baseAttire, stylingSolo, scene, zipperText, logoTextFront, qualitySuffix, isProductBottom);
         const soloFinalPrompt = soloPrompt + resolutionSuffix;
 
         // 🚀 STRICT NEGATIVE PROMPTING FOR SOLO
@@ -948,13 +948,17 @@ export class PromptBuilderService {
         styling: string,
         scene: string,
         zipperText: string,
-        qualitySuffix: string
+        qualitySuffix: string,
+        isProductBottom: boolean = false
     ): string {
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 1: SUBJECT FIRST (Father + Son — Client Requirement)
         // Now using Gemini API which allows father/son terminology
         // ═══════════════════════════════════════════════════════════
-        const subjectPart = 'Father and son wearing matching outfits. Adult male in his 30s (athletic build, light stubble beard) with his 5-year-old son. Both smiling naturally, relaxed family pose. Fashion editorial. Both looking at camera. BOTH FULLY CLOTHED, NEVER SHIRTLESS.';
+        const clothingRule = isProductBottom
+            ? 'BOTH wearing plain white t-shirts on upper body. FULLY CLOTHED from neck to toe — shirt ALWAYS visible on both father and son. ZERO bare skin on torso.'
+            : 'BOTH FULLY CLOTHED, NEVER SHIRTLESS.';
+        const subjectPart = `Father and son wearing matching outfits. Adult male in his 30s (athletic build, light stubble beard) with his 5-year-old son. ${clothingRule} Both smiling naturally, relaxed family pose. Fashion editorial. Both looking at camera.`;
 
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 2: APPAREL (What they're wearing) - USE baseAttire (includes t-shirt when product is bottom!)
@@ -973,9 +977,9 @@ export class PromptBuilderService {
         // ═══════════════════════════════════════════════════════════
         const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. Do NOT add any objects, furniture, or decorations that are not in the DA reference image. ${qualitySuffix}`;
 
-        // 🎯 FLOOR/BG ENFORCEMENT: Wrap prompt with strict DA floor matching at START and END
-        const floorPrefix = `[MANDATORY: Background wall and floor MUST be IDENTICAL to the DA reference image. Same wall color (${da.background.hex}), same floor color (${da.floor.hex}), same ${da.floor.type} floor material, same seamless cyclorama curve.]`;
-        const floorSuffix = `[FINAL CHECK: Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}). These MUST match the DA reference EXACTLY. Do NOT change the floor or wall color/material.]`;
+        // 🎯 FLOOR/BG ENFORCEMENT: Ultra-strong DA scene matching at START and END
+        const floorPrefix = `COPY THE EXACT BACKGROUND AND FLOOR FROM THE DA REFERENCE IMAGE. Wall: ${da.background.type} (${da.background.hex}). Floor: ${da.floor.type} (${da.floor.hex}). The generated image background and floor must be a PIXEL-PERFECT COPY of the DA reference photo — same wall color, same floor color, same floor material, same seamless cyclorama curve. LOOK AT THE DA REFERENCE IMAGE AND REPLICATE ITS BACKGROUND EXACTLY.`;
+        const floorSuffix = `REPEAT: THE BACKGROUND WALL AND FLOOR MUST BE COPIED EXACTLY FROM THE DA REFERENCE IMAGE. Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}). Generate the SAME room, SAME colors, SAME floor material as shown in the DA reference photo.`;
 
         return `${floorPrefix} ${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart} ${floorSuffix}`;
     }
@@ -1001,18 +1005,20 @@ export class PromptBuilderService {
         scene: string,
         zipperText: string,
         logoTextFront: string,
-        qualitySuffix: string
+        qualitySuffix: string,
+        isProductBottom: boolean = false
     ): string {
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 1: SUBJECT FIRST (Most Important!)
         // ═══════════════════════════════════════════════════════════
+        const clothingRule = isProductBottom
+            ? 'Wearing a plain white t-shirt on upper body. FULLY CLOTHED from neck to toe — shirt ALWAYS visible. ZERO bare skin on torso.'
+            : 'FULLY CLOTHED.';
         let subjectPart = '';
         if (modelType === 'kid') {
-            // KID: 5-year-old boy - specific age as per client requirement
-            subjectPart = 'KIDS FASHION. Subject: SINGLE 5-YEAR-OLD BOY. Small child size. (NO ADULTS, NO OLDER KIDS). Playful editorial expression, natural child pose.';
+            subjectPart = `KIDS FASHION. Subject: SINGLE 5-YEAR-OLD BOY. Small child size. (NO ADULTS, NO OLDER KIDS). ${clothingRule} Playful editorial expression, natural child pose.`;
         } else {
-            // ADULT: Very explicit adult description with negative enforcement in positive prompt
-            subjectPart = 'Subject: SINGLE ADULT MALE MODEL. Age 30s. Full adult size. (NO KIDS). Athletic build, confident gaze, light stubble beard.';
+            subjectPart = `Subject: SINGLE ADULT MALE MODEL. Age 30s. Full adult size. (NO KIDS). ${clothingRule} Athletic build, confident gaze, light stubble beard.`;
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -1035,9 +1041,9 @@ export class PromptBuilderService {
             ? `Kids fashion photography. Medium shot. Soft lighting, natural child pose. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. ${qualitySuffix}`
             : `Editorial fashion photography. Medium shot. Real human skin texture, natural pose. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. ${qualitySuffix}`;
 
-        // 🎯 FLOOR/BG ENFORCEMENT: Wrap prompt with strict DA floor matching at START and END
-        const floorPrefix = `[MANDATORY: Background wall and floor MUST be IDENTICAL to the DA reference image. Same wall color (${da.background.hex}), same floor color (${da.floor.hex}), same ${da.floor.type} floor material, same seamless cyclorama curve.]`;
-        const floorSuffix = `[FINAL CHECK: Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}). These MUST match the DA reference EXACTLY. Do NOT change the floor or wall color/material.]`;
+        // 🎯 FLOOR/BG ENFORCEMENT: Ultra-strong DA scene matching at START and END
+        const floorPrefix = `COPY THE EXACT BACKGROUND AND FLOOR FROM THE DA REFERENCE IMAGE. Wall: ${da.background.type} (${da.background.hex}). Floor: ${da.floor.type} (${da.floor.hex}). The generated image background and floor must be a PIXEL-PERFECT COPY of the DA reference photo — same wall color, same floor color, same floor material, same seamless cyclorama curve. LOOK AT THE DA REFERENCE IMAGE AND REPLICATE ITS BACKGROUND EXACTLY.`;
+        const floorSuffix = `REPEAT: THE BACKGROUND WALL AND FLOOR MUST BE COPIED EXACTLY FROM THE DA REFERENCE IMAGE. Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}). Generate the SAME room, SAME colors, SAME floor material as shown in the DA reference photo.`;
 
         return `${floorPrefix} ${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart} ${floorSuffix}`;
     }
