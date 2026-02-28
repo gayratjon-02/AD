@@ -13,7 +13,7 @@ export default registerAs('database', () => {
   return {
     type: 'postgres' as const,
     url: databaseUrl,
-    synchronize: process.env.NODE_ENV !== 'production',
+    synchronize: true,
     logging: false,
     ssl: isSupabase ? { rejectUnauthorized: false } : undefined,
 
