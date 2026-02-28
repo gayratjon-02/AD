@@ -248,7 +248,14 @@ export class PromptBuilderService {
         const resolution = (options.resolution && String(options.resolution).trim().toUpperCase()) || '4K';
         const resolutionSuffix = this.getResolutionQualitySuffix(resolution);
         this.logger.log(`📐 Resolution for prompts: "${resolution}" → force-append suffix (${resolutionSuffix.length} chars)`);
-        const qualitySuffix = `, ${da.quality}, ${da.lighting.type}, ${da.lighting.temperature}`;
+
+        // 📸 DYNAMIC CAMERA/LIGHTING: Per-shot camera and lighting descriptions
+        const duoCameraLighting = this.buildShotCameraLighting('duo', da);
+        const soloCameraLighting = this.buildShotCameraLighting('solo', da);
+        const flatlayFrontCameraLighting = this.buildShotCameraLighting('flatlay_front', da);
+        const flatlayBackCameraLighting = this.buildShotCameraLighting('flatlay_back', da);
+        const closeupFrontCameraLighting = this.buildShotCameraLighting('closeup_front', da);
+        const closeupBackCameraLighting = this.buildShotCameraLighting('closeup_back', da);
 
         // 🚀 DEFAULT TOP RULE: If product is a Bottom, model must wear a white t-shirt (Anti-Nudity)
         let baseAttire = `Wearing ${product.visual_specs.color_name} ${product.general_info.product_name}`;
@@ -330,7 +337,7 @@ export class PromptBuilderService {
         // 6.1 DUO (Father + Son) — Client requirement: matching outfits on father and son
         // Gemini API allows father/son terminology (no need for Vertex RAI workaround)
         const duoStyling = styling; // Use original styling, no workaround needed for Gemini
-        const duoPrompt = this.buildDuoPrompt(product, da, baseAttire, duoStyling, scene, zipperText, qualitySuffix, isProductBottom);
+        const duoPrompt = this.buildDuoPrompt(product, da, baseAttire, duoStyling, scene, zipperText, duoCameraLighting, isProductBottom);
         const duoFinalPrompt = duoPrompt + resolutionSuffix;
         const duo: MergedPromptObject = {
             visual_id: `visual_1_duo_family`,
@@ -378,7 +385,7 @@ export class PromptBuilderService {
         this.logger.log(`🎯 Shot Settings: SOLO=${soloSubject}, FlatLayFront=${flatLayFrontSize}, FlatLayBack=${flatLayBackSize}`);
 
         // 6.2 SOLO (uses soloSubject - can be different from flat lay)
-        const soloPrompt = this.buildSoloPrompt(product, da, soloSubject, baseAttire, stylingSolo, scene, zipperText, logoTextFront, qualitySuffix, isProductBottom);
+        const soloPrompt = this.buildSoloPrompt(product, da, soloSubject, baseAttire, stylingSolo, scene, zipperText, logoTextFront, soloCameraLighting, isProductBottom);
         const soloFinalPrompt = soloPrompt + resolutionSuffix;
 
         // 🚀 STRICT NEGATIVE PROMPTING FOR SOLO
@@ -413,7 +420,7 @@ export class PromptBuilderService {
         } as MergedPromptObject;
 
         // 6.3 FLAT LAY FRONT — FORCE: resolution suffix at very end
-        const flatLayFrontPrompt = this.buildFlatLayFrontPrompt(product, da, flatLayFrontSize, logoTextFront, qualitySuffix);
+        const flatLayFrontPrompt = this.buildFlatLayFrontPrompt(product, da, flatLayFrontSize, logoTextFront, flatlayFrontCameraLighting);
         const flatLayFrontFinal = flatLayFrontPrompt + resolutionSuffix;
         const flatLayFrontNegative = this.buildShotNegativePrompt('flatlay_front', product);
         const flatlay_front: MergedPromptObject = {
@@ -439,7 +446,7 @@ export class PromptBuilderService {
         } as MergedPromptObject;
 
         // 6.4 FLAT LAY BACK — FORCE: resolution suffix at very end
-        const flatLayBackPrompt = this.buildFlatLayBackPrompt(product, da, flatLayBackSize, qualitySuffix);
+        const flatLayBackPrompt = this.buildFlatLayBackPrompt(product, da, flatLayBackSize, flatlayBackCameraLighting);
         const flatLayBackFinal = flatLayBackPrompt + resolutionSuffix;
         const flatLayBackNegative = this.buildShotNegativePrompt('flatlay_back', product);
         const flatlay_back: MergedPromptObject = {
@@ -465,7 +472,7 @@ export class PromptBuilderService {
         } as MergedPromptObject;
 
         // 6.5 CLOSE UP FRONT — Model wearing garment, focus on front details (DA compliant)
-        const closeUpFrontPrompt = this.buildCloseUpFrontPrompt(product, da, qualitySuffix);
+        const closeUpFrontPrompt = this.buildCloseUpFrontPrompt(product, da, closeupFrontCameraLighting);
         const closeUpFrontFinal = closeUpFrontPrompt + resolutionSuffix;
         // Closeup shows model wearing - allow partial body but no full face
         const closeUpFrontNegative = this.buildShotNegativePrompt('closeup_front', product) + ', full body shot, wide shot, distance shot, full face visible';
@@ -489,7 +496,7 @@ export class PromptBuilderService {
         } as MergedPromptObject;
 
         // 6.6 CLOSE UP BACK — Product-only macro of back details (patch, yoke, fabric)
-        const closeUpBackPrompt = this.buildCloseUpBackPrompt(product, da, qualitySuffix);
+        const closeUpBackPrompt = this.buildCloseUpBackPrompt(product, da, closeupBackCameraLighting);
         const closeUpBackFinal = closeUpBackPrompt + resolutionSuffix;
         // Product-only macro — block humans and wide shots
         let closeUpBackNegative = this.buildShotNegativePrompt('closeup_back', product) + ', full body shot, wide shot, distance shot';
@@ -931,6 +938,41 @@ export class PromptBuilderService {
     }
 
     // ═══════════════════════════════════════════════════════════
+    // DYNAMIC CAMERA & LIGHTING PER SHOT TYPE
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Build shot-specific camera and lighting description.
+     * DA defines base lighting mood/temperature, but camera angle,
+     * focal length, and lighting direction adapt per shot type.
+     */
+    private buildShotCameraLighting(
+        shotType: string,
+        da: AnalyzeDAPresetResponse
+    ): string {
+        const baseLightTemp = da.lighting?.temperature || 'warm tones';
+
+        switch (shotType) {
+            case 'duo':
+                return `85mm lens, f/2.8, eye-level angle. ${da.lighting?.type || 'Soft diffused studio lighting'}, ${baseLightTemp}. Full-body framing, two subjects centered. ${da.quality || '8K editorial fashion photography'}`;
+
+            case 'solo':
+                return `85mm lens, f/2.0, eye-level angle. ${da.lighting?.type || 'Soft diffused studio lighting'}, ${baseLightTemp}. Full-body framing, single subject centered. ${da.quality || '8K editorial fashion photography'}`;
+
+            case 'flatlay_front':
+            case 'flatlay_back':
+                return `50mm lens, f/8, front-facing straight-on angle. Even flat lighting with minimal shadows to show garment details clearly, ${baseLightTemp}. ${da.quality || '8K product photography'}`;
+
+            case 'closeup_front':
+            case 'closeup_back':
+                return `100mm macro lens, f/4, close-range angle. Directional raking light to reveal fabric texture and stitching details, ${baseLightTemp}. Shallow depth of field. ${da.quality || '8K macro product photography'}`;
+
+            default:
+                return `${da.lighting?.type || 'Soft diffused studio lighting'}, ${baseLightTemp}. ${da.quality || '8K photography'}`;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // PROMPT BUILDERS (6 Shot Types)
     // ═══════════════════════════════════════════════════════════
 
@@ -948,7 +990,7 @@ export class PromptBuilderService {
         styling: string,
         scene: string,
         zipperText: string,
-        qualitySuffix: string,
+        cameraLighting: string,
         isProductBottom: boolean = false
     ): string {
         // ═══════════════════════════════════════════════════════════
@@ -977,9 +1019,9 @@ export class PromptBuilderService {
         const environmentPart = `${styling}. ${scene}.`;
 
         // ═══════════════════════════════════════════════════════════
-        // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality)
+        // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality) — DYNAMIC per shot type
         // ═══════════════════════════════════════════════════════════
-        const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. Do NOT add any objects, furniture, or decorations that are not in the DA reference image. ${qualitySuffix}`;
+        const technicalPart = `${cameraLighting}. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. Do NOT add any objects, furniture, or decorations that are not in the DA reference image.`;
 
         // 🎯 FLOOR/BG ENFORCEMENT: Ultra-strong DA scene matching at START and END
         const floorPrefix = `COPY THE EXACT BACKGROUND AND FLOOR FROM THE DA REFERENCE IMAGE. Wall: ${da.background.type} (${da.background.hex}). Floor: ${da.floor.type} (${da.floor.hex}). The generated image background and floor must be a PIXEL-PERFECT COPY of the DA reference photo. ⚠️ WALL-TO-FLOOR TRANSITION: Look at the DA reference image — the wall-to-floor meeting point is a smooth, gradual curve with NO fold, NO crease, NO hard edge. You MUST replicate this EXACT smooth transition. Do NOT create any visible line, fold, or sharp corner where wall meets floor. This is the #1 quality requirement.`;
@@ -1009,7 +1051,7 @@ export class PromptBuilderService {
         scene: string,
         zipperText: string,
         logoTextFront: string,
-        qualitySuffix: string,
+        cameraLighting: string,
         isProductBottom: boolean = false
     ): string {
         // ═══════════════════════════════════════════════════════════
@@ -1042,11 +1084,11 @@ export class PromptBuilderService {
         const environmentPart = `${styling}. ${scene}. Standing naturally.`;
 
         // ═══════════════════════════════════════════════════════════
-        // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality)
+        // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality) — DYNAMIC per shot type
         // ═══════════════════════════════════════════════════════════
         const technicalPart = modelType === 'kid'
-            ? `Kids fashion photography. Medium shot. Soft lighting, natural child pose. The environment MUST be identical to the DA scene reference image provided. ${qualitySuffix}`
-            : `Editorial fashion photography. Medium shot. Real human skin texture, natural pose. The environment MUST be identical to the DA scene reference image provided. ${qualitySuffix}`;
+            ? `${cameraLighting}. Natural child pose. The environment MUST be identical to the DA scene reference image provided.`
+            : `${cameraLighting}. Real human skin texture, natural pose. The environment MUST be identical to the DA scene reference image provided.`;
 
         // 🎯 FLOOR/BG ENFORCEMENT: Ultra-strong DA scene matching at START and END
         const floorPrefix = `COPY THE EXACT BACKGROUND AND FLOOR FROM THE DA REFERENCE IMAGE. Wall: ${da.background.type} (${da.background.hex}). Floor: ${da.floor.type} (${da.floor.hex}). The generated image background and floor must be a PIXEL-PERFECT COPY of the DA reference photo. ⚠️ WALL-TO-FLOOR TRANSITION: Look at the DA reference image — the wall-to-floor meeting point is a smooth, gradual curve with NO fold, NO crease, NO hard edge. You MUST replicate this EXACT smooth transition. Do NOT create any visible line, fold, or sharp corner where wall meets floor. This is the #1 quality requirement.`;
@@ -1071,7 +1113,7 @@ export class PromptBuilderService {
         da: AnalyzeDAPresetResponse,
         modelType: 'adult' | 'kid',
         logoTextFront: string,
-        qualitySuffix: string
+        cameraLighting: string
     ): string {
         const sizeDescription = modelType === 'adult'
             ? 'Adult-size'
@@ -1108,10 +1150,10 @@ export class PromptBuilderService {
         const productData = `Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ${productIdentity}. ${logoTextFront}.`;
 
         // Environment from DA — WALL ONLY, no floor visible in flatlay shots
-        const environmentPart = `Background: ONLY the ${daBackground} wall (${da.background?.hex || '#FFFFFF'}) is visible behind the hanging garment. The entire frame shows ONLY the wall surface — there is NO floor visible in this shot. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. Mood: ${da.mood || 'editorial elegance'}.`;
+        const environmentPart = `Background: ONLY the ${daBackground} wall (${da.background?.hex || '#FFFFFF'}) is visible behind the hanging garment. The entire frame shows ONLY the wall surface — there is NO floor visible in this shot. Mood: ${da.mood || 'editorial elegance'}.`;
 
-        // Quality — ONLY positive language, clean product display
-        const helpers = `Clean minimalist product display. Pristine garment condition. Single garment only. Still life product photography. Wall-only background, no floor in frame. ${qualitySuffix}`;
+        // Quality — dynamic camera/lighting per shot type
+        const helpers = `Clean minimalist product display. Pristine garment condition. Single garment only. Still life product photography. Wall-only background, no floor in frame. ${cameraLighting}`;
 
         return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
@@ -1131,7 +1173,7 @@ export class PromptBuilderService {
         product: AnalyzeProductDirectResponse,
         da: AnalyzeDAPresetResponse,
         modelType: 'adult' | 'kid',
-        qualitySuffix: string
+        cameraLighting: string
     ): string {
         const patchDetail = product.design_back.has_patch
             ? `Visible patch: ${product.design_back.patch_detail}. `
@@ -1175,10 +1217,10 @@ export class PromptBuilderService {
         const productData = `${product.design_back.description}. ${patchDetail}${technique}Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ${productIdentity}.`;
 
         // Environment from DA — WALL ONLY, no floor visible in flatlay shots
-        const environmentPart = `Background: ONLY the ${daBackground} wall (${da.background?.hex || '#FFFFFF'}) is visible behind the hanging garment. The entire frame shows ONLY the wall surface — there is NO floor visible in this shot. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. Mood: ${da.mood || 'editorial elegance'}.`;
+        const environmentPart = `Background: ONLY the ${daBackground} wall (${da.background?.hex || '#FFFFFF'}) is visible behind the hanging garment. The entire frame shows ONLY the wall surface — there is NO floor visible in this shot. Mood: ${da.mood || 'editorial elegance'}.`;
 
-        // Quality — ONLY positive language
-        const helpers = `Clean minimalist product display. Pristine garment condition. Single garment only. Still life product photography. Wall-only background, no floor in frame. ${qualitySuffix}`;
+        // Quality — dynamic camera/lighting per shot type
+        const helpers = `Clean minimalist product display. Pristine garment condition. Single garment only. Still life product photography. Wall-only background, no floor in frame. ${cameraLighting}`;
 
         return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
@@ -1195,7 +1237,7 @@ export class PromptBuilderService {
     private buildCloseUpFrontPrompt(
         product: AnalyzeProductDirectResponse,
         da: AnalyzeDAPresetResponse,
-        qualitySuffix: string
+        cameraLighting: string
     ): string {
         const parts: string[] = [];
         if (product.garment_details.closure_details) parts.push(`closure: ${product.garment_details.closure_details}`);
@@ -1250,10 +1292,10 @@ export class PromptBuilderService {
         const productData = `FRONT DETAILS IN FOCUS: ${frontDescription}. ${geometryPhrase}${exactPocketSpec}${pocketDetails}${microDetails}${productIdentity}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp macro focus on pocket patches, embossing patterns, buttons, stitching, and logo. Pocket patch must EXACTLY match reference images.`;
 
         // 🎯 Environment — soft blurred DA background behind the close-up
-        const environmentPart = `Background: ${da.background.type} (${da.background.hex}) with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}, ${da.lighting?.temperature || 'warm tones'}. Shallow depth of field keeping garment details razor-sharp.`;
+        const environmentPart = `Background: ${da.background.type} (${da.background.hex}) with soft bokeh blur. Shallow depth of field keeping garment details razor-sharp.`;
 
-        // Quality — product-only macro photography
-        const helpers = `Macro product photography. Extreme close-up still life. Fabric texture detail. Single garment only. ${qualitySuffix}`;
+        // Quality — dynamic camera/lighting per shot type
+        const helpers = `Macro product photography. Extreme close-up still life. Fabric texture detail. Single garment only. ${cameraLighting}`;
 
         return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
@@ -1271,7 +1313,7 @@ export class PromptBuilderService {
     private buildCloseUpBackPrompt(
         product: AnalyzeProductDirectResponse,
         da: AnalyzeDAPresetResponse,
-        qualitySuffix: string
+        cameraLighting: string
     ): string {
         const techniqueText = product.design_back.technique
             ? `, technique: ${product.design_back.technique}`
@@ -1325,10 +1367,10 @@ export class PromptBuilderService {
         const productData = `BACK DETAILS IN FOCUS: ${yokeDescription}${geometryPhrase}${exactPatchSpec}${patchDetail} prominently visible and sharp. Patch must be ${patchColor.toUpperCase() || 'exact color from reference'}, ${patchShape.toUpperCase()} shaped. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}.${techniqueText} ${productIdentity}. Shoulder seams, collar back, and stitching details visible. Sharp macro focus on back patch, embossing patterns, and logo.`;
 
         // 🎯 Environment — soft blurred DA background behind the close-up
-        const environmentPart = `Background: ${da.background.type} (${da.background.hex}) with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}, ${da.lighting?.temperature || 'warm tones'}. Shallow depth of field keeping garment details razor-sharp.`;
+        const environmentPart = `Background: ${da.background.type} (${da.background.hex}) with soft bokeh blur. Shallow depth of field keeping garment details razor-sharp.`;
 
-        // Quality — product-only macro photography
-        const helpers = `Macro product photography. Extreme close-up still life. Back fabric texture detail. Single garment only. ${qualitySuffix}`;
+        // Quality — dynamic camera/lighting per shot type
+        const helpers = `Macro product photography. Extreme close-up still life. Back fabric texture detail. Single garment only. ${cameraLighting}`;
 
         return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
