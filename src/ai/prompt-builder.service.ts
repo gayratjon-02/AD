@@ -973,8 +973,11 @@ export class PromptBuilderService {
         // ═══════════════════════════════════════════════════════════
         const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. Do NOT add any objects, furniture, or decorations that are not in the DA reference image. ${qualitySuffix}`;
 
-        // 🚀 SUBJECT FIRST - This is the key fix!
-        return `${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart}`;
+        // 🎯 FLOOR/BG ENFORCEMENT: Wrap prompt with strict DA floor matching at START and END
+        const floorPrefix = `[MANDATORY: Background wall and floor MUST be IDENTICAL to the DA reference image. Same wall color (${da.background.hex}), same floor color (${da.floor.hex}), same ${da.floor.type} floor material, same seamless cyclorama curve.]`;
+        const floorSuffix = `[FINAL CHECK: Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}). These MUST match the DA reference EXACTLY. Do NOT change the floor or wall color/material.]`;
+
+        return `${floorPrefix} ${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart} ${floorSuffix}`;
     }
 
     /**
@@ -1032,8 +1035,11 @@ export class PromptBuilderService {
             ? `Kids fashion photography. Medium shot. Soft lighting, natural child pose. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. ${qualitySuffix}`
             : `Editorial fashion photography. Medium shot. Real human skin texture, natural pose. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. ${qualitySuffix}`;
 
-        // 🚀 SUBJECT FIRST - This is the key fix!
-        return `${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart}`;
+        // 🎯 FLOOR/BG ENFORCEMENT: Wrap prompt with strict DA floor matching at START and END
+        const floorPrefix = `[MANDATORY: Background wall and floor MUST be IDENTICAL to the DA reference image. Same wall color (${da.background.hex}), same floor color (${da.floor.hex}), same ${da.floor.type} floor material, same seamless cyclorama curve.]`;
+        const floorSuffix = `[FINAL CHECK: Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}). These MUST match the DA reference EXACTLY. Do NOT change the floor or wall color/material.]`;
+
+        return `${floorPrefix} ${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart} ${floorSuffix}`;
     }
 
     /**

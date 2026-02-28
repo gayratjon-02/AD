@@ -565,7 +565,9 @@ High quality studio lighting, sharp details, clean background.`;
 	 * Gemini must replicate the EXACT scene (background, lighting, props, composition).
 	 */
 	private buildDASceneReferencePrompt(prompt: string): string {
-		return `🎯 CRITICAL: The reference images serve DIFFERENT ROLES.
+		return `⚠️ ABSOLUTE RULE #1: The BACKGROUND WALL and FLOOR in the generated image MUST be PIXEL-PERFECT IDENTICAL to the DA scene reference image (LAST image). Same wall color, same wall texture, same floor color, same floor material, same seamless cyclorama curve where wall meets floor. This is NON-NEGOTIABLE.
+
+🎯 CRITICAL: The reference images serve DIFFERENT ROLES.
 
 📸 PRODUCT REFERENCE IMAGES (first images):
 These show the EXACT product/garment you MUST reproduce in the generated image.
@@ -581,8 +583,8 @@ This image defines the EXACT environment/scene where the product must be photogr
 You MUST replicate this scene with MAXIMUM FIDELITY:
 
 MANDATORY SCENE ELEMENTS TO MATCH EXACTLY:
-- EXACT background: same wall/surface material, color, and texture
-- EXACT floor: same material, color, and finish
+- EXACT background WALL: same material, same color, same texture — copy it pixel by pixel from DA reference
+- EXACT FLOOR: same material, same color, same finish — the floor must be IDENTICAL to the DA reference floor. If the DA floor is smooth matte beige, generate smooth matte beige. If the DA floor is wooden, generate wooden. Copy EXACTLY.
 - SEAMLESS WALL-FLOOR TRANSITION: The wall MUST curve smoothly into the floor with a continuous infinity curve (cyclorama). There must be absolutely NO visible line, fold, crease, or sharp angle where the wall meets the floor. Copy the EXACT same smooth curved transition from the DA reference image.
 - EXACT lighting: same direction, intensity, temperature, and shadow angles
 - EXACT props: same objects in the same positions (left/right side)
@@ -591,14 +593,16 @@ MANDATORY SCENE ELEMENTS TO MATCH EXACTLY:
 - EXACT color grading and overall tone
 
 ⚠️ The generated image must look like it was shot in THE SAME ROOM, at THE SAME TIME, with THE SAME CAMERA SETUP as the DA scene reference.
-The ONLY difference should be the product/outfit being worn — everything else (background, floor, seamless curve, lighting, props, mood) must be IDENTICAL.
+The ONLY difference should be the product/outfit being worn — everything else (background wall, floor, seamless curve, lighting, props, mood) must be IDENTICAL.
 
 🚫 DO NOT INCLUDE: collar labels, neck tags, size labels, care labels, or any inner garment tags.
 
 SHOT REQUIREMENTS:
 ${this.sanitizePromptForImageGeneration(prompt)}
 
-HIGH QUALITY OUTPUT: Professional editorial fashion photography, matching the exact lighting and atmosphere of the DA scene reference. 8K quality, sharp details.`;
+HIGH QUALITY OUTPUT: Professional editorial fashion photography, matching the exact lighting and atmosphere of the DA scene reference. 8K quality, sharp details.
+
+⚠️ FINAL REMINDER: The WALL and FLOOR must be IDENTICAL to the DA reference image. Same colors, same materials, same seamless cyclorama curve. Do NOT invent a different floor or background — copy EXACTLY from the DA scene reference.`;
 	}
 
 	/**
