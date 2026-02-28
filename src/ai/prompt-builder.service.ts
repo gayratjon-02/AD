@@ -849,6 +849,11 @@ export class PromptBuilderService {
             // Also add color consistency blockers
             negativePrompt += ', wrong color, color shift, faded color, washed out';
 
+            // 🛡️ ANTI-MODEL for flatlay shots — garment must be empty on hanger
+            if (shotType.includes('flatlay')) {
+                negativePrompt += ', person, model, human body, torso, arms inside sleeves, body shape visible, worn garment, someone wearing, mannequin body, filled clothing, person inside clothes';
+            }
+
             // 🚀 ANTI-GHOSTING SHIELD (Close-Ups)
             if (shotType.includes('closeup')) {
                 negativePrompt += ', double logo, duplicate text, blurry details, distorted letters, extra branding, messy stitching, bad focus, ghosting, motion blur';
@@ -1081,18 +1086,18 @@ export class PromptBuilderService {
         const productData = `Product: ${weightedColor} ${product.general_info.product_name}. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
             `${productIdentity}. ${logoTextFront}.`;
 
-        // Priority 2: Shot - Different display for pants vs tops
+        // Priority 2: Shot - PRODUCT ONLY on hanger, NO model/body
         // 🎯 Use DA background instead of hardcoded wood - matches collection's artistic direction
         const daBackground = da.background?.type || 'elegant studio backdrop';
         const shotAction = isPants
-            ? `Professional product photography. ${sizeDescription}. Pants FOLDED neatly over elegant wooden hanger bar. Hanger hanging from small metal wall hook. Front view, centered composition. Waistband at top, legs folded and draped elegantly.`
-            : `Professional product photography. ${sizeDescription}. Garment displayed on elegant wooden hanger. Hanger hanging from small metal wall hook. Front view, centered composition. Full garment visible from collar to hem.`;
+            ? `Professional product-only flat lay photography. EMPTY garment with NO human body inside. ${sizeDescription}. Pants FOLDED neatly over elegant wooden hanger bar, completely empty — no person wearing them. Hanger hanging from small metal wall hook. Front view, centered composition. Waistband at top, legs folded and draped elegantly.`
+            : `Professional product-only flat lay photography. EMPTY garment with NO human body inside. ${sizeDescription}. Garment hanging EMPTY on elegant wooden hanger — no person wearing it. Hanger hanging from small metal wall hook. Front view, centered composition. Full garment visible from collar to hem, hanging naturally with no body filling it.`;
 
         // 🎯 Priority 3: DA ENVIRONMENT - MUST match DA reference image scene
         const environmentPart = `${daBackground} backdrop (${da.background?.hex || '#FFFFFF'}). ${da.floor?.type || 'Clean surface'} floor (${da.floor?.hex || '#F5F5F5'}). Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. CRITICAL: Background and lighting must match the DA scene reference image exactly.`;
 
-        // Priority 4: Helpers
-        const helpers = `NO PEOPLE, NO HANDS, NO MANNEQUIN. Clean wall-mounted hanger display, pristine condition. ${qualitySuffix}`;
+        // Priority 4: Helpers — reinforce NO model/mannequin/body
+        const helpers = `ABSOLUTELY NO PEOPLE, NO MODEL, NO HUMAN BODY, NO HANDS, NO MANNEQUIN, NO TORSO. Product garment ONLY hanging empty on hanger. Clean wall-mounted hanger display, pristine condition. ${qualitySuffix}`;
 
         return `${productData} ${shotAction} ${environmentPart} ${helpers}`;
     }
