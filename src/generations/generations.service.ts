@@ -211,6 +211,8 @@ export class GenerationsService {
 			// 3. Use merged_prompts from merge (with shot_options) when valid; otherwise rebuild
 			const promptTypes = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'] as const;
 			const existing = generation.merged_prompts as Record<string, any> | undefined;
+			// Validate merged_prompts — check that ALL shot types have valid prompts
+			// (prompt builder always generates all 6, even if some are disabled)
 			const hasValidMerged = existing && promptTypes.every(t => {
 				const p = existing[t];
 				return p && (p.gemini_prompt || p.prompt);
@@ -253,14 +255,23 @@ export class GenerationsService {
 
 			this.logger.log(`✅ Using prompts. Starting image generation...`);
 
-			// 4. Generate images for each prompt
+			// 4. Filter shots by shot_options (only generate enabled shots)
+			const shotOpts = generation.shot_options as Record<string, any> | null;
+			const enabledPromptTypes = promptTypes.filter(t => {
+				if (!shotOpts) return true; // No shot_options = generate all (backward compat)
+				const opt = shotOpts[t];
+				return !opt || opt.enabled !== false; // Default enabled if not specified
+			});
+
+			this.logger.log(`🎯 Enabled shots: ${enabledPromptTypes.length}/${promptTypes.length} [${enabledPromptTypes.join(', ')}]`);
+
 			const generatedImages: Record<string, string> = {};
 			const visuals: any[] = [];
 
 			let completedCount = 0;
-			const totalPrompts = promptTypes.length;
+			const totalPrompts = enabledPromptTypes.length;
 
-			for (const promptType of promptTypes) {
+			for (const promptType of enabledPromptTypes) {
 				const promptObject = promptsToUse[promptType];
 				// Use gemini_prompt (official field) with fallback to deprecated prompt field
 				const prompt = (promptObject.gemini_prompt || promptObject.prompt || '').trim();
@@ -1125,11 +1136,19 @@ export class GenerationsService {
 		// prompts is already in MergedPrompts format with all camera, background, product_details, da_elements
 		const mergedPrompts: MergedPrompts = generatedPrompts.prompts;
 
-		// Save to generation
+		// Save to generation (including shot_options for execution filtering)
 		generation.merged_prompts = mergedPrompts;
+		generation.shot_options = input?.shot_options as any || null;
 		generation.status = GenerationStatus.PENDING; // Set to PENDING so generate() can be called
 		generation.current_step = 'merged';
 		await this.generationsRepository.save(generation);
+
+		if (input?.shot_options) {
+			const enabledShots = Object.entries(input.shot_options)
+				.filter(([_, v]) => (v as any)?.enabled !== false)
+				.map(([k]) => k);
+			this.logger.log(`💾 Saved shot_options: ${enabledShots.length} enabled shots [${enabledShots.join(', ')}]`);
+		}
 
 		this.logger.log(`✅ Merged prompts for generation ${generationId} using Strict Template Engine - Status set to PENDING`);
 		this.logger.debug(`Merged prompts content: ${JSON.stringify(mergedPrompts).substring(0, 200)}...`);
