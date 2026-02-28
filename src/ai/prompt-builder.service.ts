@@ -288,7 +288,7 @@ export class PromptBuilderService {
             ? `Props: ${leftProps || 'nothing'} on the left, ${rightProps || 'nothing'} on the right.`
             : 'NO PROPS — clean empty space on both sides. Do NOT add any objects, decorations, or elements to the scene.';
 
-        const scene = `EXACT DA SCENE: ${da.background.type} wall/background (${da.background.hex}), ${da.floor.type} floor (${da.floor.hex}). ${propsInstruction} Lighting: ${da.lighting.type}, ${da.lighting.temperature}. Mood: ${da.mood}. CRITICAL: Match the DA reference image EXACTLY — same background, same floor, same lighting direction, same props placement, same atmosphere`;
+        const scene = `EXACT DA SCENE: ${da.background.type} wall/background (${da.background.hex}) with ${da.floor.type} floor (${da.floor.hex}). STUDIO CYCLORAMA: The wall curves smoothly into the floor with a seamless infinity curve — there is absolutely NO visible line, fold, crease, or sharp angle where the wall meets the floor. The transition is a gentle continuous curve like a professional photography studio cyclorama. ${propsInstruction} Lighting: ${da.lighting.type}, ${da.lighting.temperature}. Mood: ${da.mood}. CRITICAL: Match the DA reference image EXACTLY — same background, same floor, same seamless wall-to-floor curve, same lighting direction, same props placement, same atmosphere`;
         const propsText = hasAnyProps ? `${leftProps}, ${rightProps}`.replace(/^, |, $/g, '') : 'none';
 
         // ═══════════════════════════════════════════════════════════
@@ -971,7 +971,7 @@ export class PromptBuilderService {
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality)
         // ═══════════════════════════════════════════════════════════
-        const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. Do NOT add any objects, furniture, or decorations that are not in the DA reference image. ${qualitySuffix}`;
+        const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. Do NOT add any objects, furniture, or decorations that are not in the DA reference image. ${qualitySuffix}`;
 
         // 🚀 SUBJECT FIRST - This is the key fix!
         return `${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart}`;
@@ -1029,8 +1029,8 @@ export class PromptBuilderService {
         // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality)
         // ═══════════════════════════════════════════════════════════
         const technicalPart = modelType === 'kid'
-            ? `Kids fashion photography. Medium shot. Soft lighting, natural child pose. The environment MUST be identical to the DA scene reference image provided. ${qualitySuffix}`
-            : `Editorial fashion photography. Medium shot. Real human skin texture, natural pose. The environment MUST be identical to the DA scene reference image provided. ${qualitySuffix}`;
+            ? `Kids fashion photography. Medium shot. Soft lighting, natural child pose. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. ${qualitySuffix}`
+            : `Editorial fashion photography. Medium shot. Real human skin texture, natural pose. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. ${qualitySuffix}`;
 
         // 🚀 SUBJECT FIRST - This is the key fix!
         return `${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart}`;
