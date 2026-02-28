@@ -849,14 +849,9 @@ export class PromptBuilderService {
             // Also add color consistency blockers
             negativePrompt += ', wrong color, color shift, faded color, washed out';
 
-            // 🛡️ ANTI-MODEL for flatlay shots — garment must be empty on hanger
-            if (shotType.includes('flatlay')) {
-                negativePrompt += ', person, model, human body, torso, arms inside sleeves, body shape visible, worn garment, someone wearing, mannequin body, filled clothing, person inside clothes';
-            }
-
-            // 🚀 ANTI-GHOSTING SHIELD (Close-Ups)
-            if (shotType.includes('closeup')) {
-                negativePrompt += ', double logo, duplicate text, blurry details, distorted letters, extra branding, messy stitching, bad focus, ghosting, motion blur';
+            // Product-only shots: block multiple items and quality issues
+            if (shotType.includes('flatlay') || shotType.includes('closeup')) {
+                negativePrompt += ', multiple garments, cluttered, busy background, double logo, duplicate text, blurry details, distorted letters, extra branding, messy stitching, bad focus, ghosting, motion blur';
             }
         }
 
@@ -1042,13 +1037,15 @@ export class PromptBuilderService {
     }
 
     /**
-     * FLATLAY FRONT - GARMENT ON HANGER with Size Variation + Color Weighting
-     * Adult: "Adult-size garment" - larger proportions
-     * Kid: "Child-size garment" - smaller, compact proportions
-     * CLIENT REQUEST: Garment must be displayed ON A HANGER, not laid flat
-     * PANTS/TROUSERS: Folded over the hanger bar
-     * 
-     * 🎨 COLOR WEIGHTING: Applied to prevent AI defaulting to beige/tan for suede
+     * FLATLAY FRONT - PRODUCT-ONLY: Garment on hanger, ZERO humans
+     *
+     * 🎯 CRITICAL FIX: Gemini ignores negative instructions ("NO model").
+     * Instead, use ONLY POSITIVE language describing exactly what we want.
+     * SHOT DESCRIPTION FIRST — Gemini weights early tokens highest.
+     *
+     * Adult: "Adult-size garment" / Kid: "Child-size garment"
+     * PANTS: Folded over the hanger bar
+     * 🎨 COLOR WEIGHTING: Prevents AI defaulting to beige/tan for suede
      */
     private buildFlatLayFrontPrompt(
         product: AnalyzeProductDirectResponse,
@@ -1057,22 +1054,21 @@ export class PromptBuilderService {
         logoTextFront: string,
         qualitySuffix: string
     ): string {
-        // SIZE VARIATION: Different size descriptions for adult vs kid
         const sizeDescription = modelType === 'adult'
-            ? 'Adult-size garment with standard adult proportions'
-            : '5-year-old child-size garment with small, compact proportions for a young boy';
+            ? 'Adult-size'
+            : 'Child-size (5-year-old)';
 
-        // 🎨 COLOR WEIGHTING: Apply high weight (1.5) to color for product-only shots
+        // 🎨 COLOR WEIGHTING
         const weightedColor = this.applyColorWeighting(product.visual_specs.color_name, 'flatlay_front');
 
-        // 🎨 TEXTURE REINFORCEMENT: Ensure correct material appearance
+        // 🎨 TEXTURE REINFORCEMENT
         const textureReinforcement = this.getTextureReinforcement(
             product.visual_specs.fabric_texture,
             product.visual_specs.fabric_texture
         );
         const texturePhrase = textureReinforcement ? `, ${textureReinforcement}` : '';
 
-        // 👖 PANTS DETECTION: Check if product is pants/trousers/jeans
+        // 👖 PANTS DETECTION
         const productName = product.general_info.product_name?.toLowerCase() || '';
         const isPants = productName.includes('pant') ||
             productName.includes('trouser') ||
@@ -1081,35 +1077,36 @@ export class PromptBuilderService {
             productName.includes('short') ||
             productName.includes('bottom');
 
-        // Priority 1: Client Data + Product Identity
         const productIdentity = this.buildProductIdentityBlock(product, true, false);
-        const productData = `Product: ${weightedColor} ${product.general_info.product_name}. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
-            `${productIdentity}. ${logoTextFront}.`;
-
-        // Priority 2: Shot - PRODUCT ONLY on hanger, NO model/body
-        // 🎯 Use DA background instead of hardcoded wood - matches collection's artistic direction
         const daBackground = da.background?.type || 'elegant studio backdrop';
-        const shotAction = isPants
-            ? `Professional product-only flat lay photography. EMPTY garment with NO human body inside. ${sizeDescription}. Pants FOLDED neatly over elegant wooden hanger bar, completely empty — no person wearing them. Hanger hanging from small metal wall hook. Front view, centered composition. Waistband at top, legs folded and draped elegantly.`
-            : `Professional product-only flat lay photography. EMPTY garment with NO human body inside. ${sizeDescription}. Garment hanging EMPTY on elegant wooden hanger — no person wearing it. Hanger hanging from small metal wall hook. Front view, centered composition. Full garment visible from collar to hem, hanging naturally with no body filling it.`;
 
-        // 🎯 Priority 3: DA ENVIRONMENT - MUST match DA reference image scene
-        const environmentPart = `${daBackground} backdrop (${da.background?.hex || '#FFFFFF'}). ${da.floor?.type || 'Clean surface'} floor (${da.floor?.hex || '#F5F5F5'}). Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. CRITICAL: Background and lighting must match the DA scene reference image exactly.`;
+        // 🎯 SHOT DESCRIPTION FIRST — most important tokens at the beginning
+        const shotDescription = isPants
+            ? `PRODUCT-ONLY PHOTOGRAPH of a single ${sizeDescription} ${weightedColor} ${product.general_info.product_name} folded neatly over a wooden hanger bar. The hanger hangs from a small metal wall hook against a ${daBackground}. Front view, centered composition. The pants are FLAT and EMPTY — just fabric draped over the hanger with natural folds. Waistband visible at top, legs hanging down.`
+            : `PRODUCT-ONLY PHOTOGRAPH of a single ${sizeDescription} ${weightedColor} ${product.general_info.product_name} hanging on a wooden hanger from a small metal wall hook against a ${daBackground}. Front view, centered composition. The garment hangs FLAT and EMPTY with natural drape — sleeves relaxed at sides, fabric falling under its own weight. Full garment visible from collar to hem.`;
 
-        // Priority 4: Helpers — reinforce NO model/mannequin/body
-        const helpers = `ABSOLUTELY NO PEOPLE, NO MODEL, NO HUMAN BODY, NO HANDS, NO MANNEQUIN, NO TORSO. Product garment ONLY hanging empty on hanger. Clean wall-mounted hanger display, pristine condition. ${qualitySuffix}`;
+        // Product details
+        const productData = `Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ${productIdentity}. ${logoTextFront}.`;
 
-        return `${productData} ${shotAction} ${environmentPart} ${helpers}`;
+        // Environment from DA
+        const environmentPart = `Background: ${daBackground} (${da.background?.hex || '#FFFFFF'}). ${da.floor?.type || 'Clean surface'} floor (${da.floor?.hex || '#F5F5F5'}). ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. Mood: ${da.mood || 'editorial elegance'}.`;
+
+        // Quality — ONLY positive language, clean product display
+        const helpers = `Clean minimalist product display. Pristine garment condition. Single garment only. Still life product photography. ${qualitySuffix}`;
+
+        return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
 
     /**
-     * FLATLAY BACK - GARMENT ON HANGER with Size Variation + Color Weighting
-     * Adult: "Adult-size garment" - larger proportions
-     * Kid: "Child-size garment" - smaller, compact proportions
-     * CLIENT REQUEST: Garment must be displayed ON A HANGER, not laid flat
-     * PANTS/TROUSERS: Folded over the hanger bar
-     * 
-     * 🎨 COLOR WEIGHTING: Applied to prevent AI defaulting to beige/tan for suede
+     * FLATLAY BACK - PRODUCT-ONLY: Garment on hanger showing BACK, ZERO humans
+     *
+     * 🎯 CRITICAL FIX: Gemini ignores negative instructions ("NO model").
+     * Instead, use ONLY POSITIVE language describing exactly what we want.
+     * SHOT DESCRIPTION FIRST — Gemini weights early tokens highest.
+     *
+     * Adult: "Adult-size garment" / Kid: "Child-size garment"
+     * PANTS: Folded over the hanger bar showing back
+     * 🎨 COLOR WEIGHTING: Prevents AI defaulting to beige/tan for suede
      */
     private buildFlatLayBackPrompt(
         product: AnalyzeProductDirectResponse,
@@ -1124,10 +1121,9 @@ export class PromptBuilderService {
             ? `Technique: ${product.design_back.technique}. `
             : '';
 
-        // SIZE VARIATION: Different size descriptions for adult vs kid
         const sizeDescription = modelType === 'adult'
-            ? 'Adult-size garment with standard adult proportions'
-            : '5-year-old child-size garment with small, compact proportions for a young boy';
+            ? 'Adult-size'
+            : 'Child-size (5-year-old)';
 
         // 🎨 COLOR WEIGHTING (1.5)
         const weightedColor = this.applyColorWeighting(product.visual_specs.color_name, 'flatlay_back');
@@ -1139,7 +1135,7 @@ export class PromptBuilderService {
         );
         const texturePhrase = textureReinforcement ? `, ${textureReinforcement}` : '';
 
-        // 👖 PANTS DETECTION: Check if product is pants/trousers/jeans
+        // 👖 PANTS DETECTION
         const productName = product.general_info.product_name?.toLowerCase() || '';
         const isPants = productName.includes('pant') ||
             productName.includes('trouser') ||
@@ -1148,33 +1144,33 @@ export class PromptBuilderService {
             productName.includes('short') ||
             productName.includes('bottom');
 
-        // Priority 1: Client Data + Product Identity (back details)
         const productIdentity = this.buildProductIdentityBlock(product, false, true);
-        const productData = `Product: BACK VIEW of ${weightedColor} ${product.general_info.product_name}. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ` +
-            `${product.design_back.description}. ${patchDetail}${technique} ${productIdentity}.`;
-
-        // Priority 2: Shot - Different display for pants vs tops
-        // 🎯 Use DA background instead of hardcoded wood - matches collection's artistic direction
         const daBackground = da.background?.type || 'elegant studio backdrop';
-        const shotAction = isPants
-            ? `Professional product photography. ${sizeDescription}. Pants FOLDED neatly over elegant wooden hanger bar, showing BACK. Hanger hanging from small metal wall hook. Back pockets and waistband clearly visible. Legs folded and draped elegantly.`
-            : `Professional product photography. ${sizeDescription}. Garment displayed on elegant wooden hanger, turned to show BACK. Hanger hanging from small metal wall hook. Centered composition. Rear details clearly visible from shoulders to hem.`;
 
-        // 🎯 Priority 3: DA ENVIRONMENT - MUST match DA reference image scene
-        const environmentPart = `${daBackground} backdrop (${da.background?.hex || '#FFFFFF'}). ${da.floor?.type || 'Clean surface'} floor (${da.floor?.hex || '#F5F5F5'}). Clean, minimalist luxury aesthetic. Mood: ${da.mood || 'editorial elegance'}. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. CRITICAL: Background and lighting must match the DA scene reference image exactly.`;
+        // 🎯 SHOT DESCRIPTION FIRST — most important tokens at the beginning
+        const shotDescription = isPants
+            ? `PRODUCT-ONLY PHOTOGRAPH of a single ${sizeDescription} ${weightedColor} ${product.general_info.product_name} folded neatly over a wooden hanger bar, turned to show the BACK side. The hanger hangs from a small metal wall hook against a ${daBackground}. Back view, centered composition. The pants are FLAT and EMPTY — just fabric draped over the hanger. Back pockets and waistband clearly visible.`
+            : `PRODUCT-ONLY PHOTOGRAPH of a single ${sizeDescription} ${weightedColor} ${product.general_info.product_name} hanging on a wooden hanger from a small metal wall hook against a ${daBackground}. BACK VIEW, centered composition. The garment hangs FLAT and EMPTY with natural drape, turned to show the rear side. Back details clearly visible from shoulders to hem.`;
 
-        // Priority 4: Helpers
-        const helpers = `NO PEOPLE, NO HANDS, NO MANNEQUIN. Clean wall-mounted hanger display. ${qualitySuffix}`;
+        // Product details (back-specific)
+        const productData = `${product.design_back.description}. ${patchDetail}${technique}Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ${productIdentity}.`;
 
-        return `${productData} ${shotAction} ${environmentPart} ${helpers}`;
+        // Environment from DA
+        const environmentPart = `Background: ${daBackground} (${da.background?.hex || '#FFFFFF'}). ${da.floor?.type || 'Clean surface'} floor (${da.floor?.hex || '#F5F5F5'}). ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. Mood: ${da.mood || 'editorial elegance'}.`;
+
+        // Quality — ONLY positive language
+        const helpers = `Clean minimalist product display. Pristine garment condition. Single garment only. Still life product photography. ${qualitySuffix}`;
+
+        return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
 
     /**
-     * CLOSE UP FRONT - MODEL WEARING GARMENT (CLOSE-UP CHEST/COLLAR AREA)
-     * Shows model wearing the garment with camera close to front chest area
-     * Partial face visible (lips/chin), collar, buttons, pocket details in focus
-     * Creates editorial fashion feel with human element
-     * 
+     * CLOSE UP FRONT - PRODUCT-ONLY MACRO DETAIL (fabric, pocket, logo, stitching)
+     *
+     * 🎯 CRITICAL FIX: Changed from "child model wearing garment" to PRODUCT-ONLY macro.
+     * Client wants: close-up detail of clothing material, logo, pocket texture.
+     * ZERO humans — just the garment fabric and details in extreme close-up.
+     *
      * 🎨 COLOR WEIGHTING: Applied to prevent color bias in macro shots
      */
     private buildCloseUpFrontPrompt(
@@ -1190,14 +1186,14 @@ export class PromptBuilderService {
         // 🎨 COLOR WEIGHTING
         const weightedColor = this.applyColorWeighting(product.visual_specs.color_name, 'closeup_front');
 
-        // 🎯 NEW: Extract chest pocket details from pockets_array for precise rendering
+        // 🎯 Extract chest pocket details from pockets_array for precise rendering
         const chestPocket = product.garment_details.pockets_array?.find(
             (p) => p.position?.toLowerCase().includes('chest') ||
                 p.position?.toLowerCase().includes('left') ||
                 p.name?.toLowerCase().includes('chest')
         );
 
-        // Build pocket-specific prompt with EXACT specifications (matching closeup_back approach)
+        // Build pocket-specific prompt with EXACT specifications
         let pocketDetails = '';
         let exactPocketSpec = '';
         let geometryPhrase = '';
@@ -1207,15 +1203,13 @@ export class PromptBuilderService {
             const pocketColor = chestPocket.color || '';
             const pocketSize = chestPocket.size || '';
 
-            // EXACT pocket specification (matching closeup_back's exactPatchSpec pattern)
             exactPocketSpec = `POCKET SPECIFICATION: ${pocketShape.toUpperCase()} shape, ${pocketMaterial.toUpperCase()} material${pocketColor ? `, ${pocketColor.toUpperCase()} color` : ''}${pocketSize ? `, ${pocketSize}` : ''}. `;
 
             pocketDetails = `VISIBLE CHEST POCKET: ${pocketMaterial} ${pocketShape} pocket${pocketColor ? `, ${pocketColor} color` : ''}${pocketSize ? `, ${pocketSize}` : ''}. `;
             if (chestPocket.special_features) {
-                pocketDetails += `CRITICAL POCKET DETAIL: ${chestPocket.special_features}. `;
+                pocketDetails += `POCKET DETAIL: ${chestPocket.special_features}. `;
             }
 
-            // Geometry enforcement (matching closeup_back approach)
             const shapeLower = pocketShape.toLowerCase();
             if (shapeLower.includes('square')) {
                 geometryPhrase = 'Focus on the SQUARE pocket patch with sharp corners. ';
@@ -1226,24 +1220,23 @@ export class PromptBuilderService {
             this.logger.log(`🎯 CloseUp Front: Extracted pocket details - ${pocketMaterial} ${pocketShape}, special: ${chestPocket.special_features || 'none'}`);
         }
 
-        // Include full front description with micro details
         const frontDescription = product.design_front.description || '';
         const microDetails = product.design_front.micro_details ? `Micro details: ${product.design_front.micro_details}. ` : '';
-
-        // 🎯 Priority 1: SUBJECT - Model wearing garment, close-up on chest area (NOT collar focus)
-        const subjectPart = `Young child model wearing ${weightedColor} ${product.general_info.product_name}. FULLY CLOTHED - complete outfit, no bare skin visible. CLOSE-UP SHOT framed from chin to chest area. Partial face visible showing lips and chin only. Camera focused on front chest pocket patch and garment details.`;
-
-        // Priority 2: Product Details - FRONT DETAILS with EXACT pocket/patch specs (matching closeup_back pattern)
         const productIdentity = this.buildProductIdentityBlock(product, true, false);
-        const productData = `FRONT GARMENT DETAILS IN FOCUS: ${frontDescription}. ${geometryPhrase}${exactPocketSpec}${pocketDetails}${microDetails}${productIdentity}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp focus on pocket patches, embossing patterns, buttons, and embroidery while worn on model. CRITICAL: Pocket patch must EXACTLY match reference images with correct material, shape, and embossed pattern. The pocket must look IDENTICAL to all other generated shots.`;
 
-        // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred DA background
-        const environmentPart = `${da.background.type} (${da.background.hex}) backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}, ${da.lighting?.temperature || 'warm tones'}. Shallow depth of field keeping garment details sharp. Background color and lighting must match DA scene reference image.`;
+        // 🎯 SHOT DESCRIPTION FIRST — PRODUCT-ONLY macro, no humans
+        const shotDescription = `EXTREME CLOSE-UP MACRO PRODUCT PHOTOGRAPH of ${weightedColor} ${product.general_info.product_name} fabric and front details. The garment is laid flat on a surface. Camera positioned very close to the front chest area, capturing fabric texture, stitching, pocket patch, and material details in sharp focus. Shallow depth of field. Only the garment fabric fills the frame.`;
 
-        // Priority 4: Technical - NO BARE SKIN, NO INNER LABELS/TAGS
-        const helpers = `Editorial fashion photography. Close-up portrait framing. Professional child model FULLY DRESSED. Complete outfit - NO bare back, NO bare shoulders, NO exposed skin anywhere. IMPORTANT: Do NOT show any collar labels, neck tags, size labels, care labels, or brand tags. Only the outer garment design should be visible - NO inner clothing tags or labels visible. ${qualitySuffix}`;
+        // Product details
+        const productData = `FRONT DETAILS IN FOCUS: ${frontDescription}. ${geometryPhrase}${exactPocketSpec}${pocketDetails}${microDetails}${productIdentity}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp macro focus on pocket patches, embossing patterns, buttons, stitching, and logo. Pocket patch must EXACTLY match reference images.`;
 
-        return `${subjectPart} ${productData} ${environmentPart} ${helpers}`;
+        // 🎯 Environment — soft blurred DA background behind the close-up
+        const environmentPart = `Background: ${da.background.type} (${da.background.hex}) with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}, ${da.lighting?.temperature || 'warm tones'}. Shallow depth of field keeping garment details razor-sharp.`;
+
+        // Quality — product-only macro photography
+        const helpers = `Macro product photography. Extreme close-up still life. Fabric texture detail. Single garment only. ${qualitySuffix}`;
+
+        return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
 
 
