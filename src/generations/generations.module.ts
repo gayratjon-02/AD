@@ -14,6 +14,7 @@ import { DAPreset } from '../database/entities/Product-Visuals/da-preset.entity'
 import { AiModule } from '../ai/ai.module';
 import { GenerationQueueModule } from './generation.queue';
 import { FilesModule } from '../files/files.module';
+import { ModelReferencesModule } from '../model-references/model-references.module';
 
 @Module({
 	imports: [
@@ -29,6 +30,7 @@ import { FilesModule } from '../files/files.module';
 		AiModule,
 		GenerationQueueModule,
 		FilesModule,
+		ModelReferencesModule,
 	],
 	controllers: [GenerationsController, GenerationEventsController],
 	providers: [GenerationsService, GenerationProcessor, GenerationGateway],

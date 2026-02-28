@@ -32,6 +32,7 @@ import { AnalyzedDAJSON } from '../common/interfaces/da-json.interface';
 import { PromptBuilderService } from '../ai/prompt-builder.service';
 import { AnalyzeProductDirectResponse } from '../libs/dto/analyze/analyze-product-direct.dto';
 import { AnalyzeDAPresetResponse } from '../libs/dto/analyze/analyze-da-preset.dto';
+import { ModelReferencesService } from '../model-references/model-references.service';
 
 type GenerationFilters = {
 	product_id?: string;
@@ -74,6 +75,7 @@ export class GenerationsService {
 		private readonly filesService: FilesService,
 		private readonly promptBuilderService: PromptBuilderService,
 		private readonly generationGateway: GenerationGateway,
+		private readonly modelReferencesService: ModelReferencesService,
 	) { }
 
 	// ═══════════════════════════════════════════════════════════════════════════
@@ -304,20 +306,36 @@ export class GenerationsService {
 					// 🎯 PRODUCT-ONLY shots: flatlay and closeup are product-only (no DA scene, no models)
 					const isProductOnly = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(promptType);
 
-					// 👤 MODEL REFERENCE: Add brand model image for face/body/hair consistency (DUO & SOLO only)
+					// 👤 MODEL REFERENCE: Add model image for face/body/hair consistency (DUO & SOLO only)
 					let hasModelReference = false;
 					if (!isProductOnly) {
-						const brand = generation.collection?.brand;
-						const promptModelType = promptsToUse[promptType]?.model_type || generation.model_type || 'adult';
-						// DUO always uses adult model reference (father figure)
-						const modelUrl = promptType === 'duo'
-							? brand?.model_adult_url
-							: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
+						const modelRefId = (promptsToUse as any)?._model_reference_id as string | undefined;
 
-						if (modelUrl) {
-							referenceImages.push(modelUrl);
-							hasModelReference = true;
-							this.logger.log(`👤 Brand model reference included (${promptModelType}): ${modelUrl}`);
+						if (modelRefId) {
+							// NEW: Load selected model reference from library
+							try {
+								const modelRef = await this.modelReferencesService.findOne(modelRefId, userId);
+								referenceImages.push(modelRef.image_url);
+								hasModelReference = true;
+								this.logger.log(`👤 Model reference from library: "${modelRef.name}" (${modelRef.type}): ${modelRef.image_url}`);
+							} catch (err) {
+								this.logger.warn(`⚠️ Model reference ${modelRefId} not found, falling back to brand model`);
+							}
+						}
+
+						// Fallback: use brand model_adult_url / model_kid_url if no library reference
+						if (!hasModelReference) {
+							const brand = generation.collection?.brand;
+							const promptModelType = promptsToUse[promptType]?.model_type || generation.model_type || 'adult';
+							const modelUrl = promptType === 'duo'
+								? brand?.model_adult_url
+								: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
+
+							if (modelUrl) {
+								referenceImages.push(modelUrl);
+								hasModelReference = true;
+								this.logger.log(`👤 Brand model reference fallback (${promptModelType}): ${modelUrl}`);
+							}
 						}
 					}
 
@@ -1095,6 +1113,7 @@ export class GenerationsService {
 			shot_options?: import('../common/interfaces/shot-options.interface').ShotOptions;
 			resolution?: string;
 			aspect_ratio?: string;
+			model_reference_id?: string;
 		}
 	): Promise<MergedPrompts> {
 		const generation = await this.generationsRepository.findOne({
@@ -1175,6 +1194,10 @@ export class GenerationsService {
 				.filter(([_, v]) => (v as any)?.enabled !== false)
 				.map(([k]) => k);
 			this.logger.log(`💾 Embedded _shot_options in merged_prompts: ${enabledShots.length} enabled [${enabledShots.join(', ')}]`);
+		}
+		if (input?.model_reference_id) {
+			mergedWithMeta._model_reference_id = input.model_reference_id;
+			this.logger.log(`👤 Embedded _model_reference_id in merged_prompts: ${input.model_reference_id}`);
 		}
 		generation.merged_prompts = mergedWithMeta;
 		generation.status = GenerationStatus.PENDING; // Set to PENDING so generate() can be called

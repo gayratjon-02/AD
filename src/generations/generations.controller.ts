@@ -310,6 +310,7 @@ export class GenerationsController {
 			shot_options: mergePromptsDto?.shot_options,
 			resolution: mergePromptsDto?.resolution,
 			aspect_ratio: mergePromptsDto?.aspect_ratio,
+			model_reference_id: mergePromptsDto?.model_reference_id,
 		});
 		return {
 			generation_id: id,

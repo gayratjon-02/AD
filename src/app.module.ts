@@ -13,6 +13,7 @@ import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { BrandsModule } from './brands/brands.module';
+import { ModelReferencesModule } from './model-references/model-references.module';
 import { CollectionsModule } from './collections/collections.module';
 import { FilesModule } from './files/files.module';
 import { ProductsModule } from './modules/product-visuals/products.module';
@@ -48,6 +49,7 @@ import { S3Module } from './common/s3/s3.module';
 		AuthModule,
 		UsersModule,
 		BrandsModule,
+		ModelReferencesModule,
 		CollectionsModule,
 		FilesModule,
 		ProductsModule,

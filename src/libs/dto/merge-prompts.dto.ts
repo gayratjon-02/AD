@@ -52,4 +52,12 @@ export class MergePromptsDto {
 	@IsOptional()
 	@IsString()
 	aspect_ratio?: string;
+
+	/**
+	 * Model reference ID for face/body/hair consistency
+	 * Selected from the model references library
+	 */
+	@IsOptional()
+	@IsUUID()
+	model_reference_id?: string;
 }
