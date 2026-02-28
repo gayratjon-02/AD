@@ -69,10 +69,6 @@ export class Generation {
   @Column({ type: 'varchar', length: 10, default: '4K' })
   resolution: string;
 
-  /** Per-shot enabled/disabled flags + settings (saved during merge) */
-  @Column({ type: 'jsonb', nullable: true })
-  shot_options: Record<string, any>;
-
   @Column({ type: 'jsonb', nullable: true })
   visuals: any[];
 

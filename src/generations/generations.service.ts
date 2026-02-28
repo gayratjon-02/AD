@@ -256,7 +256,7 @@ export class GenerationsService {
 			this.logger.log(`✅ Using prompts. Starting image generation...`);
 
 			// 4. Filter shots by shot_options (only generate enabled shots)
-			const shotOpts = generation.shot_options as Record<string, any> | null;
+			const shotOpts = (promptsToUse as any)?._shot_options as Record<string, any> | null;
 			const enabledPromptTypes = promptTypes.filter(t => {
 				if (!shotOpts) return true; // No shot_options = generate all (backward compat)
 				const opt = shotOpts[t];
@@ -1136,19 +1136,19 @@ export class GenerationsService {
 		// prompts is already in MergedPrompts format with all camera, background, product_details, da_elements
 		const mergedPrompts: MergedPrompts = generatedPrompts.prompts;
 
-		// Save to generation (including shot_options for execution filtering)
-		generation.merged_prompts = mergedPrompts;
-		generation.shot_options = input?.shot_options as any || null;
-		generation.status = GenerationStatus.PENDING; // Set to PENDING so generate() can be called
-		generation.current_step = 'merged';
-		await this.generationsRepository.save(generation);
-
+		// Save to generation — embed shot_options inside merged_prompts (avoids DB column migration)
+		const mergedWithMeta = { ...mergedPrompts } as Record<string, any>;
 		if (input?.shot_options) {
+			mergedWithMeta._shot_options = input.shot_options;
 			const enabledShots = Object.entries(input.shot_options)
 				.filter(([_, v]) => (v as any)?.enabled !== false)
 				.map(([k]) => k);
-			this.logger.log(`💾 Saved shot_options: ${enabledShots.length} enabled shots [${enabledShots.join(', ')}]`);
+			this.logger.log(`💾 Embedded _shot_options in merged_prompts: ${enabledShots.length} enabled [${enabledShots.join(', ')}]`);
 		}
+		generation.merged_prompts = mergedWithMeta;
+		generation.status = GenerationStatus.PENDING; // Set to PENDING so generate() can be called
+		generation.current_step = 'merged';
+		await this.generationsRepository.save(generation);
 
 		this.logger.log(`✅ Merged prompts for generation ${generationId} using Strict Template Engine - Status set to PENDING`);
 		this.logger.debug(`Merged prompts content: ${JSON.stringify(mergedPrompts).substring(0, 200)}...`);
