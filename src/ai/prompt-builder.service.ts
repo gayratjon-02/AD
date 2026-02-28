@@ -288,7 +288,7 @@ export class PromptBuilderService {
             ? `Props: ${leftProps || 'nothing'} on the left, ${rightProps || 'nothing'} on the right.`
             : 'NO PROPS — clean empty space on both sides. Do NOT add any objects, decorations, or elements to the scene.';
 
-        const scene = `SCENE FROM DA REFERENCE: ${da.background.type} wall (${da.background.hex}), ${da.floor.type} floor (${da.floor.hex}). Studio cyclorama — wall curves smoothly into floor, no visible line or fold at junction. ${propsInstruction} Lighting: ${da.lighting.type}, ${da.lighting.temperature}. Mood: ${da.mood}. COPY this exact room from the DA reference photo.`;
+        const scene = `SCENE FROM DA REFERENCE: ${da.background.type} wall (${da.background.hex}), ${da.floor.type} floor (${da.floor.hex}). WALL-TO-FLOOR TRANSITION: Replicate the EXACT same smooth transition from the DA reference image — the wall must blend into the floor with NO visible fold, NO crease, NO hard line, NO sharp corner. Copy the DA reference image's infinity cove curve exactly. ${propsInstruction} Lighting: ${da.lighting.type}, ${da.lighting.temperature}. Mood: ${da.mood}. COPY this exact room from the DA reference photo.`;
         const propsText = hasAnyProps ? `${leftProps}, ${rightProps}`.replace(/^, |, $/g, '') : 'none';
 
         // ═══════════════════════════════════════════════════════════
@@ -975,11 +975,11 @@ export class PromptBuilderService {
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality)
         // ═══════════════════════════════════════════════════════════
-        const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. Do NOT add any objects, furniture, or decorations that are not in the DA reference image. ${qualitySuffix}`;
+        const technicalPart = `Editorial fashion photography. Medium shot. Real human skin texture, natural poses. The environment MUST be identical to the DA scene reference image provided. Do NOT add any objects, furniture, or decorations that are not in the DA reference image. ${qualitySuffix}`;
 
         // 🎯 FLOOR/BG ENFORCEMENT: Ultra-strong DA scene matching at START and END
-        const floorPrefix = `COPY THE EXACT BACKGROUND AND FLOOR FROM THE DA REFERENCE IMAGE. Wall: ${da.background.type} (${da.background.hex}). Floor: ${da.floor.type} (${da.floor.hex}). The generated image background and floor must be a PIXEL-PERFECT COPY of the DA reference photo — same wall color, same floor color, same floor material, same seamless cyclorama curve. LOOK AT THE DA REFERENCE IMAGE AND REPLICATE ITS BACKGROUND EXACTLY.`;
-        const floorSuffix = `REPEAT: THE BACKGROUND WALL AND FLOOR MUST BE COPIED EXACTLY FROM THE DA REFERENCE IMAGE. Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}). Generate the SAME room, SAME colors, SAME floor material as shown in the DA reference photo.`;
+        const floorPrefix = `COPY THE EXACT BACKGROUND AND FLOOR FROM THE DA REFERENCE IMAGE. Wall: ${da.background.type} (${da.background.hex}). Floor: ${da.floor.type} (${da.floor.hex}). The generated image background and floor must be a PIXEL-PERFECT COPY of the DA reference photo. ⚠️ WALL-TO-FLOOR TRANSITION: Look at the DA reference image — the wall-to-floor meeting point is a smooth, gradual curve with NO fold, NO crease, NO hard edge. You MUST replicate this EXACT smooth transition. Do NOT create any visible line, fold, or sharp corner where wall meets floor. This is the #1 quality requirement.`;
+        const floorSuffix = `FINAL CHECK — WALL-TO-FLOOR JUNCTION: Compare your generated image against the DA reference (LAST image). The transition where the wall meets the floor MUST be smooth and identical to the DA reference — NO fold, NO crease, NO visible hard line. If the DA reference shows a curved infinity cove, your image must show the SAME curve. Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}).`;
 
         return `${floorPrefix} ${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart} ${floorSuffix}`;
     }
@@ -1038,12 +1038,12 @@ export class PromptBuilderService {
         // 🎯 PRIORITY 4: TECHNICAL (Camera/Quality)
         // ═══════════════════════════════════════════════════════════
         const technicalPart = modelType === 'kid'
-            ? `Kids fashion photography. Medium shot. Soft lighting, natural child pose. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. ${qualitySuffix}`
-            : `Editorial fashion photography. Medium shot. Real human skin texture, natural pose. The environment MUST be identical to the DA scene reference image provided. Studio cyclorama background — the wall curves seamlessly into the floor with no visible fold or crease. ${qualitySuffix}`;
+            ? `Kids fashion photography. Medium shot. Soft lighting, natural child pose. The environment MUST be identical to the DA scene reference image provided. ${qualitySuffix}`
+            : `Editorial fashion photography. Medium shot. Real human skin texture, natural pose. The environment MUST be identical to the DA scene reference image provided. ${qualitySuffix}`;
 
         // 🎯 FLOOR/BG ENFORCEMENT: Ultra-strong DA scene matching at START and END
-        const floorPrefix = `COPY THE EXACT BACKGROUND AND FLOOR FROM THE DA REFERENCE IMAGE. Wall: ${da.background.type} (${da.background.hex}). Floor: ${da.floor.type} (${da.floor.hex}). The generated image background and floor must be a PIXEL-PERFECT COPY of the DA reference photo — same wall color, same floor color, same floor material, same seamless cyclorama curve. LOOK AT THE DA REFERENCE IMAGE AND REPLICATE ITS BACKGROUND EXACTLY.`;
-        const floorSuffix = `REPEAT: THE BACKGROUND WALL AND FLOOR MUST BE COPIED EXACTLY FROM THE DA REFERENCE IMAGE. Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}). Generate the SAME room, SAME colors, SAME floor material as shown in the DA reference photo.`;
+        const floorPrefix = `COPY THE EXACT BACKGROUND AND FLOOR FROM THE DA REFERENCE IMAGE. Wall: ${da.background.type} (${da.background.hex}). Floor: ${da.floor.type} (${da.floor.hex}). The generated image background and floor must be a PIXEL-PERFECT COPY of the DA reference photo. ⚠️ WALL-TO-FLOOR TRANSITION: Look at the DA reference image — the wall-to-floor meeting point is a smooth, gradual curve with NO fold, NO crease, NO hard edge. You MUST replicate this EXACT smooth transition. Do NOT create any visible line, fold, or sharp corner where wall meets floor. This is the #1 quality requirement.`;
+        const floorSuffix = `FINAL CHECK — WALL-TO-FLOOR JUNCTION: Compare your generated image against the DA reference (LAST image). The transition where the wall meets the floor MUST be smooth and identical to the DA reference — NO fold, NO crease, NO visible hard line. If the DA reference shows a curved infinity cove, your image must show the SAME curve. Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}).`;
 
         return `${floorPrefix} ${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart} ${floorSuffix}`;
     }
