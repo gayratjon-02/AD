@@ -87,6 +87,13 @@ export class PackshotsService {
 		return packshot;
 	}
 
+	async remove(userId: string, id: string): Promise<{ message: string }> {
+		const packshot = await this.findOne(userId, id);
+		await this.packshotRepo.remove(packshot);
+		this.logger.log(`🗑️ Deleted packshot ${id}`);
+		return { message: 'Packshot generation deleted successfully' };
+	}
+
 	async findByProduct(userId: string, productId: string): Promise<PackshotGeneration[]> {
 		// Verify product ownership
 		const product = await this.productRepo.findOne({ where: { id: productId } });

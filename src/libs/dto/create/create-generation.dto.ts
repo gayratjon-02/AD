@@ -25,4 +25,9 @@ export class CreateGenerationDto {
 	@IsIn(['2K', '4K'], { message: 'Resolution must be one of: 2K, 4K' })
 	@IsOptional()
 	resolution?: string;
+
+	// Use packshot images as higher-quality product reference
+	@IsUUID('4', { message: ValidationMessage.FIELD_INVALID })
+	@IsOptional()
+	packshot_id?: string;
 }

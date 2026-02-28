@@ -10,6 +10,8 @@ import {
 import { Product } from './product.entity';
 import { Collection } from './collection.entity';
 import { DAPreset } from './da-preset.entity';
+import { ModelReference } from './model-reference.entity';
+import { PackshotGeneration } from './packshot-generation.entity';
 import { GenerationType, GenerationStatus } from '../../../libs/enums';
 
 @Entity('generations')
@@ -48,6 +50,35 @@ export class Generation {
 
   @Column({ type: 'varchar', length: 20, default: 'adult' })
   model_type: 'adult' | 'kid';
+
+  // ═══════════════════════════════════════════════════════════
+  // MODEL REFERENCE LIBRARY (Milestone 3)
+  // ═══════════════════════════════════════════════════════════
+
+  @Column({ type: 'uuid', nullable: true })
+  adult_model_id: string;
+
+  @ManyToOne(() => ModelReference, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'adult_model_id' })
+  adult_model: ModelReference;
+
+  @Column({ type: 'uuid', nullable: true })
+  kid_model_id: string;
+
+  @ManyToOne(() => ModelReference, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'kid_model_id' })
+  kid_model: ModelReference;
+
+  // ═══════════════════════════════════════════════════════════
+  // PACKSHOT REFERENCE (use packshot images as reference)
+  // ═══════════════════════════════════════════════════════════
+
+  @Column({ type: 'uuid', nullable: true })
+  packshot_id: string;
+
+  @ManyToOne(() => PackshotGeneration, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'packshot_id' })
+  packshot: PackshotGeneration;
 
   @Column({ type: 'uuid' })
   user_id: string;

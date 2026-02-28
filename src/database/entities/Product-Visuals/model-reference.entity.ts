@@ -33,6 +33,10 @@ export class ModelReference {
   @Column({ type: 'varchar', length: 500 })
   image_url: string;
 
+  // Claude-generated detailed physical description (face, hair, body, etc.)
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
   @CreateDateColumn({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   created_at: Date;
 

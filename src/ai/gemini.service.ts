@@ -401,7 +401,7 @@ High quality studio lighting, sharp details, clean background.`;
 		aspectRatio?: string,
 		resolution?: string,
 		userApiKey?: string,
-		options?: { daReferenceUrl?: string; shotType?: string; hasModelReference?: boolean }
+		options?: { daReferenceUrl?: string; shotType?: string; hasModelReference?: boolean; modelDescription?: string }
 	): Promise<GeminiImageResult> {
 		const client = this.getClient(userApiKey);
 		const startTime = Date.now();
@@ -442,7 +442,7 @@ High quality studio lighting, sharp details, clean background.`;
 			referencePrompt = this.buildProductOnlyReferencePrompt(prompt);
 			this.logger.log(`🎯 Using PRODUCT-ONLY prompt wrapper for ${shotType}`);
 		} else if (hasDAReference) {
-			referencePrompt = this.buildDASceneReferencePrompt(prompt, hasModelReference);
+			referencePrompt = this.buildDASceneReferencePrompt(prompt, hasModelReference, options?.modelDescription);
 		} else {
 			referencePrompt = this.buildAdConceptReferencePrompt(prompt);
 		}
@@ -565,7 +565,7 @@ High quality studio lighting, sharp details, clean background.`;
 	 * The LAST image in referenceImages is the DA scene reference.
 	 * Gemini must replicate the EXACT scene (background, lighting, props, composition).
 	 */
-	private buildDASceneReferencePrompt(prompt: string, hasModelReference: boolean = false): string {
+	private buildDASceneReferencePrompt(prompt: string, hasModelReference: boolean = false, modelDescription?: string): string {
 		// Detect if the product is a bottom garment (pants/joggers/shorts) from the inner prompt
 		const isBottomProduct = prompt.toLowerCase().includes('white t-shirt') ||
 			prompt.toLowerCase().includes('fully clothed top');
@@ -581,6 +581,9 @@ The reference images show ONLY the pants — that does NOT mean the model is shi
 			: `👕 CLOTHING: Every person MUST be FULLY CLOTHED. No bare skin on torso.`;
 
 		// Model consistency block — only when a brand model reference image is provided
+		const modelDescriptionBlock = modelDescription
+			? `\nEXACT MODEL APPEARANCE (from Claude analysis):\n${modelDescription}`
+			: '';
 		const modelConsistencyBlock = hasModelReference
 			? `
 👤 MODEL CONSISTENCY — CRITICAL REQUIREMENT 👤
@@ -589,7 +592,7 @@ The SECOND-TO-LAST reference image is the BRAND MODEL REFERENCE. This shows the 
 - SAME hair style, hair color, hair length, and hair texture
 - SAME skin tone and complexion
 - SAME body type and proportions (height, build)
-- SAME age appearance
+- SAME age appearance${modelDescriptionBlock}
 The generated model must look like the SAME PERSON as in the model reference image.
 For DUO shots (father and son): The adult model must match the model reference. The child should look like a plausible younger version.
 Do NOT change the model's appearance. The brand needs CONSISTENT model identity across all generated images.`

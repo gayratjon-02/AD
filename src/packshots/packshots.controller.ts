@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param, Req } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, Req } from '@nestjs/common';
 import { PackshotsService } from './packshots.service';
 import { CreatePackshotDto } from '../libs/dto/packshot';
 
@@ -22,6 +22,12 @@ export class PackshotsController {
 	async findOne(@Req() req: any, @Param('id') id: string) {
 		const userId = req.user.id;
 		return this.packshotsService.findOne(userId, id);
+	}
+
+	@Delete(':id')
+	async remove(@Req() req: any, @Param('id') id: string) {
+		const userId = req.user.id;
+		return this.packshotsService.remove(userId, id);
 	}
 
 	@Get('product/:productId')

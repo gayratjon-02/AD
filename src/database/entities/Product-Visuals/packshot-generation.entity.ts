@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Product } from './product.entity';
+import { Brand } from './brand.entity';
 import { GenerationStatus } from '../../../libs/enums';
 
 @Entity('packshot_generations')
@@ -21,6 +22,13 @@ export class PackshotGeneration {
   @ManyToOne(() => Product, (product) => product.packshot_generations, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'product_id' })
   product: Product;
+
+  @Column({ type: 'uuid', nullable: true })
+  brand_id: string;
+
+  @ManyToOne(() => Brand, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'brand_id' })
+  brand: Brand;
 
   @Column({ type: 'uuid' })
   user_id: string;

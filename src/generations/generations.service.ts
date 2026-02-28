@@ -170,7 +170,7 @@ export class GenerationsService {
 		// 1. Fetch Generation with relations (include both da_preset and collection + brand for model reference)
 		const generation = await this.generationsRepository.findOne({
 			where: { id: generationId },
-			relations: ['product', 'da_preset', 'collection', 'collection.brand'],
+			relations: ['product', 'da_preset', 'collection', 'collection.brand', 'packshot'],
 		});
 
 		if (!generation) {
@@ -303,11 +303,20 @@ export class GenerationsService {
 						referenceImages.push(...generation.product.reference_images);
 					}
 
+					// 📦 PACKSHOT REFERENCE: Include packshot images as high-quality product references
+					if (generation.packshot) {
+						const ps = generation.packshot;
+						if (ps.front_packshot_url) referenceImages.push(ps.front_packshot_url);
+						if (ps.back_packshot_url) referenceImages.push(ps.back_packshot_url);
+						this.logger.log(`📦 Packshot reference images included for ${promptType}`);
+					}
+
 					// 🎯 PRODUCT-ONLY shots: flatlay and closeup are product-only (no DA scene, no models)
 					const isProductOnly = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(promptType);
 
 					// 👤 MODEL REFERENCE: Add model image for face/body/hair consistency (DUO & SOLO only)
 					let hasModelReference = false;
+					let modelDescription: string | undefined;
 					if (!isProductOnly) {
 						const modelRefId = (promptsToUse as any)?._model_reference_id as string | undefined;
 
@@ -317,7 +326,8 @@ export class GenerationsService {
 								const modelRef = await this.modelReferencesService.findOne(modelRefId, userId);
 								referenceImages.push(modelRef.image_url);
 								hasModelReference = true;
-								this.logger.log(`👤 Model reference from library: "${modelRef.name}" (${modelRef.type}): ${modelRef.image_url}`);
+								modelDescription = modelRef.description || undefined;
+								this.logger.log(`👤 Model reference from library: "${modelRef.name}" (${modelRef.type}): ${modelRef.image_url}${modelDescription ? ', has description' : ''}`);
 							} catch (err) {
 								this.logger.warn(`⚠️ Model reference ${modelRefId} not found, falling back to brand model`);
 							}
@@ -367,7 +377,7 @@ export class GenerationsService {
 							generation.aspect_ratio,
 							generation.resolution,
 							undefined,
-							{ ...(daReferenceUrl && { daReferenceUrl }), shotType: promptType, hasModelReference },
+							{ ...(daReferenceUrl && { daReferenceUrl }), shotType: promptType, hasModelReference, modelDescription },
 						)
 						: await this.vertexImagenService.generateImage(
 							prompt,
@@ -710,7 +720,7 @@ export class GenerationsService {
 		// 1. Fetch Generation (include collection + brand for DA reference image and model reference)
 		const generation = await this.generationsRepository.findOne({
 			where: { id: generationId },
-			relations: ['product', 'da_preset', 'collection', 'collection.brand'],
+			relations: ['product', 'da_preset', 'collection', 'collection.brand', 'packshot'],
 		});
 
 		if (!generation) {
@@ -791,22 +801,48 @@ export class GenerationsService {
 						referenceImages.push(...generation.product.reference_images);
 					}
 
+					// 📦 PACKSHOT REFERENCE: Include packshot images as high-quality product references
+					if (generation.packshot) {
+						const ps = generation.packshot;
+						if (ps.front_packshot_url) referenceImages.push(ps.front_packshot_url);
+						if (ps.back_packshot_url) referenceImages.push(ps.back_packshot_url);
+						this.logger.log(`📦 Packshot reference images included for ${shotType}`);
+					}
+
 					// 🎯 PRODUCT-ONLY shots: flatlay and closeup are product-only (no DA scene, no models)
 					const isProductOnlyShot = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(shotType);
 
 					// 👤 MODEL REFERENCE: Add brand model image for face/body/hair consistency (DUO & SOLO only)
 					let hasModelRef = false;
+					let modelDescription: string | undefined;
 					if (!isProductOnlyShot) {
-						const brand = generation.collection?.brand;
-						const promptModelType = (promptObject as any).model_type || generation.model_type || 'adult';
-						const modelUrl = shotType === 'duo'
-							? brand?.model_adult_url
-							: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
+						// First try model reference library
+						const modelRefId = (generation.merged_prompts as any)?._model_reference_id as string | undefined;
+						if (modelRefId) {
+							try {
+								const modelRef = await this.modelReferencesService.findOne(modelRefId, userId);
+								referenceImages.push(modelRef.image_url);
+								hasModelRef = true;
+								modelDescription = modelRef.description || undefined;
+								this.logger.log(`👤 Model reference from library: "${modelRef.name}" (${modelRef.type}): ${modelRef.image_url}${modelDescription ? ', has description' : ''}`);
+							} catch (err) {
+								this.logger.warn(`⚠️ Model reference ${modelRefId} not found, falling back to brand model`);
+							}
+						}
 
-						if (modelUrl) {
-							referenceImages.push(modelUrl);
-							hasModelRef = true;
-							this.logger.log(`👤 Brand model reference included (${promptModelType}): ${modelUrl}`);
+						// Fallback: use brand model_adult_url / model_kid_url
+						if (!hasModelRef) {
+							const brand = generation.collection?.brand;
+							const promptModelType = (promptObject as any).model_type || generation.model_type || 'adult';
+							const modelUrl = shotType === 'duo'
+								? brand?.model_adult_url
+								: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
+
+							if (modelUrl) {
+								referenceImages.push(modelUrl);
+								hasModelRef = true;
+								this.logger.log(`👤 Brand model reference fallback (${promptModelType}): ${modelUrl}`);
+							}
 						}
 					}
 
@@ -838,7 +874,7 @@ export class GenerationsService {
 							generation.aspect_ratio,
 							generation.resolution,
 							undefined,
-							{ ...(daRefUrl && { daReferenceUrl: daRefUrl }), shotType, hasModelReference: hasModelRef },
+							{ ...(daRefUrl && { daReferenceUrl: daRefUrl }), shotType, hasModelReference: hasModelRef, modelDescription },
 						)
 						: await this.vertexImagenService.generateImage(
 							prompt,
@@ -1025,6 +1061,7 @@ export class GenerationsService {
 			generation_type: dto.generation_type,
 			aspect_ratio: aspectRatio,
 			resolution: resolution,
+			...(dto.packshot_id && { packshot_id: dto.packshot_id }),
 		});
 
 		// 💾 Save generation
@@ -2279,7 +2316,7 @@ export class GenerationsService {
 		// Load generation WITH relations so we have product + DA reference images + brand model
 		const generation = await this.generationsRepository.findOne({
 			where: { id: generationId, user_id: userId },
-			relations: ['product', 'da_preset', 'collection', 'collection.brand'],
+			relations: ['product', 'da_preset', 'collection', 'collection.brand', 'packshot'],
 		});
 
 		if (!generation) {
@@ -2315,22 +2352,48 @@ export class GenerationsService {
 				referenceImages.push(...generation.product.reference_images);
 			}
 
+			// 📦 PACKSHOT REFERENCE: Include packshot images as high-quality product references
+			if (generation.packshot) {
+				const ps = generation.packshot;
+				if (ps.front_packshot_url) referenceImages.push(ps.front_packshot_url);
+				if (ps.back_packshot_url) referenceImages.push(ps.back_packshot_url);
+				this.logger.log(`📦 Retry: Packshot reference images included`);
+			}
+
 			// 👤 MODEL REFERENCE for retry: Add brand model image (DUO & SOLO only)
 			const shotType = visual.type || '';
 			const isProductOnlyRetry = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(shotType);
 			let hasModelReference = false;
+			let modelDescription: string | undefined;
 
 			if (!isProductOnlyRetry) {
-				const brand = generation.collection?.brand;
-				const promptModelType = visual.model_type || generation.model_type || 'adult';
-				const modelUrl = shotType === 'duo'
-					? brand?.model_adult_url
-					: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
+				// First try model reference library
+				const modelRefId = (generation.merged_prompts as any)?._model_reference_id as string | undefined;
+				if (modelRefId) {
+					try {
+						const modelRef = await this.modelReferencesService.findOne(modelRefId, userId);
+						referenceImages.push(modelRef.image_url);
+						hasModelReference = true;
+						modelDescription = modelRef.description || undefined;
+						this.logger.log(`👤 Retry: Model reference from library: "${modelRef.name}" (${modelRef.type}): ${modelRef.image_url}${modelDescription ? ', has description' : ''}`);
+					} catch (err) {
+						this.logger.warn(`⚠️ Retry: Model reference ${modelRefId} not found, falling back to brand model`);
+					}
+				}
 
-				if (modelUrl) {
-					referenceImages.push(modelUrl);
-					hasModelReference = true;
-					this.logger.log(`👤 Retry: Brand model reference included (${promptModelType}): ${modelUrl}`);
+				// Fallback: use brand model_adult_url / model_kid_url
+				if (!hasModelReference) {
+					const brand = generation.collection?.brand;
+					const promptModelType = visual.model_type || generation.model_type || 'adult';
+					const modelUrl = shotType === 'duo'
+						? brand?.model_adult_url
+						: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
+
+					if (modelUrl) {
+						referenceImages.push(modelUrl);
+						hasModelReference = true;
+						this.logger.log(`👤 Retry: Brand model reference fallback (${promptModelType}): ${modelUrl}`);
+					}
 				}
 			}
 
@@ -2360,7 +2423,7 @@ export class GenerationsService {
 					generation.aspect_ratio,
 					generation.resolution,
 					undefined,
-					{ ...(daReferenceUrl && { daReferenceUrl }), shotType, hasModelReference },
+					{ ...(daReferenceUrl && { daReferenceUrl }), shotType, hasModelReference, modelDescription },
 				)
 				: await this.vertexImagenService.generateImage(
 					prompt,

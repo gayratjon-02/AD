@@ -1,17 +1,22 @@
 import {
 	Injectable,
+	Logger,
 	NotFoundException,
 	ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ModelReference } from '../database/entities/Product-Visuals/model-reference.entity';
+import { ClaudeService } from '../ai/claude.service';
 
 @Injectable()
 export class ModelReferencesService {
+	private readonly logger = new Logger(ModelReferencesService.name);
+
 	constructor(
 		@InjectRepository(ModelReference)
 		private modelReferencesRepository: Repository<ModelReference>,
+		private readonly claudeService: ClaudeService,
 	) {}
 
 	async create(
@@ -29,7 +34,26 @@ export class ModelReferencesService {
 			image_url: imageUrl,
 		});
 
-		return this.modelReferencesRepository.save(modelRef);
+		const saved = await this.modelReferencesRepository.save(modelRef);
+
+		// Analyze model reference photo with Claude (async, non-blocking)
+		this.analyzeModelInBackground(saved.id, imageUrl).catch((err) => {
+			this.logger.warn(`Failed to analyze model reference ${saved.id}: ${err.message}`);
+		});
+
+		return saved;
+	}
+
+	private async analyzeModelInBackground(modelRefId: string, imageUrl: string): Promise<void> {
+		try {
+			this.logger.log(`🧑 Starting Claude analysis for model reference ${modelRefId}`);
+			const description = await this.claudeService.analyzeModelReference(imageUrl);
+
+			await this.modelReferencesRepository.update(modelRefId, { description });
+			this.logger.log(`🧑 Model reference ${modelRefId} description saved (${description.length} chars)`);
+		} catch (error: any) {
+			this.logger.error(`🧑 Model reference analysis failed: ${error.message}`);
+		}
 	}
 
 	async findAllByBrand(brandId: string, userId: string): Promise<ModelReference[]> {

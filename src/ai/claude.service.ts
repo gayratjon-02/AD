@@ -904,6 +904,56 @@ Generate the 6 merged prompts now. Return ONLY valid JSON object with the struct
     }
 
     /**
+     * Analyze a model reference photo and generate a detailed physical description
+     * for consistent image generation across DUO/SOLO shots.
+     */
+    async analyzeModelReference(imageUrl: string): Promise<string> {
+        this.logger.log(`🧑 Analyzing model reference photo for consistency description`);
+
+        const prompt = `You are analyzing a model reference photo for an AI fashion image generator.
+Describe this person in EXTREME detail for image generation consistency.
+Return a JSON with:
+{
+  "gender": "male/female",
+  "estimated_age": "30s / 5-7 years old / etc.",
+  "ethnicity_appearance": "Mediterranean, light olive skin / Nordic, fair skin / etc.",
+  "face": {
+    "shape": "oval / square / round",
+    "features": "strong jawline, light stubble, warm brown eyes, straight nose",
+    "expression": "confident, approachable smile"
+  },
+  "hair": {
+    "color": "dark brown / black / blonde",
+    "style": "wavy, medium length, swept to the side",
+    "texture": "thick, natural"
+  },
+  "body": {
+    "build": "athletic / slim / average",
+    "height_impression": "tall / average / short",
+    "posture": "upright, confident"
+  },
+  "distinguishing_features": "light stubble, dimple on left cheek, tattoo on right forearm",
+  "overall_vibe": "warm, fatherly, premium casual"
+}
+Return ONLY the JSON, no extra text.`;
+
+        const content: ClaudeContentBlock[] = [
+            { type: 'text', text: prompt },
+            ...(await this.buildImageBlocks([imageUrl])),
+        ];
+
+        const response = await this.createMessage({
+            content,
+            max_tokens: 1500,
+        });
+
+        const text = this.extractText(response.content);
+        this.logger.log(`🧑 Model reference analysis complete (${text.length} chars)`);
+
+        return text;
+    }
+
+    /**
      * Get Anthropic client
      * @param userApiKey - Optional user-specific API key (takes precedence over env var)
      */
