@@ -165,10 +165,10 @@ export class GenerationsService {
 	async executeGeneration(generationId: string, userId: string): Promise<Generation> {
 		this.logger.log(`🚀 Executing generation: ${generationId}`);
 
-		// 1. Fetch Generation with relations (include both da_preset and collection)
+		// 1. Fetch Generation with relations (include both da_preset and collection + brand for model reference)
 		const generation = await this.generationsRepository.findOne({
 			where: { id: generationId },
-			relations: ['product', 'da_preset', 'collection'],
+			relations: ['product', 'da_preset', 'collection', 'collection.brand'],
 		});
 
 		if (!generation) {
@@ -304,6 +304,23 @@ export class GenerationsService {
 					// 🎯 PRODUCT-ONLY shots: flatlay and closeup are product-only (no DA scene, no models)
 					const isProductOnly = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(promptType);
 
+					// 👤 MODEL REFERENCE: Add brand model image for face/body/hair consistency (DUO & SOLO only)
+					let hasModelReference = false;
+					if (!isProductOnly) {
+						const brand = generation.collection?.brand;
+						const promptModelType = promptsToUse[promptType]?.model_type || generation.model_type || 'adult';
+						// DUO always uses adult model reference (father figure)
+						const modelUrl = promptType === 'duo'
+							? brand?.model_adult_url
+							: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
+
+						if (modelUrl) {
+							referenceImages.push(modelUrl);
+							hasModelReference = true;
+							this.logger.log(`👤 Brand model reference included (${promptModelType}): ${modelUrl}`);
+						}
+					}
+
 					// Include DA reference image ONLY for model shots
 					if (!isProductOnly) {
 						if (generation.da_preset?.image_url) {
@@ -317,7 +334,7 @@ export class GenerationsService {
 						this.logger.log(`🎯 Product-only shot (${promptType}): Skipping DA reference image`);
 					}
 
-					this.logger.log(`🖼️ Reference images for ${promptType}: ${referenceImages.length} images`);
+					this.logger.log(`🖼️ Reference images for ${promptType}: ${referenceImages.length} images (modelRef=${hasModelReference})`);
 
 					// Determine DA reference URL for scene consistency (only for model shots)
 					const daReferenceUrl = isProductOnly
@@ -332,7 +349,7 @@ export class GenerationsService {
 							generation.aspect_ratio,
 							generation.resolution,
 							undefined,
-							{ ...(daReferenceUrl && { daReferenceUrl }), shotType: promptType },
+							{ ...(daReferenceUrl && { daReferenceUrl }), shotType: promptType, hasModelReference },
 						)
 						: await this.vertexImagenService.generateImage(
 							prompt,
@@ -672,10 +689,10 @@ export class GenerationsService {
 	): Promise<Generation> {
 		this.logger.log(`🚀 Generating visuals for generation: ${generationId}`);
 
-		// 1. Fetch Generation (include collection for DA reference image fallback)
+		// 1. Fetch Generation (include collection + brand for DA reference image and model reference)
 		const generation = await this.generationsRepository.findOne({
 			where: { id: generationId },
-			relations: ['product', 'da_preset', 'collection'],
+			relations: ['product', 'da_preset', 'collection', 'collection.brand'],
 		});
 
 		if (!generation) {
@@ -759,9 +776,23 @@ export class GenerationsService {
 					// 🎯 PRODUCT-ONLY shots: flatlay and closeup are product-only (no DA scene, no models)
 					const isProductOnlyShot = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(shotType);
 
+					// 👤 MODEL REFERENCE: Add brand model image for face/body/hair consistency (DUO & SOLO only)
+					let hasModelRef = false;
+					if (!isProductOnlyShot) {
+						const brand = generation.collection?.brand;
+						const promptModelType = (promptObject as any).model_type || generation.model_type || 'adult';
+						const modelUrl = shotType === 'duo'
+							? brand?.model_adult_url
+							: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
+
+						if (modelUrl) {
+							referenceImages.push(modelUrl);
+							hasModelRef = true;
+							this.logger.log(`👤 Brand model reference included (${promptModelType}): ${modelUrl}`);
+						}
+					}
+
 					// Include DA reference image ONLY for model shots (duo, solo)
-					// For product-only shots, DA reference shows a scene with models —
-					// Gemini copies the models into the output. Background info is already in the text prompt.
 					if (!isProductOnlyShot) {
 						if (generation.da_preset?.image_url) {
 							referenceImages.push(generation.da_preset.image_url);
@@ -774,7 +805,7 @@ export class GenerationsService {
 						this.logger.log(`🎯 Product-only shot (${shotType}): Skipping DA reference image to prevent model generation`);
 					}
 
-					this.logger.log(`🖼️ Reference images for ${shotType}: ${referenceImages.length} images`);
+					this.logger.log(`🖼️ Reference images for ${shotType}: ${referenceImages.length} images (modelRef=${hasModelRef})`);
 
 					// Determine DA reference URL for scene consistency (only for model shots)
 					const daRefUrl = isProductOnlyShot
@@ -789,7 +820,7 @@ export class GenerationsService {
 							generation.aspect_ratio,
 							generation.resolution,
 							undefined,
-							{ ...(daRefUrl && { daReferenceUrl: daRefUrl }), shotType },
+							{ ...(daRefUrl && { daReferenceUrl: daRefUrl }), shotType, hasModelReference: hasModelRef },
 						)
 						: await this.vertexImagenService.generateImage(
 							prompt,
@@ -2222,10 +2253,10 @@ export class GenerationsService {
 	 * Retry generating a single visual
 	 */
 	async retryVisual(generationId: string, userId: string, visualIndex: number, model?: string): Promise<Generation> {
-		// Load generation WITH relations so we have product + DA reference images
+		// Load generation WITH relations so we have product + DA reference images + brand model
 		const generation = await this.generationsRepository.findOne({
 			where: { id: generationId, user_id: userId },
-			relations: ['product', 'da_preset', 'collection'],
+			relations: ['product', 'da_preset', 'collection', 'collection.brand'],
 		});
 
 		if (!generation) {
@@ -2261,19 +2292,42 @@ export class GenerationsService {
 				referenceImages.push(...generation.product.reference_images);
 			}
 
+			// 👤 MODEL REFERENCE for retry: Add brand model image (DUO & SOLO only)
+			const shotType = visual.type || '';
+			const isProductOnlyRetry = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(shotType);
+			let hasModelReference = false;
+
+			if (!isProductOnlyRetry) {
+				const brand = generation.collection?.brand;
+				const promptModelType = visual.model_type || generation.model_type || 'adult';
+				const modelUrl = shotType === 'duo'
+					? brand?.model_adult_url
+					: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
+
+				if (modelUrl) {
+					referenceImages.push(modelUrl);
+					hasModelReference = true;
+					this.logger.log(`👤 Retry: Brand model reference included (${promptModelType}): ${modelUrl}`);
+				}
+			}
+
 			// Include DA reference image LAST for scene consistency
-			if (generation.da_preset?.image_url) {
-				referenceImages.push(generation.da_preset.image_url);
-				this.logger.log(`🎨 Retry: DA preset reference image included: ${generation.da_preset.image_url}`);
-			} else if (generation.collection?.da_reference_image_url) {
-				referenceImages.push(generation.collection.da_reference_image_url);
-				this.logger.log(`🎨 Retry: Collection DA reference image included: ${generation.collection.da_reference_image_url}`);
+			if (!isProductOnlyRetry) {
+				if (generation.da_preset?.image_url) {
+					referenceImages.push(generation.da_preset.image_url);
+					this.logger.log(`🎨 Retry: DA preset reference image included: ${generation.da_preset.image_url}`);
+				} else if (generation.collection?.da_reference_image_url) {
+					referenceImages.push(generation.collection.da_reference_image_url);
+					this.logger.log(`🎨 Retry: Collection DA reference image included: ${generation.collection.da_reference_image_url}`);
+				}
 			}
 
 			// Determine DA reference URL
-			const daReferenceUrl = generation.da_preset?.image_url || generation.collection?.da_reference_image_url || undefined;
+			const daReferenceUrl = isProductOnlyRetry
+				? undefined
+				: (generation.da_preset?.image_url || generation.collection?.da_reference_image_url || undefined);
 
-			this.logger.log(`🖼️ Retry: ${referenceImages.length} reference images for ${visual.type}`);
+			this.logger.log(`🖼️ Retry: ${referenceImages.length} reference images for ${visual.type} (modelRef=${hasModelReference})`);
 
 			// Use reference-based generation if images available (same as generateVisuals)
 			const result = referenceImages.length > 0
@@ -2283,7 +2337,7 @@ export class GenerationsService {
 					generation.aspect_ratio,
 					generation.resolution,
 					undefined,
-					daReferenceUrl ? { daReferenceUrl } : undefined,
+					{ ...(daReferenceUrl && { daReferenceUrl }), shotType, hasModelReference },
 				)
 				: await this.vertexImagenService.generateImage(
 					prompt,

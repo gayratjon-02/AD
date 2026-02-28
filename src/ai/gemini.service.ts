@@ -401,7 +401,7 @@ High quality studio lighting, sharp details, clean background.`;
 		aspectRatio?: string,
 		resolution?: string,
 		userApiKey?: string,
-		options?: { daReferenceUrl?: string; shotType?: string }
+		options?: { daReferenceUrl?: string; shotType?: string; hasModelReference?: boolean }
 	): Promise<GeminiImageResult> {
 		const client = this.getClient(userApiKey);
 		const startTime = Date.now();
@@ -410,9 +410,10 @@ High quality studio lighting, sharp details, clean background.`;
 		const validImages = (referenceImages || []).filter(img => img && img.trim() !== '');
 
 		const hasDAReference = !!options?.daReferenceUrl;
+		const hasModelReference = !!options?.hasModelReference;
 		const shotType = options?.shotType || '';
 		const isProductOnlyShot = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(shotType);
-		this.logger.log(`🚀 generateImages: model=${this.MODEL}, ratio=${aspectRatio || '4:5'}, refs=${validImages.length}, hasDA=${hasDAReference}, shot=${shotType}, productOnly=${isProductOnlyShot}, prompt=${prompt.length} chars`);
+		this.logger.log(`🚀 generateImages: model=${this.MODEL}, ratio=${aspectRatio || '4:5'}, refs=${validImages.length}, hasDA=${hasDAReference}, modelRef=${hasModelReference}, shot=${shotType}, productOnly=${isProductOnlyShot}, prompt=${prompt.length} chars`);
 
 		// If no valid reference images, fall back to regular generation
 		if (validImages.length === 0) {
@@ -441,7 +442,7 @@ High quality studio lighting, sharp details, clean background.`;
 			referencePrompt = this.buildProductOnlyReferencePrompt(prompt);
 			this.logger.log(`🎯 Using PRODUCT-ONLY prompt wrapper for ${shotType}`);
 		} else if (hasDAReference) {
-			referencePrompt = this.buildDASceneReferencePrompt(prompt);
+			referencePrompt = this.buildDASceneReferencePrompt(prompt, hasModelReference);
 		} else {
 			referencePrompt = this.buildAdConceptReferencePrompt(prompt);
 		}
@@ -564,7 +565,7 @@ High quality studio lighting, sharp details, clean background.`;
 	 * The LAST image in referenceImages is the DA scene reference.
 	 * Gemini must replicate the EXACT scene (background, lighting, props, composition).
 	 */
-	private buildDASceneReferencePrompt(prompt: string): string {
+	private buildDASceneReferencePrompt(prompt: string, hasModelReference: boolean = false): string {
 		// Detect if the product is a bottom garment (pants/joggers/shorts) from the inner prompt
 		const isBottomProduct = prompt.toLowerCase().includes('white t-shirt') ||
 			prompt.toLowerCase().includes('fully clothed top');
@@ -579,12 +580,28 @@ If you generate a shirtless model, the image is REJECTED. Always add the white t
 The reference images show ONLY the pants — that does NOT mean the model is shirtless. ADD THE WHITE T-SHIRT.`
 			: `👕 CLOTHING: Every person MUST be FULLY CLOTHED. No bare skin on torso.`;
 
+		// Model consistency block — only when a brand model reference image is provided
+		const modelConsistencyBlock = hasModelReference
+			? `
+👤 MODEL CONSISTENCY — CRITICAL REQUIREMENT 👤
+The SECOND-TO-LAST reference image is the BRAND MODEL REFERENCE. This shows the exact model appearance you MUST replicate:
+- SAME face shape, facial features, and facial structure
+- SAME hair style, hair color, hair length, and hair texture
+- SAME skin tone and complexion
+- SAME body type and proportions (height, build)
+- SAME age appearance
+The generated model must look like the SAME PERSON as in the model reference image.
+For DUO shots (father and son): The adult model must match the model reference. The child should look like a plausible younger version.
+Do NOT change the model's appearance. The brand needs CONSISTENT model identity across all generated images.`
+			: '';
+
 		return `${clothingBlock}
+${modelConsistencyBlock}
 
 GENERATE THIS IMAGE IN THE EXACT SAME ROOM AS THE DA REFERENCE PHOTO (LAST IMAGE). COPY the background wall and floor from the DA reference photo exactly — same wall color, same floor color, same floor material.
 
 REFERENCE IMAGES GUIDE:
-- FIRST images = PRODUCT reference. Copy the exact garment: fabric color, texture, pockets, zippers, buttons, logos, every detail.
+- FIRST images = PRODUCT reference. Copy the exact garment: fabric color, texture, pockets, zippers, buttons, logos, every detail.${hasModelReference ? '\n- SECOND-TO-LAST image = BRAND MODEL reference. This is the person who must appear in the photo. Match their face, hair, skin tone, and body type EXACTLY.' : ''}
 - LAST image = DA SCENE reference. This is the room/studio. COPY this room exactly: wall color, wall texture, floor color, floor material, lighting direction, props placement, camera angle, mood. The ONLY thing different is the outfit — the room stays IDENTICAL.
 
 ⚠️ WALL-TO-FLOOR TRANSITION RULE ⚠️
@@ -609,6 +626,7 @@ ${this.sanitizePromptForImageGeneration(prompt)}
 Professional editorial fashion photography. 8K quality, sharp details. Match the DA reference lighting and atmosphere exactly.
 
 ${isBottomProduct ? 'REMINDER: The model MUST be wearing a PLAIN WHITE T-SHIRT on upper body. ZERO bare skin on torso. The white shirt must be clearly visible.' : ''}
+${hasModelReference ? 'REMINDER: The model in the generated image MUST match the BRAND MODEL REFERENCE (second-to-last image) — same face, same hair, same skin tone, same body type. Model identity consistency is mandatory.' : ''}
 
 FINAL RULE: The WALL-TO-FLOOR TRANSITION in your generated image must be IDENTICAL to the DA reference photo (LAST image). NO fold, NO crease, NO hard line — replicate the smooth transition exactly as shown in the DA reference. Same colors, same materials, same smooth curve.`;
 	}
