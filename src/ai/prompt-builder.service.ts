@@ -1374,4 +1374,182 @@ export class PromptBuilderService {
 
         return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
+
+    // ═══════════════════════════════════════════════════════════
+    // PACKSHOT PROMPT BUILDERS (4 shots: front, back, detail1, detail2)
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Orchestrator: Build all 4 packshot prompts from analyzed product JSON
+     */
+    buildPackshotPrompts(
+        productJson: AnalyzeProductDirectResponse,
+        hangerMode: boolean,
+        detail1Focus?: string,
+        detail2Focus?: string,
+    ): { front_packshot: string; back_packshot: string; detail_1: string; detail_2: string; detail_1_focus: string; detail_2_focus: string; negative_prompt: string } {
+        this.logger.log(`📦 Building packshot prompts: hanger=${hangerMode}, detail1="${detail1Focus || 'auto'}", detail2="${detail2Focus || 'auto'}"`);
+
+        // Auto-detect detail focus areas if not provided
+        const resolvedDetail1Focus = detail1Focus || this.autoDetectDetailFocus(productJson, 'front');
+        const resolvedDetail2Focus = detail2Focus || this.autoDetectDetailFocus(productJson, 'back');
+
+        this.logger.log(`📦 Resolved detail focus: detail1="${resolvedDetail1Focus}", detail2="${resolvedDetail2Focus}"`);
+
+        const resolution = '4K';
+        const resolutionSuffix = this.getResolutionQualitySuffix(resolution);
+
+        const frontPrompt = this.buildFrontPackshotPrompt(productJson, hangerMode) + resolutionSuffix;
+        const backPrompt = this.buildBackPackshotPrompt(productJson, hangerMode) + resolutionSuffix;
+        const detail1Prompt = this.buildPackshotDetailPrompt(productJson, resolvedDetail1Focus, 'front') + resolutionSuffix;
+        const detail2Prompt = this.buildPackshotDetailPrompt(productJson, resolvedDetail2Focus, 'back') + resolutionSuffix;
+
+        const negativePrompt = 'collage, split screen, inset image, picture in picture, multiple views, overlay, montage, composite image, text, watermark, blurry, low quality, distorted, mannequin face, visible mannequin, human face, human hands, person, model, 3d render, wrong color, color shift, faded color';
+
+        return {
+            front_packshot: frontPrompt,
+            back_packshot: backPrompt,
+            detail_1: detail1Prompt,
+            detail_2: detail2Prompt,
+            detail_1_focus: resolvedDetail1Focus,
+            detail_2_focus: resolvedDetail2Focus,
+            negative_prompt: negativePrompt,
+        };
+    }
+
+    /**
+     * Auto-detect the best focus area for detail shots based on product analysis
+     */
+    private autoDetectDetailFocus(product: AnalyzeProductDirectResponse, side: 'front' | 'back'): string {
+        if (side === 'front') {
+            if (product.design_front.has_logo && product.design_front.logo_text) {
+                return 'logo and front branding';
+            }
+            const chestPocket = product.garment_details?.pockets_array?.find(
+                (p) => p.position?.toLowerCase().includes('chest') || p.name?.toLowerCase().includes('chest'),
+            );
+            if (chestPocket) {
+                return 'chest pocket detail and embossing';
+            }
+            return 'front fabric texture and stitching';
+        }
+
+        // back
+        if (product.design_back.has_patch && product.design_back.patch_detail) {
+            return 'back patch and label';
+        }
+        if (product.design_back.yoke_material) {
+            return 'yoke panel detail';
+        }
+        return 'back fabric texture and construction';
+    }
+
+    /**
+     * FRONT PACKSHOT — product hanging on hanger or ghost mannequin, front view
+     * Clean e-commerce product photo on pure white background
+     */
+    private buildFrontPackshotPrompt(product: AnalyzeProductDirectResponse, hangerMode: boolean): string {
+        const colorName = product.visual_specs.color_name || product.visual_specs.primary_color_name || '';
+        const weightedColor = this.applyColorWeighting(colorName, 'flatlay_front');
+        const productIdentity = this.buildProductIdentityBlock(product, true, false);
+        const textureReinforcement = this.getTextureReinforcement(
+            product.visual_specs.fabric_texture,
+            product.visual_specs.fabric_texture,
+        );
+        const texturePhrase = textureReinforcement ? `, ${textureReinforcement}` : '';
+        const logoText = this.checkLogoRule(
+            product.design_front.has_logo,
+            product.design_front.logo_text,
+            product.design_front.logo_type,
+            product.design_front.font_family,
+            product.design_front.size_relative_pct,
+        );
+
+        const displayMethod = hangerMode
+            ? 'hanging on a premium wooden hanger with a chrome hook. The garment hangs flat and empty with natural drape under its own weight'
+            : 'displayed on an invisible ghost mannequin giving a 3D hollow-body effect. The garment appears to float with natural shape as if worn by an invisible person';
+
+        const shotDescription = `PROFESSIONAL E-COMMERCE PRODUCT PHOTOGRAPH. Single ${weightedColor} ${product.general_info.product_name} ${displayMethod}. FRONT VIEW, perfectly centered in frame. Pure white background (#FFFFFF). Clean, minimal, commercial product photography.`;
+
+        const productData = `Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ${productIdentity}. ${logoText}. Full garment visible from collar/neckline to hem. All buttons, zippers, and closures clearly visible.`;
+
+        const technical = `50mm lens, f/8, front-facing straight-on angle. Even studio lighting with soft shadows. Pure white seamless background. E-commerce product photography standard. Color-accurate representation of ${weightedColor}.`;
+
+        return `${shotDescription} ${productData} ${technical}`;
+    }
+
+    /**
+     * BACK PACKSHOT — product hanging on hanger or ghost mannequin, back view
+     * Clean e-commerce product photo on pure white background
+     */
+    private buildBackPackshotPrompt(product: AnalyzeProductDirectResponse, hangerMode: boolean): string {
+        const colorName = product.visual_specs.color_name || product.visual_specs.primary_color_name || '';
+        const weightedColor = this.applyColorWeighting(colorName, 'flatlay_back');
+        const productIdentity = this.buildProductIdentityBlock(product, false, true);
+        const textureReinforcement = this.getTextureReinforcement(
+            product.visual_specs.fabric_texture,
+            product.visual_specs.fabric_texture,
+        );
+        const texturePhrase = textureReinforcement ? `, ${textureReinforcement}` : '';
+
+        const patchDetail = product.design_back.has_patch
+            ? `Visible patch: ${product.design_back.patch_detail}. `
+            : '';
+        const technique = product.design_back.technique
+            ? `Technique: ${product.design_back.technique}. `
+            : '';
+
+        const displayMethod = hangerMode
+            ? 'hanging on a premium wooden hanger with a chrome hook, turned to show the BACK side. The garment hangs flat and empty with natural drape'
+            : 'displayed on an invisible ghost mannequin giving a 3D hollow-body effect, turned to show the BACK side. The garment appears to float with natural shape';
+
+        const shotDescription = `PROFESSIONAL E-COMMERCE PRODUCT PHOTOGRAPH. Single ${weightedColor} ${product.general_info.product_name} ${displayMethod}. BACK VIEW, perfectly centered in frame. Pure white background (#FFFFFF). Clean, minimal, commercial product photography.`;
+
+        const productData = `${product.design_back.description}. ${patchDetail}${technique}Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ${productIdentity}. Back details clearly visible from shoulders to hem.`;
+
+        const technical = `50mm lens, f/8, front-facing straight-on angle. Even studio lighting with soft shadows. Pure white seamless background. E-commerce product photography standard. Color-accurate representation of ${weightedColor}.`;
+
+        return `${shotDescription} ${productData} ${technical}`;
+    }
+
+    /**
+     * PACKSHOT DETAIL — extreme close-up of a specific area
+     * Macro detail shot for e-commerce
+     */
+    private buildPackshotDetailPrompt(
+        product: AnalyzeProductDirectResponse,
+        focusArea: string,
+        side: 'front' | 'back',
+    ): string {
+        const colorName = product.visual_specs.color_name || product.visual_specs.primary_color_name || '';
+        const weightedColor = this.applyColorWeighting(colorName, side === 'front' ? 'closeup_front' : 'closeup_back');
+        const textureReinforcement = this.getTextureReinforcement(
+            product.visual_specs.fabric_texture,
+            product.visual_specs.fabric_texture,
+        );
+        const texturePhrase = textureReinforcement ? `, ${textureReinforcement}` : '';
+
+        let detailContext = '';
+        if (side === 'front') {
+            const productIdentity = this.buildProductIdentityBlock(product, true, false);
+            detailContext = `FRONT DETAILS: ${product.design_front.description || ''}. ${productIdentity}.`;
+            if (product.design_front.micro_details) {
+                detailContext += ` Micro details: ${product.design_front.micro_details}.`;
+            }
+        } else {
+            const productIdentity = this.buildProductIdentityBlock(product, false, true);
+            detailContext = `BACK DETAILS: ${product.design_back.description || ''}. ${productIdentity}.`;
+            if (product.design_back.patch_detail) {
+                detailContext += ` Patch: ${product.design_back.patch_detail}.`;
+            }
+        }
+
+        const shotDescription = `EXTREME CLOSE-UP MACRO PRODUCT PHOTOGRAPH of ${weightedColor} ${product.general_info.product_name}. Camera positioned very close to capture ${focusArea} in razor-sharp focus. The garment is laid flat on a white surface. Only the fabric detail fills the frame. Shallow depth of field.`;
+
+        const productData = `FOCUS AREA: ${focusArea}. ${detailContext} Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. Sharp macro focus capturing every thread, stitch, and texture detail.`;
+
+        const technical = `100mm macro lens, f/4, close-range. Directional raking light to reveal fabric texture and stitching details. Pure white background with soft bokeh. E-commerce detail photography. Color-accurate ${weightedColor}.`;
+
+        return `${shotDescription} ${productData} ${technical}`;
+    }
 }

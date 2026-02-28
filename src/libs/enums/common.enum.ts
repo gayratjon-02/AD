@@ -23,6 +23,7 @@ export enum NotFoundMessage {
 	COLLECTION_NOT_FOUND = 'Collection not found',
 	PRODUCT_NOT_FOUND = 'Product not found',
 	GENERATION_NOT_FOUND = 'Generation not found',
+	PACKSHOT_NOT_FOUND = 'Packshot generation not found',
 }
 
 // Permission Errors
@@ -59,6 +60,13 @@ export enum GenerationMessage {
 	INVALID_GENERATION_TYPE = 'Invalid generation type',
 }
 
+// Packshot Errors
+export enum PackshotMessage {
+	PACKSHOT_NOT_FOUND = 'Packshot generation not found',
+	PACKSHOT_IN_PROGRESS = 'Packshot generation is already in progress',
+	PACKSHOT_FAILED = 'Packshot generation failed',
+}
+
 // Database Errors
 export enum DatabaseMessage {
 	CONNECTION_ERROR = 'Database connection error',
@@ -92,4 +100,6 @@ export enum SuccessMessage {
 	GENERATION_STARTED = 'Generation started successfully',
 	GENERATION_COMPLETED = 'Generation completed successfully',
 	FILE_UPLOADED = 'File uploaded successfully',
+	PACKSHOT_CREATED = 'Packshot generation created successfully',
+	PACKSHOT_COMPLETED = 'Packshot generation completed successfully',
 }

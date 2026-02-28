@@ -26,6 +26,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AdRecreationModule } from './modules/ad-recreation/ad-recreation.module';
 import { S3Module } from './common/s3/s3.module';
+import { PackshotsModule } from './packshots/packshots.module';
 
 @Module({
 	imports: [
@@ -55,6 +56,7 @@ import { S3Module } from './common/s3/s3.module';
 		ProductsModule,
 		AiModule,
 		GenerationsModule,
+		PackshotsModule,
 		AdRecreationModule, // Phase 2: Includes all Ad Recreation submodules (brands, concepts, etc.)
 		DAModule,
 	],

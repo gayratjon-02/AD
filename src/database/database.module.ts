@@ -13,6 +13,7 @@ import { Product } from './entities/Product-Visuals/product.entity';
 import { Generation } from './entities/Product-Visuals/generation.entity';
 import { DAPreset } from './entities/Product-Visuals/da-preset.entity';
 import { ModelReference } from './entities/Product-Visuals/model-reference.entity';
+import { PackshotGeneration } from './entities/Product-Visuals/packshot-generation.entity';
 
 // ═══════════════════════════════════════════════════════════
 // Phase 2: Ad Recreation Entities
@@ -46,7 +47,7 @@ import { AdProduct } from './entities/Ad-Recreation/ad-product.entity';
                     ...dbConfig,
                     entities: [
                         // Phase 1: Product Visuals
-                        User, Brand, Collection, Product, Generation, DAPreset, ModelReference,
+                        User, Brand, Collection, Product, Generation, DAPreset, ModelReference, PackshotGeneration,
                         // Phase 2: Ad Recreation
                         AdRecreation, AdBrand, AdConcept, AdGeneration,
                         AdCollection, AdCategory, AdProduct,
@@ -62,7 +63,7 @@ import { AdProduct } from './entities/Ad-Recreation/ad-product.entity';
 
         TypeOrmModule.forFeature([
             // Phase 1: Product Visuals
-            User, Brand, Collection, Product, Generation, DAPreset, ModelReference,
+            User, Brand, Collection, Product, Generation, DAPreset, ModelReference, PackshotGeneration,
             // Phase 2: Ad Recreation
             AdRecreation, AdBrand, AdConcept, AdGeneration,
         ]),

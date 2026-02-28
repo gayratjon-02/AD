@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Collection } from './collection.entity';
 import { Generation } from './generation.entity';
+import { PackshotGeneration } from './packshot-generation.entity';
 
 
 
@@ -85,4 +86,7 @@ export class Product {
 
   @OneToMany(() => Generation, (generation) => generation.product)
   generations: Generation[];
+
+  @OneToMany(() => PackshotGeneration, (ps) => ps.product)
+  packshot_generations: PackshotGeneration[];
 }
