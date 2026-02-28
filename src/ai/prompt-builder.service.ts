@@ -1094,11 +1094,11 @@ export class PromptBuilderService {
         // Product details
         const productData = `Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ${productIdentity}. ${logoTextFront}.`;
 
-        // Environment from DA
-        const environmentPart = `Background: ${daBackground} (${da.background?.hex || '#FFFFFF'}). ${da.floor?.type || 'Clean surface'} floor (${da.floor?.hex || '#F5F5F5'}). ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. Mood: ${da.mood || 'editorial elegance'}.`;
+        // Environment from DA — WALL ONLY, no floor visible in flatlay shots
+        const environmentPart = `Background: ONLY the ${daBackground} wall (${da.background?.hex || '#FFFFFF'}) is visible behind the hanging garment. The entire frame shows ONLY the wall surface — there is NO floor visible in this shot. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. Mood: ${da.mood || 'editorial elegance'}.`;
 
         // Quality — ONLY positive language, clean product display
-        const helpers = `Clean minimalist product display. Pristine garment condition. Single garment only. Still life product photography. ${qualitySuffix}`;
+        const helpers = `Clean minimalist product display. Pristine garment condition. Single garment only. Still life product photography. Wall-only background, no floor in frame. ${qualitySuffix}`;
 
         return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
@@ -1161,11 +1161,11 @@ export class PromptBuilderService {
         // Product details (back-specific)
         const productData = `${product.design_back.description}. ${patchDetail}${technique}Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}. ${productIdentity}.`;
 
-        // Environment from DA
-        const environmentPart = `Background: ${daBackground} (${da.background?.hex || '#FFFFFF'}). ${da.floor?.type || 'Clean surface'} floor (${da.floor?.hex || '#F5F5F5'}). ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. Mood: ${da.mood || 'editorial elegance'}.`;
+        // Environment from DA — WALL ONLY, no floor visible in flatlay shots
+        const environmentPart = `Background: ONLY the ${daBackground} wall (${da.background?.hex || '#FFFFFF'}) is visible behind the hanging garment. The entire frame shows ONLY the wall surface — there is NO floor visible in this shot. ${da.lighting?.type || 'Soft diffused lighting'}, ${da.lighting?.temperature || 'warm tones'}. Mood: ${da.mood || 'editorial elegance'}.`;
 
         // Quality — ONLY positive language
-        const helpers = `Clean minimalist product display. Pristine garment condition. Single garment only. Still life product photography. ${qualitySuffix}`;
+        const helpers = `Clean minimalist product display. Pristine garment condition. Single garment only. Still life product photography. Wall-only background, no floor in frame. ${qualitySuffix}`;
 
         return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
