@@ -565,19 +565,35 @@ High quality studio lighting, sharp details, clean background.`;
 	 * Gemini must replicate the EXACT scene (background, lighting, props, composition).
 	 */
 	private buildDASceneReferencePrompt(prompt: string): string {
-		return `GENERATE THIS IMAGE IN THE EXACT SAME ROOM AS THE DA REFERENCE PHOTO (LAST IMAGE). COPY the background wall and floor from the DA reference photo exactly — same wall color, same floor color, same floor material.
+		// Detect if the product is a bottom garment (pants/joggers/shorts) from the inner prompt
+		const isBottomProduct = prompt.toLowerCase().includes('white t-shirt') ||
+			prompt.toLowerCase().includes('fully clothed top');
+
+		const clothingBlock = isBottomProduct
+			? `🚨 MANDATORY CLOTHING RULE — READ THIS FIRST 🚨
+The product in the reference images is PANTS/JOGGERS/SHORTS (a bottom garment ONLY).
+The model MUST wear a PLAIN WHITE CREW-NECK T-SHIRT on the upper body.
+The white t-shirt MUST be visible from neck to waist — FULLY covering the entire torso.
+ZERO bare skin on chest, stomach, or torso. The model is NEVER shirtless.
+If you generate a shirtless model, the image is REJECTED. Always add the white t-shirt.
+The reference images show ONLY the pants — that does NOT mean the model is shirtless. ADD THE WHITE T-SHIRT.`
+			: `👕 CLOTHING: Every person MUST be FULLY CLOTHED. No bare skin on torso.`;
+
+		return `${clothingBlock}
+
+GENERATE THIS IMAGE IN THE EXACT SAME ROOM AS THE DA REFERENCE PHOTO (LAST IMAGE). COPY the background wall and floor from the DA reference photo exactly — same wall color, same floor color, same floor material.
 
 REFERENCE IMAGES GUIDE:
 - FIRST images = PRODUCT reference. Copy the exact garment: fabric color, texture, pockets, zippers, buttons, logos, every detail.
 - LAST image = DA SCENE reference. This is the room/studio. COPY this room exactly: wall color, wall texture, floor color, floor material, lighting direction, props placement, camera angle, mood. The ONLY thing different is the outfit — the room stays IDENTICAL.
 
-⚠️ WALL-TO-FLOOR TRANSITION — MOST CRITICAL RULE ⚠️
+⚠️ WALL-TO-FLOOR TRANSITION RULE ⚠️
 Look at the DA reference image (LAST image) very carefully. See how the wall meets the floor.
 You MUST replicate the EXACT same wall-to-floor transition from the DA reference image:
 1. If the DA reference shows a smooth curved infinity cove (cyclorama), generate the SAME smooth curve — NO sharp edge, NO fold, NO crease, NO visible line.
 2. If the DA reference shows a gradual gradient where wall color blends into floor color, replicate that EXACT gradient.
 3. The transition zone between wall and floor must be IDENTICAL to the DA reference photo — same softness, same curve radius, same color blending.
-4. FORBIDDEN: Do NOT create a hard fold, visible crease, sharp corner, or abrupt color change where the wall meets the floor. This is the #1 quality defect to avoid.
+4. FORBIDDEN: Do NOT create a hard fold, visible crease, sharp corner, or abrupt color change where the wall meets the floor.
 5. Study the DA reference image's lower third carefully — the wall-floor meeting point must be a PIXEL-PERFECT copy.
 
 BACKGROUND AND FLOOR RULES:
@@ -585,14 +601,14 @@ BACKGROUND AND FLOOR RULES:
 2. Generate the EXACT same floor — same color, same material, same finish as DA reference.
 3. The generated photo must look like it was taken in the SAME studio as the DA reference.
 
-👕 CLOTHING: Every person MUST be FULLY CLOTHED. If the product is pants/joggers/shorts, the model wears a plain white t-shirt on upper body. ZERO bare skin on torso.
-
 🚫 EXCLUDE: collar labels, neck tags, size labels, care labels, inner garment tags.
 
 SHOT REQUIREMENTS:
 ${this.sanitizePromptForImageGeneration(prompt)}
 
 Professional editorial fashion photography. 8K quality, sharp details. Match the DA reference lighting and atmosphere exactly.
+
+${isBottomProduct ? 'REMINDER: The model MUST be wearing a PLAIN WHITE T-SHIRT on upper body. ZERO bare skin on torso. The white shirt must be clearly visible.' : ''}
 
 FINAL RULE: The WALL-TO-FLOOR TRANSITION in your generated image must be IDENTICAL to the DA reference photo (LAST image). NO fold, NO crease, NO hard line — replicate the smooth transition exactly as shown in the DA reference. Same colors, same materials, same smooth curve.`;
 	}

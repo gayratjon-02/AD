@@ -956,16 +956,20 @@ export class PromptBuilderService {
         // Now using Gemini API which allows father/son terminology
         // ═══════════════════════════════════════════════════════════
         const clothingRule = isProductBottom
-            ? 'BOTH wearing plain white t-shirts on upper body. FULLY CLOTHED from neck to toe — shirt ALWAYS visible on both father and son. ZERO bare skin on torso.'
+            ? 'BOTH MUST be wearing PLAIN WHITE CREW-NECK T-SHIRTS on upper body — shirts cover entire torso from neck to waist. ZERO bare skin on chest or stomach. NEVER shirtless.'
             : 'BOTH FULLY CLOTHED, NEVER SHIRTLESS.';
-        const subjectPart = `Father and son wearing matching outfits. Adult male in his 30s (athletic build, light stubble beard) with his 5-year-old son. ${clothingRule} Both smiling naturally, relaxed family pose. Fashion editorial. Both looking at camera.`;
+        const subjectPart = isProductBottom
+            ? `Father and son wearing matching outfits. Adult male in his 30s (athletic build, light stubble beard) with his 5-year-old son. ${clothingRule} Both smiling naturally, relaxed family pose. Fashion editorial. Both looking at camera.`
+            : `Father and son wearing matching outfits. Adult male in his 30s (athletic build, light stubble beard) with his 5-year-old son. ${clothingRule} Both smiling naturally, relaxed family pose. Fashion editorial. Both looking at camera.`;
 
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 2: APPAREL (What they're wearing) - USE baseAttire (includes t-shirt when product is bottom!)
         // ═══════════════════════════════════════════════════════════
         const productIdentity = this.buildProductIdentityBlock(product, true, false);
 
-        const apparelPart = `Both ${baseAttire}. Fabric: ${product.visual_specs.fabric_texture}. ${productIdentity}. ${zipperText}. Fully clothed, shirts on, no bare chest.`;
+        const apparelPart = isProductBottom
+            ? `Both wearing: Upper body — plain white t-shirt (MANDATORY, NEVER shirtless). Lower body — ${baseAttire}. Fabric: ${product.visual_specs.fabric_texture}. ${productIdentity}. ${zipperText}.`
+            : `Both ${baseAttire}. Fabric: ${product.visual_specs.fabric_texture}. ${productIdentity}. ${zipperText}.`;
 
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 3: ENVIRONMENT (Where) — MUST match DA reference image exactly
@@ -1012,13 +1016,13 @@ export class PromptBuilderService {
         // 🎯 PRIORITY 1: SUBJECT FIRST (Most Important!)
         // ═══════════════════════════════════════════════════════════
         const clothingRule = isProductBottom
-            ? 'Wearing a plain white t-shirt on upper body. FULLY CLOTHED from neck to toe — shirt ALWAYS visible. ZERO bare skin on torso.'
+            ? 'MUST be wearing a PLAIN WHITE CREW-NECK T-SHIRT on upper body — shirt covers entire torso from neck to waist. ZERO bare skin on chest or stomach. NEVER shirtless.'
             : 'FULLY CLOTHED.';
         let subjectPart = '';
         if (modelType === 'kid') {
-            subjectPart = `KIDS FASHION. Subject: SINGLE 5-YEAR-OLD BOY. Small child size. (NO ADULTS, NO OLDER KIDS). ${clothingRule} Playful editorial expression, natural child pose.`;
+            subjectPart = `KIDS FASHION. Subject: SINGLE 5-YEAR-OLD BOY wearing a plain white t-shirt and the product below. Small child size. (NO ADULTS, NO OLDER KIDS). ${clothingRule} Playful editorial expression, natural child pose.`;
         } else {
-            subjectPart = `Subject: SINGLE ADULT MALE MODEL. Age 30s. Full adult size. (NO KIDS). ${clothingRule} Athletic build, confident gaze, light stubble beard.`;
+            subjectPart = `Subject: SINGLE ADULT MALE MODEL wearing a plain white t-shirt on upper body and the product below. Age 30s. Full adult size. (NO KIDS). ${clothingRule} Athletic build, confident gaze, light stubble beard.`;
         }
 
         // ═══════════════════════════════════════════════════════════
@@ -1026,8 +1030,11 @@ export class PromptBuilderService {
         // ═══════════════════════════════════════════════════════════
         const productIdentity = this.buildProductIdentityBlock(product, true, false);
 
-        const apparelPart = `${baseAttire}. ` +
-            `Fabric: ${product.visual_specs.fabric_texture}. ${productIdentity}. ${logoTextFront}. ${zipperText}. Fully clothed, never shirtless.`;
+        const apparelPart = isProductBottom
+            ? `Upper body: plain white t-shirt (MANDATORY — model is NEVER shirtless). Lower body: ${baseAttire}. ` +
+              `Fabric: ${product.visual_specs.fabric_texture}. ${productIdentity}. ${logoTextFront}. ${zipperText}.`
+            : `${baseAttire}. ` +
+              `Fabric: ${product.visual_specs.fabric_texture}. ${productIdentity}. ${logoTextFront}. ${zipperText}.`;
 
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 3: ENVIRONMENT (Where) — MUST match DA reference image exactly
