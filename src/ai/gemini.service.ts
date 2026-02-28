@@ -411,7 +411,7 @@ High quality studio lighting, sharp details, clean background.`;
 
 		const hasDAReference = !!options?.daReferenceUrl;
 		const shotType = options?.shotType || '';
-		const isProductOnlyShot = ['flatlay_front', 'flatlay_back', 'closeup_front'].includes(shotType);
+		const isProductOnlyShot = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(shotType);
 		this.logger.log(`🚀 generateImages: model=${this.MODEL}, ratio=${aspectRatio || '4:5'}, refs=${validImages.length}, hasDA=${hasDAReference}, shot=${shotType}, productOnly=${isProductOnlyShot}, prompt=${prompt.length} chars`);
 
 		// If no valid reference images, fall back to regular generation

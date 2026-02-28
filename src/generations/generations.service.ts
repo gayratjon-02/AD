@@ -290,8 +290,8 @@ export class GenerationsService {
 						referenceImages.push(...generation.product.reference_images);
 					}
 
-					// 🎯 PRODUCT-ONLY shots: flatlay and closeup_front are product-only (no DA scene, no models)
-					const isProductOnly = ['flatlay_front', 'flatlay_back', 'closeup_front'].includes(promptType);
+					// 🎯 PRODUCT-ONLY shots: flatlay and closeup are product-only (no DA scene, no models)
+					const isProductOnly = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(promptType);
 
 					// Include DA reference image ONLY for model shots
 					if (!isProductOnly) {
@@ -745,10 +745,10 @@ export class GenerationsService {
 						referenceImages.push(...generation.product.reference_images);
 					}
 
-					// 🎯 PRODUCT-ONLY shots: flatlay and closeup_front are product-only (no DA scene, no models)
-					const isProductOnlyShot = ['flatlay_front', 'flatlay_back', 'closeup_front'].includes(shotType);
+					// 🎯 PRODUCT-ONLY shots: flatlay and closeup are product-only (no DA scene, no models)
+					const isProductOnlyShot = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(shotType);
 
-					// Include DA reference image ONLY for model shots (duo, solo, closeup_back)
+					// Include DA reference image ONLY for model shots (duo, solo)
 					// For product-only shots, DA reference shows a scene with models —
 					// Gemini copies the models into the output. Background info is already in the text prompt.
 					if (!isProductOnlyShot) {

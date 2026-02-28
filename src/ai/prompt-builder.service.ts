@@ -488,11 +488,11 @@ export class PromptBuilderService {
             da_elements: daElements
         } as MergedPromptObject;
 
-        // 6.6 CLOSE UP BACK — Model wearing garment from behind, focus on back patch (DA compliant)
+        // 6.6 CLOSE UP BACK — Product-only macro of back details (patch, yoke, fabric)
         const closeUpBackPrompt = this.buildCloseUpBackPrompt(product, da, qualitySuffix);
         const closeUpBackFinal = closeUpBackPrompt + resolutionSuffix;
-        // Closeup shows model from behind - allow back of head/body but no full face
-        let closeUpBackNegative = this.buildShotNegativePrompt('closeup_back', product) + ', full body shot, wide shot, distance shot, front facing, face visible';
+        // Product-only macro — block humans and wide shots
+        let closeUpBackNegative = this.buildShotNegativePrompt('closeup_back', product) + ', full body shot, wide shot, distance shot';
 
         // 🚀 ANTI-ROUND SHIELD: If patch is square/rectangular, blocking round shapes
         const patchDetail = product.design_back?.patch_detail || '';
@@ -1242,11 +1242,11 @@ export class PromptBuilderService {
 
 
     /**
-     * CLOSE UP BACK - MODEL WEARING GARMENT FROM BEHIND (UPPER BACK/SHOULDERS)
-     * Shows model from behind with camera close to upper back area
-     * Back of head/hair visible, shoulders and upper back in frame
-     * Patch/logo on back clearly visible and in focus
-     * 
+     * CLOSE UP BACK - PRODUCT-ONLY MACRO (back detail of garment)
+     * 🎯 CRITICAL FIX: Changed from "child model from behind" to PRODUCT-ONLY macro.
+     * Client wants: close-up detail of back patch, logo, yoke, fabric texture.
+     * ZERO humans — just the garment fabric and back details in extreme close-up.
+     *
      * 🎨 COLOR WEIGHTING: Applied to prevent color bias in macro shots
      */
     private buildCloseUpBackPrompt(
@@ -1269,7 +1269,7 @@ export class PromptBuilderService {
         );
         const texturePhrase = textureReinforcement ? `. ${textureReinforcement}` : '';
 
-        // 🎯 NEW: Extract EXACT patch specifications from product JSON
+        // 🎯 Extract EXACT patch specifications from product JSON
         const patchShape = product.design_back.patch_shape || 'square';
         const patchColor = product.design_back.patch_color || '';
         const yokeMaterial = product.design_back.yoke_material || '';
@@ -1277,7 +1277,7 @@ export class PromptBuilderService {
         // Build yoke description for leather yoke panels
         let yokeDescription = '';
         if (yokeMaterial) {
-            yokeDescription = `Leather yoke panel across upper back/shoulders in ${weightedColor}. `;
+            yokeDescription = `Leather yoke panel across upper back area in ${weightedColor}. `;
         }
 
         // Build EXACT patch specification string
@@ -1297,19 +1297,20 @@ export class PromptBuilderService {
             geometryPhrase = 'Focus on the RECTANGULAR leather patch with sharp corners. ';
         }
 
-        // 🎯 Priority 1: SUBJECT - Model from behind, close-up on upper back/shoulders - FULLY CLOTHED
-        const subjectPart = `Young child model photographed from behind wearing ${weightedColor} ${product.general_info.product_name}. FULLY CLOTHED - complete outfit with shirt/top underneath, no bare skin visible. CLOSE-UP SHOT of upper back and shoulders area. Back of head with curly hair visible at top of frame. Camera focused on collar and upper back where patch/logo is located.`;
-
-        // Priority 2: Product Details - BACK DETAILS with EXACT patch specifications
         const productIdentity = this.buildProductIdentityBlock(product, false, true);
-        const productData = `BACK GARMENT DETAILS IN FOCUS: ${yokeDescription}${geometryPhrase}${exactPatchSpec}${patchDetail} prominently visible and sharp. CRITICAL: Patch must be ${patchColor.toUpperCase() || 'exact color from reference'}, ${patchShape.toUpperCase()} shaped, centered on leather yoke. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}.${techniqueText} ${productIdentity}. Shoulder seams, collar back, and stitching details visible while worn on model.`;
 
-        // 🎯 Priority 3: DA ENVIRONMENT - Soft blurred DA background
-        const environmentPart = `${da.background.type} (${da.background.hex}) backdrop with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}, ${da.lighting?.temperature || 'warm tones'}. Shallow depth of field keeping back details sharp. Background color and lighting must match DA scene reference image.`;
+        // 🎯 SHOT DESCRIPTION FIRST — PRODUCT-ONLY macro, no humans
+        const shotDescription = `EXTREME CLOSE-UP MACRO PRODUCT PHOTOGRAPH of ${weightedColor} ${product.general_info.product_name} back details. The garment is laid flat on a surface, showing the back side. Camera positioned very close to the upper back area, capturing back patch, yoke, fabric texture, stitching, and label details in sharp focus. Shallow depth of field. Only the garment fabric fills the frame.`;
 
-        // Priority 4: Technical - CRITICAL: NO BARE SKIN
-        const helpers = `Editorial fashion photography. Close-up back view. Professional child model from behind. COMPLETE OUTFIT - NO bare back, NO bare shoulders, NO exposed skin. Model wearing full clothing underneath. ${qualitySuffix}`;
+        // Product details — back details with EXACT patch specifications
+        const productData = `BACK DETAILS IN FOCUS: ${yokeDescription}${geometryPhrase}${exactPatchSpec}${patchDetail} prominently visible and sharp. Patch must be ${patchColor.toUpperCase() || 'exact color from reference'}, ${patchShape.toUpperCase()} shaped. Fabric: ${product.visual_specs.fabric_texture}${texturePhrase}.${techniqueText} ${productIdentity}. Shoulder seams, collar back, and stitching details visible. Sharp macro focus on back patch, embossing patterns, and logo.`;
 
-        return `${subjectPart} ${productData} ${environmentPart} ${helpers}`;
+        // 🎯 Environment — soft blurred DA background behind the close-up
+        const environmentPart = `Background: ${da.background.type} (${da.background.hex}) with soft bokeh blur. ${da.lighting?.type || 'Warm studio lighting'}, ${da.lighting?.temperature || 'warm tones'}. Shallow depth of field keeping garment details razor-sharp.`;
+
+        // Quality — product-only macro photography
+        const helpers = `Macro product photography. Extreme close-up still life. Back fabric texture detail. Single garment only. ${qualitySuffix}`;
+
+        return `${shotDescription} ${productData} ${environmentPart} ${helpers}`;
     }
 }
