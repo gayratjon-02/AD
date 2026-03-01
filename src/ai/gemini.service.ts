@@ -647,6 +647,7 @@ Professional editorial fashion photography. 8K quality, sharp details. Match the
 ${isBottomProduct ? 'REMINDER: The model MUST be wearing a PLAIN WHITE T-SHIRT on upper body. ZERO bare skin on torso. The white shirt must be clearly visible.' : ''}
 ${hasDualModels ? 'REMINDER: The ADULT model must match the ADULT MODEL REFERENCE and the KID model must match the KID MODEL REFERENCE. Each person must look like their respective reference. Model identity consistency is mandatory.' : hasModelReference ? 'REMINDER: The model in the generated image MUST match the BRAND MODEL REFERENCE (second-to-last image) — same face, same hair, same skin tone, same body type. Model identity consistency is mandatory.' : ''}
 
+${hasDualModels ? '⚠️ DUO FLOOR REMINDER: Even though there are TWO model references, the LAST image is still the DA SCENE reference. The background, wall color, floor color, floor material, and wall-to-floor transition must ALL come from the LAST (DA) image — NOT from the model reference images. Copy the DA room exactly.' : ''}
 FINAL RULE: The WALL-TO-FLOOR TRANSITION in your generated image must be IDENTICAL to the DA reference photo (LAST image). NO fold, NO crease, NO hard line — replicate the smooth transition exactly as shown in the DA reference. Same colors, same materials, same smooth curve.`;
 	}
 
