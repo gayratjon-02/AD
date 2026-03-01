@@ -455,16 +455,78 @@ High quality studio lighting, sharp details, clean background.`;
 				imageSize: resolutionText,
 			};
 
-			// 🚀 CRITICAL: Send text + reference images together
+			// 🚀 CRITICAL: Send text + labeled reference images
+			// For model shots (DUO/SOLO), interleave text labels with image groups
+			// so Gemini can distinguish product refs, model refs, and DA scene
+			let contentParts: any[];
+
+			if (!isProductOnlyShot && hasDAReference && imageParts.length >= 2) {
+				// Calculate image group boundaries
+				const totalImages = imageParts.length;
+				let daIndex = totalImages - 1; // DA is always LAST
+				let modelStartIndex: number;
+				let modelEndIndex: number;
+
+				if (options?.hasDualModels) {
+					// DUO: product..., adult_model, kid_model, DA
+					modelStartIndex = daIndex - 2;
+					modelEndIndex = daIndex;
+				} else if (hasModelReference) {
+					// SOLO: product..., model, DA
+					modelStartIndex = daIndex - 1;
+					modelEndIndex = daIndex;
+				} else {
+					// No models: product..., DA
+					modelStartIndex = daIndex;
+					modelEndIndex = daIndex;
+				}
+
+				const productParts = imageParts.slice(0, modelStartIndex);
+				const modelParts = imageParts.slice(modelStartIndex, modelEndIndex);
+				const daPart = imageParts[daIndex];
+
+				contentParts = [
+					{ text: referencePrompt },
+					{ text: '\n\n📸 PRODUCT REFERENCE IMAGES — Copy this exact garment (fabric, color, logo, pockets, zippers):' },
+					...productParts,
+				];
+
+				if (modelParts.length > 0) {
+					if (options?.hasDualModels) {
+						contentParts.push(
+							{ text: '\n\n👤 ADULT MODEL REFERENCE — Match this person\'s face, hair, skin tone, body type. IGNORE the background in this image:' },
+							modelParts[0],
+							{ text: '\n\n👦 KID MODEL REFERENCE — Match this child\'s face, hair, skin tone. IGNORE the background in this image:' },
+							modelParts[1],
+						);
+					} else {
+						contentParts.push(
+							{ text: '\n\n👤 MODEL REFERENCE — Match this person\'s face, hair, skin tone, body type. IGNORE the background in this image:' },
+							...modelParts,
+						);
+					}
+				}
+
+				contentParts.push(
+					{ text: '\n\n🎨 DA SCENE REFERENCE — THIS IS THE ROOM. COPY THIS EXACT background wall, floor color, floor material, wall-to-floor transition, lighting, and props. The generated image MUST look like it was shot in THIS exact room:' },
+					daPart,
+				);
+
+				this.logger.log(`📦 Labeled image groups: product=${productParts.length}, model=${modelParts.length}, DA=1`);
+			} else {
+				// Product-only shots or no DA: send as flat batch
+				contentParts = [
+					{ text: referencePrompt },
+					...imageParts,
+				];
+			}
+
 			const generatePromise = client.models.generateContent({
 				model: this.MODEL,
 				contents: [
 					{
 						role: 'user',
-						parts: [
-							{ text: referencePrompt },
-							...imageParts  // Reference images as visual guide
-						]
+						parts: contentParts,
 					}
 				],
 				config: {
