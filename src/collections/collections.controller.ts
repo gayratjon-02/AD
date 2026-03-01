@@ -234,13 +234,14 @@ export class CollectionsController {
 		@Param('id') id: string,
 		@CurrentUser() user: User,
 		@UploadedFile() imageFile?: Express.Multer.File,
-	): Promise<{ collection_id: string; analyzed_da_json: AnalyzedDAJSON; fixed_elements: FixedElements; status: string; analyzed_at: string }> {
+	): Promise<{ collection_id: string; analyzed_da_json: AnalyzedDAJSON; fixed_elements: FixedElements; da_reference_image_url: string | null; status: string; analyzed_at: string }> {
 		const analyzedDAJSON = await this.collectionsService.analyzeDA(id, user.id, imageFile);
 		const collection = await this.collectionsService.findOne(id, user.id);
 		return {
 			collection_id: id,
 			analyzed_da_json: analyzedDAJSON,
 			fixed_elements: collection.fixed_elements as FixedElements,
+			da_reference_image_url: collection.da_reference_image_url || null,
 			status: 'analyzed',
 			analyzed_at: analyzedDAJSON.analyzed_at || new Date().toISOString(),
 		};
