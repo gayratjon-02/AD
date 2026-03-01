@@ -16,7 +16,8 @@ export class S3Service {
 	constructor(private readonly configService: ConfigService) {
 		const uploadConfig = this.configService.get<any>('upload');
 		this.bucket = uploadConfig.s3?.bucket || process.env.AWS_BUCKET;
-		this.baseUrl = uploadConfig.baseUrl || process.env.UPLOAD_BASE_URL || '';
+		// Only use S3_BASE_URL for CDN fronting S3. UPLOAD_BASE_URL is for local file serving only.
+		this.baseUrl = process.env.S3_BASE_URL || '';
 		this.enabled = !!this.bucket && !!process.env.AWS_ACCESS_KEY_ID;
 
 		if (this.enabled) {
@@ -35,7 +36,8 @@ export class S3Service {
 			}
 
 			this.s3Client = new S3Client(s3Config);
-			this.logger.log(`✅ S3 storage enabled. Bucket: ${this.bucket}, Region: ${s3Config.region}`);
+			const s3Url = this.baseUrl || `https://${this.bucket}.s3.${s3Config.region}.amazonaws.com`;
+			this.logger.log(`✅ S3 storage enabled. Bucket: ${this.bucket}, Region: ${s3Config.region}, URL: ${s3Url}`);
 		} else {
 			this.logger.warn('⚠️ S3 storage disabled. Using local storage fallback.');
 		}
@@ -68,26 +70,14 @@ export class S3Service {
 			await upload.done();
 
 			// Generate public URL
+			const region = process.env.AWS_REGION || 'us-east-1';
 			let url: string;
 			if (this.baseUrl) {
+				// CDN/custom base URL (set via S3_BASE_URL)
 				url = `${this.baseUrl.replace(/\/$/, '')}/${cleanPath}`;
 			} else {
-				// Check for custom endpoint (R2, MinIO, etc.)
-				const endpointConfig = this.s3Client.config.endpoint;
-				if (endpointConfig !== null && endpointConfig !== undefined && typeof endpointConfig === 'object') {
-					const endpointObj = endpointConfig as any;
-					if ('url' in endpointObj && typeof endpointObj.url === 'string') {
-						url = `${endpointObj.url.replace(/\/$/, '')}/${this.bucket}/${cleanPath}`;
-					} else {
-						// Standard AWS S3 URL
-						const region = this.s3Client.config.region || 'us-east-1';
-						url = `https://${this.bucket}.s3.${region}.amazonaws.com/${cleanPath}`;
-					}
-				} else {
-					// Standard AWS S3 URL
-					const region = this.s3Client.config.region || 'us-east-1';
-					url = `https://${this.bucket}.s3.${region}.amazonaws.com/${cleanPath}`;
-				}
+				// Standard AWS S3 URL
+				url = `https://${this.bucket}.s3.${region}.amazonaws.com/${cleanPath}`;
 			}
 
 			this.logger.log(`✅ Uploaded to S3: ${cleanPath} (${buffer.length} bytes)`);
@@ -127,21 +117,12 @@ export class S3Service {
 		}
 
 		const cleanPath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
+		const region = process.env.AWS_REGION || 'us-east-1';
 
 		if (this.baseUrl) {
 			return `${this.baseUrl.replace(/\/$/, '')}/${cleanPath}`;
-		} else if (this.s3Client?.config.endpoint) {
-			const endpointConfig = this.s3Client.config.endpoint;
-			if (endpointConfig !== null && endpointConfig !== undefined && typeof endpointConfig === 'object') {
-				const endpointObj = endpointConfig as any;
-				if ('url' in endpointObj && typeof endpointObj.url === 'string') {
-					return `${endpointObj.url.replace(/\/$/, '')}/${this.bucket}/${cleanPath}`;
-				}
-			}
 		}
-		
-		// Standard AWS S3 URL
-		const region = this.s3Client?.config.region || 'us-east-1';
+
 		return `https://${this.bucket}.s3.${region}.amazonaws.com/${cleanPath}`;
 	}
 
