@@ -63,7 +63,6 @@ export class S3Service {
 					Key: cleanPath,
 					Body: buffer,
 					ContentType: mimeType,
-					ACL: 'public-read', // Make files publicly accessible
 				},
 			});
 
