@@ -11,6 +11,7 @@ import {
 	BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import type { Express } from 'express';
 import 'multer';
 import { DAService } from './da.service';
@@ -57,6 +58,7 @@ export class DAController {
 	@Post('analyze')
 	@UseInterceptors(
 		FileInterceptor('image', {
+			storage: memoryStorage(),
 			limits: { fileSize: 30 * 1024 * 1024 }, // 30MB
 		}),
 	)
@@ -77,8 +79,8 @@ export class DAController {
 			throw new BadRequestException('Reference image is required. Upload a photo of the room/scene.');
 		}
 
-		// Store the uploaded file and get URL
-		const storedImage = await this.filesService.storeImage(imageFile);
+		// Store the uploaded file to S3 and get URL
+		const storedImage = await this.filesService.storeImage(imageFile, 'da-presets');
 
 		// Analyze AND Save (Persistence handled in Service now)
 		const savedPreset = await this.daService.analyzeReference(

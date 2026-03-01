@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import type { Express } from 'express';
 import 'multer';
 import { CollectionsService } from './collections.service';
@@ -226,6 +227,7 @@ export class CollectionsController {
 	 */
 	@Post(':id/analyze-da')
 	@UseInterceptors(FileInterceptor('image', {
+		storage: memoryStorage(),
 		limits: { fileSize: 30 * 1024 * 1024 }, // 30MB
 	}))
 	async analyzeDA(

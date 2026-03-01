@@ -214,9 +214,9 @@ export class CollectionsService {
 	async analyzeDA(collectionId: string, userId: string, imageFile?: Express.Multer.File): Promise<AnalyzedDAJSON> {
 		const collection = await this.findOne(collectionId, userId);
 
-		// If image file provided, upload it and update da_reference_image_url first
+		// If image file provided, upload to S3 and update da_reference_image_url
 		if (imageFile) {
-			const uploadResult = await this.filesService.storeImage(imageFile);
+			const uploadResult = await this.filesService.storeImage(imageFile, 'da-references');
 			collection.da_reference_image_url = uploadResult.url;
 			await this.collectionsRepository.save(collection);
 		}
