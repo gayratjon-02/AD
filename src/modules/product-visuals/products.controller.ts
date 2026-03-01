@@ -174,6 +174,22 @@ export class ProductsController {
 	}
 
 	/**
+	 * Delete all products in a category
+	 * DELETE /api/products/by-category/:category
+	 */
+	@Delete('by-category/:category')
+	async deleteProductsByCategory(
+		@Param('category') category: string,
+		@CurrentUser() user: User,
+	): Promise<{ success: boolean; message: string; deletedCount: number }> {
+		const result = await this.productsService.removeByCategory(user.id, category);
+		return {
+			success: true,
+			...result,
+		};
+	}
+
+	/**
 	 * Update Product
 	 * PUT /api/products/:id
 	 * Body: UpdateProductDto

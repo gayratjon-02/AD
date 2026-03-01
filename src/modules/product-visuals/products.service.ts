@@ -399,6 +399,41 @@ export class ProductsService {
 		return { message: 'Product deleted successfully' };
 	}
 
+	async removeByCategory(userId: string, category: string): Promise<{ message: string; deletedCount: number }> {
+		// Find all products in this category owned by the user
+		const products = await this.productsRepository
+			.createQueryBuilder('product')
+			.leftJoinAndSelect('product.collection', 'collection')
+			.leftJoinAndSelect('collection.brand', 'brand')
+			.where('(brand.user_id = :userId OR product.user_id = :userId)', { userId })
+			.andWhere('product.category = :category', { category })
+			.getMany();
+
+		if (products.length === 0) {
+			return { message: 'No products found in this category', deletedCount: 0 };
+		}
+
+		const productIds = products.map(p => p.id);
+
+		// Delete all related generations first
+		const relatedGenerations = await this.generationsRepository
+			.createQueryBuilder('generation')
+			.where('generation.product_id IN (:...productIds)', { productIds })
+			.getMany();
+
+		if (relatedGenerations.length > 0) {
+			await this.generationsRepository.remove(relatedGenerations);
+		}
+
+		// Delete all products
+		await this.productsRepository.remove(products);
+
+		return {
+			message: `Deleted ${products.length} products in category "${category}"`,
+			deletedCount: products.length,
+		};
+	}
+
 	async analyzeImages(
 		images: string[],
 		productName?: string,
