@@ -83,7 +83,7 @@ export class ProductsService {
 			.createQueryBuilder('product')
 			.leftJoinAndSelect('product.collection', 'collection')
 			.leftJoinAndSelect('collection.brand', 'brand')
-			.where('brand.user_id = :userId', { userId })
+			.where('(brand.user_id = :userId OR product.user_id = :userId)', { userId })
 			.orderBy('product.created_at', 'DESC')
 			.skip(skip)
 			.take(limit);
