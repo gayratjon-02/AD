@@ -54,10 +54,24 @@ export class MergePromptsDto {
 	aspect_ratio?: string;
 
 	/**
-	 * Model reference ID for face/body/hair consistency
-	 * Selected from the model references library
+	 * @deprecated Use adult_model_reference_id / kid_model_reference_id instead
+	 * Kept for backward compat — treated as adult_model_reference_id if set
 	 */
 	@IsOptional()
 	@IsUUID()
 	model_reference_id?: string;
+
+	/**
+	 * Adult model reference ID for DUO + SOLO adult shots
+	 */
+	@IsOptional()
+	@IsUUID()
+	adult_model_reference_id?: string;
+
+	/**
+	 * Kid model reference ID for DUO + SOLO kid shots
+	 */
+	@IsOptional()
+	@IsUUID()
+	kid_model_reference_id?: string;
 }

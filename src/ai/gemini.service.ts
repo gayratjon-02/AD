@@ -401,7 +401,7 @@ High quality studio lighting, sharp details, clean background.`;
 		aspectRatio?: string,
 		resolution?: string,
 		userApiKey?: string,
-		options?: { daReferenceUrl?: string; shotType?: string; hasModelReference?: boolean; modelDescription?: string }
+		options?: { daReferenceUrl?: string; shotType?: string; hasModelReference?: boolean; modelDescription?: string; hasDualModels?: boolean }
 	): Promise<GeminiImageResult> {
 		const client = this.getClient(userApiKey);
 		const startTime = Date.now();
@@ -442,7 +442,7 @@ High quality studio lighting, sharp details, clean background.`;
 			referencePrompt = this.buildProductOnlyReferencePrompt(prompt);
 			this.logger.log(`🎯 Using PRODUCT-ONLY prompt wrapper for ${shotType}`);
 		} else if (hasDAReference) {
-			referencePrompt = this.buildDASceneReferencePrompt(prompt, hasModelReference, options?.modelDescription);
+			referencePrompt = this.buildDASceneReferencePrompt(prompt, hasModelReference, options?.modelDescription, options?.hasDualModels);
 		} else {
 			referencePrompt = this.buildAdConceptReferencePrompt(prompt);
 		}
@@ -565,7 +565,7 @@ High quality studio lighting, sharp details, clean background.`;
 	 * The LAST image in referenceImages is the DA scene reference.
 	 * Gemini must replicate the EXACT scene (background, lighting, props, composition).
 	 */
-	private buildDASceneReferencePrompt(prompt: string, hasModelReference: boolean = false, modelDescription?: string): string {
+	private buildDASceneReferencePrompt(prompt: string, hasModelReference: boolean = false, modelDescription?: string, hasDualModels?: boolean): string {
 		// Detect if the product is a bottom garment (pants/joggers/shorts) from the inner prompt
 		const isBottomProduct = prompt.toLowerCase().includes('white t-shirt') ||
 			prompt.toLowerCase().includes('fully clothed top');
@@ -580,12 +580,28 @@ If you generate a shirtless model, the image is REJECTED. Always add the white t
 The reference images show ONLY the pants — that does NOT mean the model is shirtless. ADD THE WHITE T-SHIRT.`
 			: `👕 CLOTHING: Every person MUST be FULLY CLOTHED. No bare skin on torso.`;
 
-		// Model consistency block — only when a brand model reference image is provided
-		const modelDescriptionBlock = modelDescription
-			? `\nEXACT MODEL APPEARANCE (from Claude analysis):\n${modelDescription}`
-			: '';
-		const modelConsistencyBlock = hasModelReference
-			? `
+		// Model consistency block — different for dual models (DUO) vs single model
+		let modelConsistencyBlock = '';
+		if (hasModelReference && hasDualModels) {
+			// DUO with two separate model references (adult + kid)
+			const modelDescriptionBlock = modelDescription
+				? `\nEXACT MODEL APPEARANCES (from Claude analysis):\n${modelDescription}`
+				: '';
+			modelConsistencyBlock = `
+👤👤 DUAL MODEL CONSISTENCY — CRITICAL REQUIREMENT 👤👤
+TWO model reference images are provided: ADULT/FATHER model and KID/SON model.
+- The ADULT model reference image appears BEFORE the KID model reference image in the reference list.
+- Match the ADULT person's face, hair, skin tone, body type, and age from the ADULT reference image.
+- Match the KID person's face, hair, skin tone, body type, and age from the KID reference image.
+- Each person in the generated DUO shot must look like the SAME PERSON as their respective reference.${modelDescriptionBlock}
+Do NOT swap or mix features between the adult and kid references. Each must match their own reference exactly.
+The brand needs CONSISTENT model identity across all generated images.`;
+		} else if (hasModelReference) {
+			// Single model reference
+			const modelDescriptionBlock = modelDescription
+				? `\nEXACT MODEL APPEARANCE (from Claude analysis):\n${modelDescription}`
+				: '';
+			modelConsistencyBlock = `
 👤 MODEL CONSISTENCY — CRITICAL REQUIREMENT 👤
 The SECOND-TO-LAST reference image is the BRAND MODEL REFERENCE. This shows the exact model appearance you MUST replicate:
 - SAME face shape, facial features, and facial structure
@@ -595,8 +611,8 @@ The SECOND-TO-LAST reference image is the BRAND MODEL REFERENCE. This shows the 
 - SAME age appearance${modelDescriptionBlock}
 The generated model must look like the SAME PERSON as in the model reference image.
 For DUO shots (father and son): The adult model must match the model reference. The child should look like a plausible younger version.
-Do NOT change the model's appearance. The brand needs CONSISTENT model identity across all generated images.`
-			: '';
+Do NOT change the model's appearance. The brand needs CONSISTENT model identity across all generated images.`;
+		}
 
 		return `${clothingBlock}
 ${modelConsistencyBlock}
@@ -604,7 +620,7 @@ ${modelConsistencyBlock}
 GENERATE THIS IMAGE IN THE EXACT SAME ROOM AS THE DA REFERENCE PHOTO (LAST IMAGE). COPY the background wall and floor from the DA reference photo exactly — same wall color, same floor color, same floor material.
 
 REFERENCE IMAGES GUIDE:
-- FIRST images = PRODUCT reference. Copy the exact garment: fabric color, texture, pockets, zippers, buttons, logos, every detail.${hasModelReference ? '\n- SECOND-TO-LAST image = BRAND MODEL reference. This is the person who must appear in the photo. Match their face, hair, skin tone, and body type EXACTLY.' : ''}
+- FIRST images = PRODUCT reference. Copy the exact garment: fabric color, texture, pockets, zippers, buttons, logos, every detail.${hasDualModels ? '\n- After product images: ADULT MODEL reference, then KID MODEL reference. Match each person to their respective reference image exactly.' : hasModelReference ? '\n- SECOND-TO-LAST image = BRAND MODEL reference. This is the person who must appear in the photo. Match their face, hair, skin tone, and body type EXACTLY.' : ''}
 - LAST image = DA SCENE reference. This is the room/studio. COPY this room exactly: wall color, wall texture, floor color, floor material, lighting direction, props placement, camera angle, mood. The ONLY thing different is the outfit — the room stays IDENTICAL.
 
 ⚠️ WALL-TO-FLOOR TRANSITION RULE ⚠️
@@ -629,7 +645,7 @@ ${this.sanitizePromptForImageGeneration(prompt)}
 Professional editorial fashion photography. 8K quality, sharp details. Match the DA reference lighting and atmosphere exactly.
 
 ${isBottomProduct ? 'REMINDER: The model MUST be wearing a PLAIN WHITE T-SHIRT on upper body. ZERO bare skin on torso. The white shirt must be clearly visible.' : ''}
-${hasModelReference ? 'REMINDER: The model in the generated image MUST match the BRAND MODEL REFERENCE (second-to-last image) — same face, same hair, same skin tone, same body type. Model identity consistency is mandatory.' : ''}
+${hasDualModels ? 'REMINDER: The ADULT model must match the ADULT MODEL REFERENCE and the KID model must match the KID MODEL REFERENCE. Each person must look like their respective reference. Model identity consistency is mandatory.' : hasModelReference ? 'REMINDER: The model in the generated image MUST match the BRAND MODEL REFERENCE (second-to-last image) — same face, same hair, same skin tone, same body type. Model identity consistency is mandatory.' : ''}
 
 FINAL RULE: The WALL-TO-FLOOR TRANSITION in your generated image must be IDENTICAL to the DA reference photo (LAST image). NO fold, NO crease, NO hard line — replicate the smooth transition exactly as shown in the DA reference. Same colors, same materials, same smooth curve.`;
 	}

@@ -311,6 +311,8 @@ export class GenerationsController {
 			resolution: mergePromptsDto?.resolution,
 			aspect_ratio: mergePromptsDto?.aspect_ratio,
 			model_reference_id: mergePromptsDto?.model_reference_id,
+			adult_model_reference_id: mergePromptsDto?.adult_model_reference_id,
+			kid_model_reference_id: mergePromptsDto?.kid_model_reference_id,
 		});
 		return {
 			generation_id: id,

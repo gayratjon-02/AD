@@ -315,39 +315,11 @@ export class GenerationsService {
 					const isProductOnly = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(promptType);
 
 					// 👤 MODEL REFERENCE: Add model image for face/body/hair consistency (DUO & SOLO only)
-					let hasModelReference = false;
-					let modelDescription: string | undefined;
-					if (!isProductOnly) {
-						const modelRefId = (promptsToUse as any)?._model_reference_id as string | undefined;
-
-						if (modelRefId) {
-							// NEW: Load selected model reference from library
-							try {
-								const modelRef = await this.modelReferencesService.findOne(modelRefId, userId);
-								referenceImages.push(modelRef.image_url);
-								hasModelReference = true;
-								modelDescription = modelRef.description || undefined;
-								this.logger.log(`👤 Model reference from library: "${modelRef.name}" (${modelRef.type}): ${modelRef.image_url}${modelDescription ? ', has description' : ''}`);
-							} catch (err) {
-								this.logger.warn(`⚠️ Model reference ${modelRefId} not found, falling back to brand model`);
-							}
-						}
-
-						// Fallback: use brand model_adult_url / model_kid_url if no library reference
-						if (!hasModelReference) {
-							const brand = generation.collection?.brand;
-							const promptModelType = promptsToUse[promptType]?.model_type || generation.model_type || 'adult';
-							const modelUrl = promptType === 'duo'
-								? brand?.model_adult_url
-								: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
-
-							if (modelUrl) {
-								referenceImages.push(modelUrl);
-								hasModelReference = true;
-								this.logger.log(`👤 Brand model reference fallback (${promptModelType}): ${modelUrl}`);
-							}
-						}
-					}
+					const modelResult = await this.resolveModelReferences(promptType, promptsToUse as any, generation, userId);
+					referenceImages.push(...modelResult.images);
+					const hasModelReference = modelResult.hasModelRef;
+					const modelDescription = modelResult.modelDescription;
+					const hasDualModels = modelResult.hasDualModels;
 
 					// Include DA reference image ONLY for model shots
 					if (!isProductOnly) {
@@ -377,7 +349,7 @@ export class GenerationsService {
 							generation.aspect_ratio,
 							generation.resolution,
 							undefined,
-							{ ...(daReferenceUrl && { daReferenceUrl }), shotType: promptType, hasModelReference, modelDescription },
+							{ ...(daReferenceUrl && { daReferenceUrl }), shotType: promptType, hasModelReference, modelDescription, hasDualModels },
 						)
 						: await this.vertexImagenService.generateImage(
 							prompt,
@@ -812,39 +784,12 @@ export class GenerationsService {
 					// 🎯 PRODUCT-ONLY shots: flatlay and closeup are product-only (no DA scene, no models)
 					const isProductOnlyShot = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(shotType);
 
-					// 👤 MODEL REFERENCE: Add brand model image for face/body/hair consistency (DUO & SOLO only)
-					let hasModelRef = false;
-					let modelDescription: string | undefined;
-					if (!isProductOnlyShot) {
-						// First try model reference library
-						const modelRefId = (generation.merged_prompts as any)?._model_reference_id as string | undefined;
-						if (modelRefId) {
-							try {
-								const modelRef = await this.modelReferencesService.findOne(modelRefId, userId);
-								referenceImages.push(modelRef.image_url);
-								hasModelRef = true;
-								modelDescription = modelRef.description || undefined;
-								this.logger.log(`👤 Model reference from library: "${modelRef.name}" (${modelRef.type}): ${modelRef.image_url}${modelDescription ? ', has description' : ''}`);
-							} catch (err) {
-								this.logger.warn(`⚠️ Model reference ${modelRefId} not found, falling back to brand model`);
-							}
-						}
-
-						// Fallback: use brand model_adult_url / model_kid_url
-						if (!hasModelRef) {
-							const brand = generation.collection?.brand;
-							const promptModelType = (promptObject as any).model_type || generation.model_type || 'adult';
-							const modelUrl = shotType === 'duo'
-								? brand?.model_adult_url
-								: (promptModelType === 'kid' ? brand?.model_kid_url : brand?.model_adult_url);
-
-							if (modelUrl) {
-								referenceImages.push(modelUrl);
-								hasModelRef = true;
-								this.logger.log(`👤 Brand model reference fallback (${promptModelType}): ${modelUrl}`);
-							}
-						}
-					}
+					// 👤 MODEL REFERENCE: Add model image for face/body/hair consistency (DUO & SOLO only)
+					const modelResult = await this.resolveModelReferences(shotType, generation.merged_prompts as any, generation, userId);
+					referenceImages.push(...modelResult.images);
+					const hasModelRef = modelResult.hasModelRef;
+					const modelDescription = modelResult.modelDescription;
+					const hasDualModels = modelResult.hasDualModels;
 
 					// Include DA reference image ONLY for model shots (duo, solo)
 					if (!isProductOnlyShot) {
@@ -874,7 +819,7 @@ export class GenerationsService {
 							generation.aspect_ratio,
 							generation.resolution,
 							undefined,
-							{ ...(daRefUrl && { daReferenceUrl: daRefUrl }), shotType, hasModelReference: hasModelRef, modelDescription },
+							{ ...(daRefUrl && { daReferenceUrl: daRefUrl }), shotType, hasModelReference: hasModelRef, modelDescription, hasDualModels },
 						)
 						: await this.vertexImagenService.generateImage(
 							prompt,
@@ -1151,6 +1096,8 @@ export class GenerationsService {
 			resolution?: string;
 			aspect_ratio?: string;
 			model_reference_id?: string;
+			adult_model_reference_id?: string;
+			kid_model_reference_id?: string;
 		}
 	): Promise<MergedPrompts> {
 		const generation = await this.generationsRepository.findOne({
@@ -1241,10 +1188,24 @@ export class GenerationsService {
 			}
 			this.logger.log(`💾 Merged prompts: ${enabledShots.length} enabled [${enabledShots.join(', ')}], removed ${disabledShots.length} disabled [${disabledShots.join(', ')}]`);
 		}
-		if (input?.model_reference_id) {
-			mergedWithMeta._model_reference_id = input.model_reference_id;
-			this.logger.log(`👤 Embedded _model_reference_id in merged_prompts: ${input.model_reference_id}`);
+		// Resolve dual model reference IDs (backward compat: model_reference_id → adult)
+		const adultModelRefId = input?.adult_model_reference_id || input?.model_reference_id;
+		const kidModelRefId = input?.kid_model_reference_id;
+
+		if (adultModelRefId) {
+			mergedWithMeta._adult_model_reference_id = adultModelRefId;
+			mergedWithMeta._model_reference_id = adultModelRefId; // backward compat
+			this.logger.log(`👤 Embedded _adult_model_reference_id: ${adultModelRefId}`);
 		}
+		if (kidModelRefId) {
+			mergedWithMeta._kid_model_reference_id = kidModelRefId;
+			this.logger.log(`👤 Embedded _kid_model_reference_id: ${kidModelRefId}`);
+		}
+
+		// Set FK columns on Generation entity
+		generation.adult_model_id = adultModelRefId || null;
+		generation.kid_model_id = kidModelRefId || null;
+
 		generation.merged_prompts = mergedWithMeta;
 		generation.status = GenerationStatus.PENDING; // Set to PENDING so generate() can be called
 		generation.current_step = 'merged';
@@ -1254,6 +1215,115 @@ export class GenerationsService {
 		this.logger.debug(`Merged prompts content: ${JSON.stringify(mergedPrompts).substring(0, 200)}...`);
 
 		return mergedPrompts;
+	}
+
+	/**
+	 * Resolve model reference images and descriptions for a given shot type.
+	 * DUO: loads both adult + kid models, combines descriptions
+	 * SOLO: uses adult or kid model based on shot_options.solo.subject
+	 * FLATLAY/CLOSEUP: no model references needed
+	 */
+	private async resolveModelReferences(
+		shotType: string,
+		mergedPrompts: Record<string, any>,
+		generation: Generation,
+		userId: string,
+	): Promise<{ images: string[]; hasModelRef: boolean; modelDescription?: string; hasDualModels?: boolean }> {
+		const isProductOnly = ['flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'].includes(shotType);
+		if (isProductOnly) {
+			return { images: [], hasModelRef: false };
+		}
+
+		const adultRefId = mergedPrompts._adult_model_reference_id as string | undefined;
+		const kidRefId = mergedPrompts._kid_model_reference_id as string | undefined;
+		const shotOptions = mergedPrompts._shot_options;
+		const images: string[] = [];
+		let hasModelRef = false;
+		let modelDescription: string | undefined;
+		let hasDualModels = false;
+
+		if (shotType === 'duo') {
+			// DUO: load both adult and kid models
+			let adultDesc: string | undefined;
+			let kidDesc: string | undefined;
+
+			if (adultRefId) {
+				try {
+					const adultRef = await this.modelReferencesService.findOne(adultRefId, userId);
+					images.push(adultRef.image_url);
+					hasModelRef = true;
+					adultDesc = adultRef.description || undefined;
+					this.logger.log(`👤 DUO adult model: "${adultRef.name}" - ${adultRef.image_url}`);
+				} catch (err) {
+					this.logger.warn(`⚠️ Adult model ${adultRefId} not found`);
+				}
+			}
+
+			if (kidRefId) {
+				try {
+					const kidRef = await this.modelReferencesService.findOne(kidRefId, userId);
+					images.push(kidRef.image_url);
+					hasModelRef = true;
+					kidDesc = kidRef.description || undefined;
+					this.logger.log(`👤 DUO kid model: "${kidRef.name}" - ${kidRef.image_url}`);
+				} catch (err) {
+					this.logger.warn(`⚠️ Kid model ${kidRefId} not found`);
+				}
+			}
+
+			// Combine descriptions for DUO
+			if (adultDesc || kidDesc) {
+				const parts: string[] = [];
+				if (adultDesc) parts.push(`ADULT MODEL:\n${adultDesc}`);
+				if (kidDesc) parts.push(`KID MODEL:\n${kidDesc}`);
+				modelDescription = parts.join('\n\n');
+			}
+
+			hasDualModels = !!(adultRefId && kidRefId && images.length >= 2);
+
+			// Fallback to brand models if no library references
+			if (!hasModelRef) {
+				const brand = generation.collection?.brand;
+				if (brand?.model_adult_url) {
+					images.push(brand.model_adult_url);
+					hasModelRef = true;
+					this.logger.log(`👤 DUO brand adult fallback: ${brand.model_adult_url}`);
+				}
+				if (brand?.model_kid_url) {
+					images.push(brand.model_kid_url);
+					this.logger.log(`👤 DUO brand kid fallback: ${brand.model_kid_url}`);
+				}
+			}
+		} else if (shotType === 'solo') {
+			// SOLO: use the correct model based on subject
+			const soloSubject = shotOptions?.solo?.subject || 'adult';
+			const refId = soloSubject === 'kid' ? (kidRefId || adultRefId) : (adultRefId);
+
+			if (refId) {
+				try {
+					const modelRef = await this.modelReferencesService.findOne(refId, userId);
+					images.push(modelRef.image_url);
+					hasModelRef = true;
+					modelDescription = modelRef.description || undefined;
+					this.logger.log(`👤 SOLO ${soloSubject} model: "${modelRef.name}" - ${modelRef.image_url}`);
+				} catch (err) {
+					this.logger.warn(`⚠️ SOLO model ${refId} not found`);
+				}
+			}
+
+			// Fallback to brand model
+			if (!hasModelRef) {
+				const brand = generation.collection?.brand;
+				const modelUrl = soloSubject === 'kid' ? brand?.model_kid_url : brand?.model_adult_url;
+				if (modelUrl) {
+					images.push(modelUrl);
+					hasModelRef = true;
+					this.logger.log(`👤 SOLO brand ${soloSubject} fallback: ${modelUrl}`);
+				}
+			}
+		}
+
+		return { images, hasModelRef, modelDescription, hasDualModels };
 	}
 
 	/**
