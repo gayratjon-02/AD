@@ -478,7 +478,7 @@ export class PromptBuilderService {
         const closeUpFrontPrompt = this.buildCloseUpFrontPrompt(product, da, closeupFrontCameraLighting);
         const closeUpFrontFinal = closeUpFrontPrompt + resolutionSuffix;
         // Closeup shows model wearing - allow partial body but no full face
-        const closeUpFrontNegative = this.buildShotNegativePrompt('closeup_front', product) + ', full body shot, wide shot, distance shot, full face visible';
+        const closeUpFrontNegative = this.buildShotNegativePrompt('closeup_front', product) + ', full body shot, wide shot, distance shot, full face visible, back side, back label, back pocket, rear view, back of garment, two views, multiple angles, flipped garment';
         const closeup_front: MergedPromptObject = {
             visual_id: `visual_5_closeup_front_product`,
             shot_type: 'closeup_front',
@@ -1303,7 +1303,7 @@ export class PromptBuilderService {
         const productIdentity = this.buildProductIdentityBlock(product, true, false);
 
         // 🎯 SHOT DESCRIPTION FIRST — PRODUCT-ONLY macro, no humans
-        const shotDescription = `EXTREME CLOSE-UP MACRO PRODUCT PHOTOGRAPH of ${weightedColor} ${product.general_info.product_name} fabric and front details. The garment is laid flat on a surface. Camera positioned very close to the front chest area, capturing fabric texture, stitching, pocket patch, and material details in sharp focus. Shallow depth of field. Only the garment fabric fills the frame.`;
+        const shotDescription = `EXTREME CLOSE-UP MACRO PRODUCT PHOTOGRAPH of ${weightedColor} ${product.general_info.product_name} — FRONT SIDE ONLY. Show ONLY the front face of the garment laid flat. Camera positioned directly above, very close to the front of the product, capturing ONLY front-facing details: fabric texture, front stitching, front pocket patch, front logo, and front material details in sharp focus. Do NOT show the back side, back label, back pocket, or any rear details. Shallow depth of field. Only the FRONT of the garment fills the entire frame. Single product, single angle, single view.`;
 
         // Product details
         const productData = `FRONT DETAILS IN FOCUS: ${frontDescription}. ${geometryPhrase}${exactPocketSpec}${pocketDetails}${microDetails}${productIdentity}.${hardwareText} Fabric texture: ${product.visual_specs.fabric_texture}. Sharp macro focus on pocket patches, embossing patterns, buttons, stitching, and logo. Pocket patch must EXACTLY match reference images.`;
