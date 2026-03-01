@@ -1057,14 +1057,23 @@ export class PromptBuilderService {
         // ═══════════════════════════════════════════════════════════
         // 🎯 PRIORITY 1: SUBJECT FIRST (Most Important!)
         // ═══════════════════════════════════════════════════════════
-        const clothingRule = isProductBottom
-            ? 'MUST be wearing a PLAIN WHITE CREW-NECK T-SHIRT on upper body — shirt covers entire torso from neck to waist. ZERO bare skin on chest or stomach. NEVER shirtless.'
-            : 'FULLY CLOTHED.';
         let subjectPart = '';
-        if (modelType === 'kid') {
-            subjectPart = `KIDS FASHION. Subject: SINGLE 5-YEAR-OLD BOY wearing a plain white t-shirt and the product below. Small child size. (NO ADULTS, NO OLDER KIDS). ${clothingRule} Playful editorial expression, natural child pose.`;
+        if (isProductBottom) {
+            // Product is pants/shorts → model wears plain white t-shirt on top
+            const clothingRule = 'MUST be wearing a PLAIN WHITE CREW-NECK T-SHIRT on upper body — shirt covers entire torso from neck to waist. ZERO bare skin on chest or stomach. NEVER shirtless.';
+            if (modelType === 'kid') {
+                subjectPart = `KIDS FASHION. Subject: SINGLE 5-YEAR-OLD BOY wearing a plain white t-shirt on upper body and the product on lower body. Small child size. (NO ADULTS, NO OLDER KIDS). ${clothingRule} Playful editorial expression, natural child pose.`;
+            } else {
+                subjectPart = `Subject: SINGLE ADULT MALE MODEL wearing a plain white t-shirt on upper body and the product on lower body. Age 30s. Full adult size. (NO KIDS). ${clothingRule} Athletic build, confident gaze, light stubble beard.`;
+            }
         } else {
-            subjectPart = `Subject: SINGLE ADULT MALE MODEL wearing a plain white t-shirt on upper body and the product below. Age 30s. Full adult size. (NO KIDS). ${clothingRule} Athletic build, confident gaze, light stubble beard.`;
+            // Product is top/jacket/hoodie → model wears the PRODUCT itself, no white t-shirt
+            const clothingRule = 'FULLY CLOTHED. The model is wearing the PRODUCT GARMENT described below.';
+            if (modelType === 'kid') {
+                subjectPart = `KIDS FASHION. Subject: SINGLE 5-YEAR-OLD BOY wearing the product garment described below. Small child size. (NO ADULTS, NO OLDER KIDS). ${clothingRule} Playful editorial expression, natural child pose.`;
+            } else {
+                subjectPart = `Subject: SINGLE ADULT MALE MODEL wearing the product garment described below. Age 30s. Full adult size. (NO KIDS). ${clothingRule} Athletic build, confident gaze, light stubble beard.`;
+            }
         }
 
         // ═══════════════════════════════════════════════════════════
