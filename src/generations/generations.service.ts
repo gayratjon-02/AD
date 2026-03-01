@@ -213,9 +213,15 @@ export class GenerationsService {
 			// 3. Use merged_prompts from merge (with shot_options) when valid; otherwise rebuild
 			const promptTypes = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'] as const;
 			const existing = generation.merged_prompts as Record<string, any> | undefined;
-			// Validate merged_prompts — check that ALL shot types have valid prompts
-			// (prompt builder always generates all 6, even if some are disabled)
+			// Validate merged_prompts — check that ENABLED shot types have valid prompts
+			// Disabled shots are intentionally deleted during merge, so skip them
+			const existingShotOpts = existing?._shot_options as Record<string, any> | undefined;
 			const hasValidMerged = existing && promptTypes.every(t => {
+				// If shot_options exist and this shot is disabled, skip validation (it was intentionally removed)
+				if (existingShotOpts) {
+					const opt = existingShotOpts[t];
+					if (opt && opt.enabled === false) return true;
+				}
 				const p = existing[t];
 				return p && (p.gemini_prompt || p.prompt);
 			});
@@ -234,6 +240,8 @@ export class GenerationsService {
 					resolution: generation.resolution,
 				});
 				promptsToUse = generatedPrompts.prompts;
+				// Carry over _shot_options from original merge so shot filtering still works
+				if (existingShotOpts) promptsToUse._shot_options = existingShotOpts;
 				generation.merged_prompts = promptsToUse;
 			} else {
 				this.logger.log(`📋 Building prompts from Collection DA: ${generation.collection.name}`);
@@ -249,6 +257,8 @@ export class GenerationsService {
 					}
 				});
 				promptsToUse = generatedPrompts.prompts;
+				// Carry over _shot_options from original merge so shot filtering still works
+				if (existingShotOpts) promptsToUse._shot_options = existingShotOpts;
 				generation.merged_prompts = promptsToUse;
 			}
 			generation.current_step = 'generating_images';
