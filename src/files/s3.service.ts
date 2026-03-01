@@ -15,7 +15,7 @@ export class S3Service {
 
 	constructor(private readonly configService: ConfigService) {
 		const uploadConfig = this.configService.get<any>('upload');
-		this.bucket = uploadConfig.s3?.bucket || process.env.AWS_BUCKET;
+		this.bucket = uploadConfig.s3?.bucket || process.env.AWS_S3_BUCKET || process.env.AWS_BUCKET_NAME || process.env.AWS_BUCKET;
 		// Only use S3_BASE_URL for CDN fronting S3. UPLOAD_BASE_URL is for local file serving only.
 		this.baseUrl = process.env.S3_BASE_URL || '';
 		this.enabled = !!this.bucket && !!process.env.AWS_ACCESS_KEY_ID;
