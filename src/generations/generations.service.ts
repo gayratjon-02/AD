@@ -1223,14 +1223,23 @@ export class GenerationsService {
 		// prompts is already in MergedPrompts format with all camera, background, product_details, da_elements
 		const mergedPrompts: MergedPrompts = generatedPrompts.prompts;
 
-		// Save to generation — embed shot_options inside merged_prompts (avoids DB column migration)
+		// Save to generation — only include enabled shots + embed shot_options metadata
 		const mergedWithMeta = { ...mergedPrompts } as Record<string, any>;
 		if (input?.shot_options) {
 			mergedWithMeta._shot_options = input.shot_options;
-			const enabledShots = Object.entries(input.shot_options)
-				.filter(([_, v]) => (v as any)?.enabled !== false)
-				.map(([k]) => k);
-			this.logger.log(`💾 Embedded _shot_options in merged_prompts: ${enabledShots.length} enabled [${enabledShots.join(', ')}]`);
+			const allShotKeys = ['duo', 'solo', 'flatlay_front', 'flatlay_back', 'closeup_front', 'closeup_back'];
+			const enabledShots: string[] = [];
+			const disabledShots: string[] = [];
+			for (const key of allShotKeys) {
+				const opt = (input.shot_options as any)[key];
+				if (opt && opt.enabled === false) {
+					delete mergedWithMeta[key];
+					disabledShots.push(key);
+				} else if (mergedWithMeta[key]) {
+					enabledShots.push(key);
+				}
+			}
+			this.logger.log(`💾 Merged prompts: ${enabledShots.length} enabled [${enabledShots.join(', ')}], removed ${disabledShots.length} disabled [${disabledShots.join(', ')}]`);
 		}
 		if (input?.model_reference_id) {
 			mergedWithMeta._model_reference_id = input.model_reference_id;
