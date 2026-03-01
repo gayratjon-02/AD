@@ -327,6 +327,9 @@ export class PromptBuilderService {
         const GLOBAL_NEGATIVE_PROMPT = 'collage, split screen, inset image, picture in picture, multiple views, overlay, montage, composite image, promotional material, text blocks, watermarks, border, frame, padding, white background';
         let negativePrompt = `${GLOBAL_NEGATIVE_PROMPT}, text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers`;
 
+        // 🚀 ANTI-ARTIFACT: Block black corners, dark patches, unwanted overlays
+        negativePrompt += ', black corner, dark corner, black patch, black rectangle, black square, black bar, black border, vignette, dark edge, corner artifact, black overlay, UI element, logo overlay, stamp, badge, label, tag, sticker';
+
         // 🚀 ANTI-NUDITY SHIELD: ALWAYS block shirtless for human model shots (duo, solo)
         negativePrompt += ', shirtless, naked torso, bare chest, bare skin, abs showing, muscles exposed, underwear model, swimwear, skin showing, topless, navel, exposed torso, no shirt';
 
@@ -843,6 +846,9 @@ export class PromptBuilderService {
 
         let negativePrompt = `${GLOBAL_NEGATIVE_PROMPT}, text, watermark, blurry, low quality, distorted, extra limbs, bad anatomy, mannequin, ghost mannequin, floating clothes, 3d render, artificial face, deformed hands, extra fingers`;
 
+        // ANTI-ARTIFACT: Block black corners, dark patches, unwanted overlays
+        negativePrompt += ', black corner, dark corner, black patch, black rectangle, black square, black bar, black border, vignette, dark edge, corner artifact, black overlay, UI element, logo overlay, stamp, badge, label, tag, sticker';
+
         // Get material from fabric texture (analyze for material keywords)
         const fabricTexture = product.visual_specs.fabric_texture || '';
         const colorName = product.visual_specs.color_name || '';
@@ -1103,7 +1109,9 @@ export class PromptBuilderService {
         const floorPrefix = `COPY THE EXACT BACKGROUND AND FLOOR FROM THE DA REFERENCE IMAGE. Wall: ${da.background.type} (${da.background.hex}). Floor: ${da.floor.type} (${da.floor.hex}). The generated image background and floor must be a PIXEL-PERFECT COPY of the DA reference photo. ⚠️ WALL-TO-FLOOR TRANSITION: Look at the DA reference image — the wall-to-floor meeting point is a smooth, gradual curve with NO fold, NO crease, NO hard edge. You MUST replicate this EXACT smooth transition. Do NOT create any visible line, fold, or sharp corner where wall meets floor. This is the #1 quality requirement.`;
         const floorSuffix = `FINAL CHECK — WALL-TO-FLOOR JUNCTION: Compare your generated image against the DA reference (LAST image). The transition where the wall meets the floor MUST be smooth and identical to the DA reference — NO fold, NO crease, NO visible hard line. If the DA reference shows a curved infinity cove, your image must show the SAME curve. Wall=${da.background.type} (${da.background.hex}), Floor=${da.floor.type} (${da.floor.hex}).`;
 
-        return `${floorPrefix} ${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart} ${floorSuffix}`;
+        const cleanImageRule = 'CLEAN IMAGE ONLY: The entire image must be a clean photograph with NO black corners, NO dark patches, NO overlays, NO UI elements, NO stamps, NO badges anywhere in the frame. Every pixel must be part of the scene.';
+
+        return `${floorPrefix} ${subjectPart} ${apparelPart} ${environmentPart} ${technicalPart} ${cleanImageRule} ${floorSuffix}`;
     }
 
     /**
